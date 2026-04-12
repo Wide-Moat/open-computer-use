@@ -75,7 +75,7 @@
 Plans:
 - [x] 03-01-PLAN.md — Orchestrator code changes (context_vars fix, docker_manager env constants + pass-through tuple, sub_agent alias widening, REQUIREMENTS.md GATEWAY-* minting) — Wave 1
 - [x] 03-02-PLAN.md — Tests (three-path env-injection matrix, sub_agent model resolution, ANTHROPIC_CUSTOM_HEADERS regression guard) — Wave 2
-- [ ] 03-03-PLAN.md — Config and docs (docker-compose.yml env wiring, .env.example gateway-overrides block, new docs/claude-code-gateway.md, README/INSTALL cross-links) — Wave 2
+- [x] 03-03-PLAN.md — Config and docs (docker-compose.yml env wiring, .env.example gateway-overrides block, new docs/claude-code-gateway.md, README/INSTALL cross-links) — Wave 2
 
 ## Progress
 
