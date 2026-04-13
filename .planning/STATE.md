@@ -73,6 +73,7 @@ Recent decisions affecting current work:
 
 - After Phase 03 merges: comment on issue #40 with fix version and close; comment on PR #41 with pointer to merged PR, credit @rahxam, close (or let author close).
 - Issue #1 (security review): separate decision — likely close with "answered, no reporter response for 2+ weeks".
+- Add CI smoke tests for sandbox image and browser — `.planning/todos/pending/2026-04-13-add-ci-smoke-tests-for-sandbox-image-and-browser.md`
 
 ### Blockers/Concerns
 
