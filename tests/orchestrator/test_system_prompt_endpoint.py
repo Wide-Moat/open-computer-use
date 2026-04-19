@@ -29,7 +29,7 @@ class SystemPromptEndpointContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app_module.app)
-        cls.file_server_url = app_module.FILE_SERVER_URL
+        cls.public_base_url = app_module.PUBLIC_BASE_URL
 
     def setUp(self):
         # Ensure tests are hermetic: reset skill_manager memory cache so that
@@ -42,8 +42,8 @@ class SystemPromptEndpointContract(unittest.TestCase):
         resp = self.client.get("/system-prompt", params={"chat_id": "abc123"})
         self.assertEqual(resp.status_code, 200)
         body = resp.text
-        self.assertIn(f"{self.file_server_url}/files/abc123", body)
-        self.assertIn(f"{self.file_server_url}/files/abc123/archive", body)
+        self.assertIn(f"{self.public_base_url}/files/abc123", body)
+        self.assertIn(f"{self.public_base_url}/files/abc123/archive", body)
         self.assertIn("abc123", body)
         self.assertNotIn("{file_base_url}", body)
         self.assertNotIn("{archive_url}", body)
@@ -67,32 +67,106 @@ class SystemPromptEndpointContract(unittest.TestCase):
         # DEFAULT_PUBLIC_SKILLS must appear — pin a representative one
         self.assertIn("<name>\ndocx\n</name>", resp.text)
 
-    def test_legacy_file_base_url_and_archive_url_substitute(self):
+    def test_legacy_file_base_url_extracts_chat_id(self):
+        """
+        Pre-v4.0.0 integrations could pass ?file_base_url=... to embed their
+        own browser-facing URLs in the prompt. Since v4.0.0 the server owns
+        PUBLIC_BASE_URL. We only still accept file_base_url to extract its
+        trailing chat_id for seamless migration. archive_url is ignored —
+        server derives it from PUBLIC_BASE_URL + chat_id.
+        """
         resp = self.client.get(
             "/system-prompt",
             params={
-                "file_base_url": "https://example.com/files/xyz",
-                "archive_url": "https://example.com/files/xyz/arch",
+                "file_base_url": "https://legacy.example.com/files/xyz",
+                "archive_url": "https://legacy.example.com/files/xyz/arch",
             },
         )
         self.assertEqual(resp.status_code, 200)
         body = resp.text
-        self.assertIn("https://example.com/files/xyz", body)
-        self.assertIn("https://example.com/files/xyz/arch", body)
-        self.assertIn("xyz", body)
+        # chat_id extracted from the trailing path segment, URL owned by server.
+        self.assertIn(f"{self.public_base_url}/files/xyz", body)
+        self.assertIn(f"{self.public_base_url}/files/xyz/archive", body)
+        # Neither the legacy host nor the legacy archive URL leaks into the prompt.
+        self.assertNotIn("legacy.example.com", body)
+        # No raw template placeholders.
         self.assertNotIn("{file_base_url}", body)
         self.assertNotIn("{archive_url}", body)
         self.assertNotIn("{chat_id}", body)
 
+    def test_legacy_file_base_url_ignored_when_chat_id_present(self):
+        """Explicit chat_id always wins over legacy file_base_url extraction."""
+        resp = self.client.get(
+            "/system-prompt",
+            params={
+                "chat_id": "winner",
+                "file_base_url": "https://legacy.example.com/files/loser",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(f"{self.public_base_url}/files/winner", resp.text)
+        self.assertNotIn("loser", resp.text)
+
     def test_no_params_returns_unsubstituted_template(self):
+        """Legacy diagnostic path — pre-v4.0.0 external integrators (n8n, custom
+        HTTP callers) hit /system-prompt with no params and substitute the
+        placeholders themselves downstream. Substituting them server-side with a
+        fake "default" chat_id silently feeds those callers URLs they never
+        agreed to. Keep the placeholders intact when no chat_id is provided
+        from any source (header, query, or legacy file_base_url)."""
         resp = self.client.get("/system-prompt")
         self.assertEqual(resp.status_code, 200)
         body = resp.text
-        # Degraded diagnostic path — at least one placeholder still present
+        # At least one placeholder still present — the template wasn't
+        # substituted with a synthetic chat_id.
         self.assertTrue(
             any(ph in body for ph in ("{file_base_url}", "{archive_url}", "{chat_id}")),
             "Expected un-substituted placeholders in no-params response",
         )
+
+    # ------------------------------------------------------------------
+    # Tier 7 header priority — added in the "maximum native surface" refactor
+    # ------------------------------------------------------------------
+
+    def test_header_overrides_query_chat_id(self):
+        resp = self.client.get(
+            "/system-prompt",
+            params={"chat_id": "qry"},
+            headers={"X-Chat-Id": "hdr"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(f"{self.public_base_url}/files/hdr", resp.text)
+        self.assertNotIn("/files/qry", resp.text)
+
+    def test_openwebui_alias_works(self):
+        resp = self.client.get(
+            "/system-prompt",
+            headers={"X-OpenWebUI-Chat-Id": "alias-demo"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(f"{self.public_base_url}/files/alias-demo", resp.text)
+
+    def test_header_user_email_overrides_query(self):
+        # Patch the renderer itself so we can assert exactly which user_email
+        # the endpoint forwarded — without this, the assertion only proves
+        # that *some* prompt came back (DEFAULT_PUBLIC_SKILLS appears for
+        # every email), which would silently pass even if header priority
+        # broke and the query value won.
+        captured: dict = {}
+
+        async def _capture(chat_id, user_email):
+            captured["chat_id"] = chat_id
+            captured["user_email"] = user_email
+            return "stub-prompt-body"
+
+        with patch.object(app_module, "render_system_prompt", side_effect=_capture):
+            resp = self.client.get(
+                "/system-prompt",
+                params={"chat_id": "abc", "user_email": "ignored@example.com"},
+                headers={"X-User-Email": "winner@example.com"},
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(captured.get("user_email"), "winner@example.com")
 
     def test_content_type_is_text_plain(self):
         resp = self.client.get("/system-prompt", params={"chat_id": "abc"})
@@ -100,6 +174,17 @@ class SystemPromptEndpointContract(unittest.TestCase):
             resp.headers.get("content-type", "").startswith("text/plain"),
             f"Expected text/plain, got {resp.headers.get('content-type')}",
         )
+
+    def test_public_base_url_header_is_returned(self):
+        """The filter needs the public URL to build browser-facing preview/archive
+        links but its ORCHESTRATOR_URL Valve holds the internal URL. Server must
+        expose the public URL (from PUBLIC_BASE_URL env) on every /system-prompt
+        response so the filter can cache and use it in outlet()."""
+        resp = self.client.get("/system-prompt", params={"chat_id": "abc"})
+        self.assertEqual(resp.status_code, 200)
+        header = resp.headers.get("X-Public-Base-URL")
+        self.assertIsNotNone(header, "X-Public-Base-URL header missing")
+        self.assertEqual(header, self.public_base_url)
 
 
 if __name__ == "__main__":

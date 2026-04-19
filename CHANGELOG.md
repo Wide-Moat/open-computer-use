@@ -2,26 +2,93 @@
 
 ## v0.8.12.8 (unreleased)
 
+### Breaking Changes — filter v4.1.0, preview-mode surface narrowed
+- **`PREVIEW_MODE="artifact"` and `PREVIEW_MODE="both"` removed** (closes #43). `outlet()` no longer emits a fenced ```html `<iframe>` block — it only appends a markdown preview link. The extra html block was redundant *and* actively harmful: the `fix_preview_url_detection` frontend patch is guarded by `!htmlGroups.some(o=>o.html)`, so pre-emitting an html block from the filter caused the patch to skip detection, leaving the iframe rendered as a raw code fence in chat (the #43 symptom that had been reappearing since v3.2.0). Only `"button"` and `"off"` remain; `"button"` is the new default. Matches the internal prod v3.8.0 behaviour — the long-standing production reference was never using artifact mode to begin with.
+- **Migration**: saved `"artifact"` / `"both"` values now fail Pydantic validation on load. Re-seed Valves with `rm /app/backend/data/.computer-use-initialized` + container restart. `init.sh` will write the new `"button"` default.
+
+### Breaking Changes — single public URL on the server
+- **Server env renamed**: `FILE_SERVER_URL` → `PUBLIC_BASE_URL`. It's now the *single source of truth* for the browser-facing URL — baked into `/system-prompt` text and returned to the Open WebUI filter via the new `X-Public-Base-URL` response header. Rename in your `.env`.
+- **Tool Valve renamed**: `FILE_SERVER_URL` → `ORCHESTRATOR_URL` (same semantics — internal URL for MCP forwarding).
+- **Filter Valves changed**: `FILE_SERVER_URL` and `SYSTEM_PROMPT_URL` Valves *removed*. Replaced with a single `ORCHESTRATOR_URL` Valve (internal URL for server→server fetch). The filter reads the public URL from the server's response header — no more "two `FILE_SERVER_URL` settings that must match" footgun.
+- **Filter `_fetch_system_prompt()` signature**: now returns `tuple[public_url, prompt] | None` instead of `str | None`. `outlet()` reads `public_url` from the cache.
+- **`DOCKER_AI_UPLOAD_URL` env var renamed**: → `ORCHESTRATOR_URL` (consistent with the Valves).
+- **`docker-compose.webui.yml`**: dropped `MCP_SERVER_EXTERNAL_URL` and `extra_hosts: host.docker.internal:host-gateway`. The open-webui and computer-use-server containers now talk over the shared Compose default network using Docker service DNS (`http://computer-use-server:8081`).
+
+**Migration:**
+1. Rename `FILE_SERVER_URL=...` → `PUBLIC_BASE_URL=...` in your `.env`.
+2. If you run `docker-compose.webui.yml` / `init.sh`: the init script re-seeds Valves with the new names automatically — delete `/app/backend/data/.computer-use-initialized` and restart `open-webui` so it re-runs.
+3. If you configured Valves manually in the Open WebUI admin UI, re-enter them: tool `ORCHESTRATOR_URL`, filter `ORCHESTRATOR_URL`. The old `FILE_SERVER_URL` / `SYSTEM_PROMPT_URL` entries in the DB are ignored by the new Pydantic model and can be left in place.
+
 ### Features
-- **Filter v3.2.0 → v3.3.0 — simpler Valves**: the three boolean preview/archive Valves (`ENABLE_PREVIEW_ARTIFACT`, `ENABLE_PREVIEW_BUTTON`, `ENABLE_ARCHIVE_BUTTON`) collapse into two Literal Valves (`PREVIEW_MODE` ∈ `artifact | button | both | off`, `ARCHIVE_BUTTON` ∈ `on | off`). Existing deployments are migrated transparently by a Pydantic `@model_validator(mode="after")` — no manual action needed. The legacy fields remain visible in the Valves UI labeled DEPRECATED and will be removed in filter v4.0 / v0.9.0.
-- **Startup warning for default `FILE_SERVER_URL`** (closes #59): the orchestrator logs a one-time warning when the env var is still the hardcoded internal-DNS default (`http://computer-use-server:8081`), catching the #43-class "preview panel never appears" misconfiguration at boot rather than silently in production. Docs cross-link from the warning body.
+- **Filter v3.2.0 → v3.4.0 — simpler Valves**: the three boolean preview/archive Valves (`ENABLE_PREVIEW_ARTIFACT`, `ENABLE_PREVIEW_BUTTON`, `ENABLE_ARCHIVE_BUTTON`) were first collapsed in v3.3.0 into two Literal Valves (`PREVIEW_MODE` ∈ `artifact | button | both | off`, `ARCHIVE_BUTTON` ∈ `on | off`), then removed entirely in v3.4.0 along with their `@model_validator` bridge. Users upgrading straight from v3.2.0 revert to defaults — upgrade via v3.3.0 first if you need to preserve saved preferences.
+- **Filter v4.0.0 — public URL owned by server**: the filter no longer carries a public-URL Valve. The server's new `/system-prompt` response header `X-Public-Base-URL` delivers it to the filter per request; `_fetch_system_prompt()` caches the (public_url, prompt) pair so `outlet()` can decorate with browser-facing preview/archive links without its own Valve.
+- **Startup warning for default `PUBLIC_BASE_URL`** (closes #59): the orchestrator logs a one-time warning when the env var is still the hardcoded internal-DNS default (`http://computer-use-server:8081`), catching the #43-class "preview panel never appears" misconfiguration at boot rather than silently in production.
 
 ### Fixes
 - **Filter — browser-only sessions got no preview**: `outlet()` previously required a `/files/{chat_id}/…` URL in the assistant message to inject preview decorations, so pure browser sessions (playwright / chromium with no downloadable file) saw nothing. Detection now also fires on a `<details type="tool_calls">` block that references a browser tool. Scoped to the tag — free-text keyword mentions never false-trigger. Archive button stays gated on file URLs (unchanged).
 - **sub-agent `max_turns` default inconsistency**: the Open WebUI tool's `sub_agent(max_turns=...)` signature defaulted to 50, silently overriding the server's 25 default on every call. Unified to 25 alongside a sweep of stale doc references (docs/SKILLS.md, skills/public/sub-agent/references/usage.md).
 
 ### Tests
-- **Filter — `BrowserToolTrigger` class** (10 tests): exercises the new browser-tool trigger — every keyword, html-escaped `arguments="…"` (production delivery form), free-text scoping, non-tool_calls `<details>` blocks, empty content, iframe injection, preview button injection, archive button still gated on files, idempotency across repeated `outlet()` calls.
-- **Filter — `MigrationFromV320` class** (12 tests): covers every legacy → new mapping (artifact/button combinations, archive), fresh deploys, and the critical "explicit new value wins over stale legacy" invariant that protects users who re-save their Valves after upgrade.
+- **Filter — `BrowserToolTrigger` class** (10 tests): exercises the new browser-tool trigger — every keyword, html-escaped `arguments="…"` (production delivery form), free-text scoping, non-tool_calls `<details>` blocks, empty content, preview-button injection, archive button still gated on files, invariant that no fenced-html or raw iframe is ever emitted, idempotency across repeated `outlet()` calls.
+- **Filter — legacy-value guard**: `test_legacy_preview_mode_values_rejected_on_construction` asserts that saved `"artifact"` / `"both"` Valve values from v3.x / v4.0.0 DBs fail Pydantic validation loudly instead of silently falling through.
 - **Server — `test_startup_warnings.py`** (3 tests): env unset → warn; custom URL → silent; explicit default literal → warn.
 
 ### Documentation
-- `docs/openwebui-filter.md`: v3.3.0 Valves reference, "Preview UX: which PREVIEW_MODE fits you?", "Upgrading from v3.2.0" migration section.
+- `docs/openwebui-filter.md`: Valves reference updated for v3.4.0 (legacy rows removed), "Preview UX: which PREVIEW_MODE fits you?" retained.
 - `openwebui/functions/README.md` Valve table refreshed.
 - `openwebui/init.sh` bootstrap payload updated to new schema field names so fresh deployments start with new names in the DB.
 
+### Features — maximum MCP-native system-prompt surface (six tiers)
+
+The same per-session system prompt is now delivered through six channels backed by a single cached renderer (`computer-use-server/system_prompt.py::render_system_prompt`, 60s TTL per `(chat_id, user_email)`). Redundancy is by design — a client may skip any one channel and still get the prompt somewhere. Complete map at `docs/system-prompt.md`.
+
+1. **Tool descriptions** — `bash_tool` + `view` docstrings point at `/home/assistant/README.md` as a recovery hint (`tools/list` surface).
+2. **`/home/assistant/README.md` in sandbox** — rendered on container creation via `container.put_archive`, survives container removals via the `chat-{chat_id}-workspace` volume.
+3. **Static `InitializeResult.instructions=` hint** — one-liner pointing at README + `resources/list` for clients that render the initialize-result field directly.
+4. **Dynamic `InitializeResult.instructions`** — per-request content via `current_instructions` ContextVar + `_DynamicInstructionsServer` subclass swapped onto `mcp._mcp_server`. Works thanks to `stateless_http=True` + per-request `create_initialization_options()`.
+5. **`resources/list` + `resources/read`** — uploaded files surfaced as `FunctionResource` per chat, URI shape `file://uploads/{chat_id}/{url-encoded rel_path}`. Registered on container creation AND on `POST /api/uploads` so new uploads appear without client reconnect. Upload itself stays on HTTP (MCP has no upload primitive).
+6. **`GET /system-prompt` HTTP endpoint** — backward compat for the Open WebUI filter. Now reads `X-Chat-Id` / `X-User-Email` (plus `X-OpenWebUI-*` aliases) with header priority over query params; delegates to the shared renderer; `X-Public-Base-URL` response header preserved.
+
+All four "dynamic" tiers (2, 4, 5, 6) hit the same `render_system_prompt` cache — one render per `(chat_id, user_email)` per minute regardless of fan-out.
+
+**Deliberately NOT using `@mcp.prompt("system")`.** We considered exposing the prompt via the MCP `prompts/*` primitive (OpenAI Agents SDK's documented fallback `server.get_prompt(...)`), but the 2025-11-25 spec restricts `PromptMessage.role` to `{user, assistant}` and positions prompts as user-controlled slash commands. Naming a prompt `"system"` clashes with both, and `InitializeResult.instructions` is the canonical field for server-supplied instructions. Tier 4 covers that canonically — a `prompts/get("system")` entry would have been off-spec duplication.
+
+Duplication analysis (per-scenario): Open WebUI through LiteLLM sees the prompt **once** via the filter's `inlet()` inject — `InitializeResult.instructions` is not forwarded by LiteLLM. MCP-native clients (Agents SDK, Inspector, Claude Desktop) see it **once** via `InitializeResult.instructions`. In both paths a second copy appears only if the model follows the Tier 1 recovery-nudge and calls `view /home/assistant/README.md`. Worst case: 2 copies; typical case: 1. The nudge stays to help pathological clients that strip system prompts — see `docs/system-prompt.md` for tightening options.
+
+Private-API touchpoints are pinned by tests (`tests/orchestrator/test_dynamic_instructions.py`, `test_mcp_resources.py`) and documented at their call sites with SDK line references; when bumping `mcp` minor, re-run these tests first.
+
+### Reliability — post-review hardening (PR #65 follow-ups)
+
+After independent review of the six-tier surface a series of regression and
+silent-failure fixes landed. Each one closed a real path that was broken in
+production *or* in the upgrade story:
+
+- **`/mcp` returned HTTP 500 in production builds**. Dockerfile didn't `COPY` `mcp_resources.py` and `uploads.py`, the lifespan caught the resulting `ImportError` and yielded WITHOUT calling `session_manager.run()`, and from then on every MCP call hit `Task group is not initialized`. uvicorn's default error path returned a body-less 500 with no traceback — the failure was 100% silent server-side and surfaced only as empty tool output in the chat. Three changes prevent recurrence:
+  - `Dockerfile` now copies the missing modules.
+  - Lifespan no longer swallows `ImportError` — boot crashes loud if anything required is missing, with the matching dead `try/except` in `_init_mcp()` and the module-level `get_mcp_app` import removed for a single failure mode.
+  - New CI job `Smoke — POST /mcp returns 200` builds the server image, boots it, and POSTs an `initialize` request. Catches this exact regression in one run.
+- **Open WebUI tool now classifies every failure mode loudly**. `openwebui/tools/computer_use_tools.py` previously returned `"[No output]"` on empty results and a single `"[Error] MCP call failed"` for any exception, often without firing the `status="error"` SSE event — the chat tool-call collapsible looked green and empty, and the AI concluded the tool was broken. New behaviour:
+  - Pre-flight probes both `GET /health` AND `POST /mcp initialize` (the second is what catches the silent 500 above). 30s cache, 3s timeout.
+  - Tiered exception classes: `[CONFIG ERROR]`, `[NETWORK ERROR]`, `[MCP TRANSPORT ERROR]`, `[UNEXPECTED ERROR]`, `[TOOL ERROR]`.
+  - Empty-result disambiguation: `"[Command produced no output. Exit was successful — this is not an error.]"` instead of `"[No output]"`. Phrasing is deliberate — AI models read the string literally.
+  - `Tools._run_tool` consolidates the five per-tool wrappers; `_looks_like_error()` replaces five drifted heuristics so `view`/`str_replace`/`create_file` now report errors with the same fidelity as `bash_tool`.
+- **Filter `outlet()` no longer drops preview/archive buttons silently** when the inlet cache is cold (Open WebUI restart between inlet and outlet). It re-fetches `/system-prompt` to recover the public URL — same `_fetch_system_prompt` stale-cache fallback path, so a truly down server still skips decoration ("broken links worse than no links" invariant preserved).
+- **`/system-prompt` legacy n8n contract restored**. PR #65 had auto-substituted `chat_id="default"` when no chat_id was supplied; now it returns the template with `{file_base_url}` / `{archive_url}` / `{chat_id}` placeholders intact when nothing is supplied, matching pre-v4.0.0 behaviour for external integrators that do their own substitution.
+- **Per-`(chat_id, user_email)` render lock**. Slow `skill_manager` providers no longer serialize all MCP requests across all chats — only the matching key blocks.
+- **Atomic resource sync window**. `mcp_resources.sync_chat_resources` builds the new resource set outside the lock and swaps in one synchronous critical section; `asyncio.Lock` swapped to `threading.Lock` so the worker-thread `asyncio.run()` path actually serializes against the request-loop path.
+- **Defensive shape assertions** on `mcp._mcp_server` and the lowlevel `Server` before the Tier 4 class swap. SDK rename now fails at import with a pointer to re-pin, instead of silently dropping Tier 4 to static instructions.
+- **`mcp` SDK pinned** to `1.27.0` with a comment listing the three private-API touchpoints the pin guards.
+- **`docker_manager.put_archive` checked** for `False` return — README write failures surface as exceptions instead of false-success log lines.
+- **Sanitization at boundaries**: `sync_chat_resources(chat_id)` calls `sanitize_chat_id` so case variants (`"Chat"` vs `"chat"`) share the same stale-uri set; `/system-prompt` does the same on header/query chat_id.
+
+### CI
+
+- New job `Pytest — orchestrator` runs `pytest tests/orchestrator/` (97 tests) on every push. Existed in repo, never wired to CI.
+- New job `Smoke — POST /mcp returns 200` boots the server image and runs `tests/test-mcp-endpoint-live.sh` — the smoke that would have caught the silent 500 bug in one CI run.
+
 ### Dependencies
 - `claude-code` pinned to `2.1.114` in the sandbox `Dockerfile` for reproducible builds. `latest` still available as an override.
+- `mcp` Python SDK pinned to `1.27.0` in `computer-use-server/requirements.txt` (was `>=1.0.0`). Required because the orchestrator uses three private attributes (`mcp._mcp_server`, `mcp._resource_manager._resources`, `mcp._mcp_server.request_context.session`) that have no public equivalent. Tests `test_dynamic_instructions.py` and `test_mcp_resources.py` pin the contract — re-run them on every minor bump.
 
 ## v0.8.12.7 (2026-04-13)
 
