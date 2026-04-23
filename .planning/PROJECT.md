@@ -24,34 +24,43 @@ A single user can pull one image, wire it into Open WebUI, and get real Computer
 - ✓ CodeQL + Dependabot security baseline, Pillow 12 + CVE bumps
 - ✓ Test suites: Docker image verification, project structure, no-corporate guard, pytest deps guard, filter fixes (v3.0.3)
 - ✓ Sub-agent cost guardrails: COSTLY markings, `max_turns=25`, scope limited to code-only tasks
-- ✓ System prompt extraction: `GET /system-prompt` returns fully-baked prompt (URLs + `<available_skills>` per user with default-skills fallback); `computer_link_filter.py` is a thin HTTP client with per-(chat, user) LRU cache and stale-cache fallback. Filter body shrank from ~636 to ≤ 250 lines.
+- ✓ System prompt extraction: `GET /system-prompt` returns fully-baked prompt (URLs + `<available_skills>` per user with default-skills fallback); `computer_link_filter.py` is a thin HTTP client with per-(chat, user) LRU cache and stale-cache fallback. Filter body shrank from ~636 to ≤ 250 lines. (Phase 1, v0.8.12.7)
+- ✓ Preview filter UX: `outlet()` emits inline preview iframe artifact by default plus opt-in markdown button; every Valve documented in-file and in `docs/openwebui-filter.md` with a drift-check test. Browser-only sessions also get previews via `<details type="tool_calls">` detection. (Phase 2, v0.8.12.8; later hardened in v0.8.12.8 "filter v4.1.0" release that dropped `"artifact"`/`"both"` preview modes after they were shown to break the `fix_preview_url_detection` frontend patch.)
+- ✓ Claude Code gateway compatibility: sandbox containers route Claude Code traffic to the operator-configured Anthropic-compatible destination (public Anthropic / LiteLLM / Azure / Bedrock) via 10 optional env vars, with zero-config falling back to stock `/login`; `sub_agent` MCP tool accepts direct model IDs in addition to `sonnet`/`opus`/`haiku` aliases. Code shipped on `main` in commit `38347fd` (2026-04-12) but was never cut as a dedicated `v0.8.12.9` release — folded into `v0.9.1.0`. (Phase 3, see `docs/claude-code-gateway.md`)
+- ✓ Maximum MCP-native system-prompt surface (6 tiers): commit `8cd426d`.
+- ✓ Single public URL on server: `FILE_SERVER_URL` → `PUBLIC_BASE_URL`, delivered to the filter via the `X-Public-Base-URL` response header on `/system-prompt`; filter no longer carries a public-URL Valve. Commit `fb079a4`.
 
 ### Active
 
 <!-- In this milestone. -->
 
-## Current Milestone: v0.8.12.8 Preview Filter UX
+## Current Milestone: v0.9.1.0 Open WebUI 0.9 Compatibility
 
-**Goal:** Expose the already-shipped `/preview/{chat_id}` SPA to stock Open WebUI users by teaching the filter's `outlet()` to emit an inline iframe artifact (default) and an opt-in markdown preview button, while preserving every v3.1.0 correctness invariant and documenting all Valves in one authoritative place.
+**Goal:** Upgrade the Open WebUI base from `0.8.12` to the latest upstream (`0.9.1`, released 2026-04-21), rewrite every patch in `openwebui/patches/` against the new upstream frontend/backend shape, verify all Tool/Filter behaviour still holds end-to-end, bump our version to `v0.9.1.0` (first of the new `0.9.X.Y` series), and document which Open WebUI version this release is pinned to.
 
 **Target features:**
 
-- Inline iframe preview artifact in assistant messages (`ENABLE_PREVIEW_ARTIFACT=True` default — project's opinionated UX)
-- Opt-in markdown preview button for stock Open WebUI without artifact rendering (`ENABLE_PREVIEW_BUTTON=False` default)
-- Authoritative Valve reference: in-file `VALVES:` docstring block + external docs page + drift-check test
+- Base image bump: `ghcr.io/open-webui/open-webui:0.9.1` in `openwebui/Dockerfile` and `docker-compose.webui.yml` defaults
+- All 8 patches in `openwebui/patches/` rewritten against 0.9.1 upstream — 4 currently active (`fix_artifacts_auto_show`, `fix_tool_loop_errors`, `fix_preview_url_detection`, `fix_large_tool_results`) and 4 currently commented out (`fix_large_tool_args`, `fix_attached_files_position`, `fix_skip_embedding_chat_files`, `fix_skip_rag_files_native_fc`) — per explicit decision "rewrite every patch" (2026-04-23)
+- End-to-end verification: image builds `--platform linux/amd64`, `init.sh` seeds Valves on fresh DB, filter + tool register without errors, preview/iframe/artifact flows still work against 0.9.x frontend
+- Release `v0.9.1.0` — first release on the new `0.9.X.Y` series; CHANGELOG documents upstream compat pinning (`ghcr.io/open-webui/open-webui:0.9.1`) and rolls in the Phase 3 Claude Code gateway work that landed post-v0.8.12.8 but was never cut as `v0.8.12.9`
 
-**Why now:** community PR #42 by `rahxam` surfaced real demand for this UX; that PR targets v3.0.2 and cannot be mechanically rebased onto v3.1.0 without losing the hardening done in Phase 1 (`role == "assistant"` guard, `isinstance(content, str)` guard, `chat_id`-scoped `file_url_pattern`, `rstrip("/")` base). We re-implement the idea on top of v3.1.0 and credit the author.
+**Why now:** upstream shipped `0.9.0` + `0.9.1` on 2026-04-21 (minor-version bump — first since `0.8.0` in 2026-03). Users on stock `0.9.x` installs currently can't use our filter/patches because the Dockerfile default still pins `0.8.12`. Not upgrading means diverging further every week.
 
-**Context:** server endpoint `/preview/{chat_id}` already exists (`computer-use-server/app.py:1102`) — this milestone is pure filter + docs work, no server changes.
+**Context:**
+- `0.8.12` → `0.9.1` is a minor bump — upstream frontend chunks are freshly compiled (new minified variable names; every Svelte-chunk patch regex will miss on first run) and `middleware.py` internals may have shifted. Treat as "rewrite every patch", not "rebase".
+- Phase 3 (Claude Code Gateway Compatibility, `v0.8.12.9`) never got its own release commit / CHANGELOG entry — the code shipped on `main` in commit `38347fd` but no `chore: release v0.8.12.9` follow-up was made. Decision (explicit, 2026-04-23): fold Phase 3 into the `v0.9.1.0` CHANGELOG instead of back-releasing `v0.8.12.9`.
+- Versioning rule from `CLAUDE.md`: `v0.8.X.Y` → the first three segments track Open WebUI base. Upstream minor bump (`0.8` → `0.9`) ⇒ our version becomes `v0.9.1.0` (reset `Y=0`, `X` = upstream minor, first three track `0.9.1`).
 
 ### Out of Scope
 
 <!-- For this milestone. Each with a reason. -->
 
-- Preview SPA + `<details>` migration logic from the internal filter chain v3.3–v3.5 — not applicable to current community UI surface.
-- Browser-keyword heuristic for preview injection (internal v3.8 bug-fix) — community has no preview injection to protect.
-- Shipping a default external skill provider (e.g. running a settings-wrapper service in the image) — out of scope; community ships with provider URL empty, and the server falls back to default public skills. Operators who want per-user skills wire their own provider via env.
-- Russian-language skill triggers and i18n for preview UI — community is English-only per `CLAUDE.md`.
+- **Back-releasing `v0.8.12.9`** — Phase 3 gateway code is already on `main` since commit `38347fd`; cutting a retro patch release now just bifurcates the CHANGELOG. Fold into `v0.9.1.0` instead.
+- **Forking Open WebUI as a git submodule / maintaining a true patch-set** — tempting for a minor bump, but a separate architectural decision. Sticks with the runtime-patch strategy for now; revisit if `0.10.x` bumps get painful again.
+- **Upgrading past `0.9.1`** — `0.9.1` is the latest tag at milestone start (2026-04-23). If upstream ships `0.9.2` mid-milestone we stay on `0.9.1` to avoid a moving target. Chase the new tag in the next milestone.
+- **Porting v0.9.x new-upstream features** (whatever Open WebUI added in `0.9.0`/`0.9.1`) into our Tool/Filter — separate work; this milestone is pure compatibility, not feature intake.
+- Russian-language skill triggers and i18n — repo is English-only per `CLAUDE.md`.
 - Corporate CA cert bundle, corporate peer-matching skill, NTLM/Kerberos overlay — corporate specifics.
 - Retroactive bump of bundled `claude-code` CLI — image pulls `@latest`, no pinning needed.
 
@@ -80,6 +89,9 @@ A single user can pull one image, wire it into Open WebUI, and get real Computer
 | Per-user skills via optional external provider, graceful fallback built-in | Community ships without `MCP_TOKENS_URL`; server returns default public skills in that case. Operators who self-host a provider get per-user `<available_skills>` for free. Same call path either way. | ✅ Shipped (Phase 1) |
 | Filter caches `(chat_id, user_email) → prompt` in an LRU (5-min TTL, 100 entries) with stale-cache fallback on fetch failure | Serving a slightly-stale prompt is better UX than silently disabling Computer Use. Skip-injection remains the fallback only when cache is cold. Matches the internal v3.8.0 behaviour. Cache key includes `user_email` to prevent one user's baked `<available_skills>` from leaking to another user on the same `chat_id`. | ✅ Shipped (Phase 1) |
 | Keep `file_base_url` / `archive_url` legacy query params on the endpoint | Copied verbatim from the internal implementation for forward/backward compatibility with existing deployments; cheap to carry. | ✅ Shipped (Phase 1) |
+| Fold v0.8.12.9 (Phase 3 gateway) into v0.9.1.0 instead of cutting a back-release | Gateway code has been on `main` since 2026-04-12; a separate `v0.8.12.9` tag now just bifurcates the CHANGELOG and adds a release-notes page nobody will read. User explicitly confirmed on 2026-04-23. | 🚧 v0.9.1.0 in progress |
+| Rewrite every patch (all 8, including the 4 commented-out) against v0.9.1 upstream rather than try to rebase regexes | Minor-version upstream bumps recompile the Svelte frontend (new minified variable names) and typically shuffle `middleware.py`. Rebase-by-regex would produce silent no-ops that only show as runtime bugs. Treat as clean-slate rewrite, test each patch in isolation against a fresh v0.9.1 image. User explicitly confirmed on 2026-04-23. | 🚧 v0.9.1.0 in progress |
+| Versioning bump `v0.8.12.8` → `v0.9.1.0` (not `v0.8.13.0` or `v0.9.0.0`) | `CLAUDE.md` rule: first three segments track upstream Open WebUI. Latest upstream is `0.9.1`, so `0.9.1.Y` is the series; `Y=0` because this is the first release of the series. Skipping `0.9.0.x` entirely is fine — upstream released `0.9.0` + `0.9.1` on the same day (2026-04-21). | 🚧 v0.9.1.0 in progress |
 
 ## Evolution
 
@@ -99,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-12 — milestone v0.8.12.8 (Preview Filter UX) started*
+*Last updated: 2026-04-23 — milestone v0.9.1.0 (Open WebUI 0.9 Compatibility) started*

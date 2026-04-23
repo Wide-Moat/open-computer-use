@@ -29,7 +29,7 @@
     "code_review": true,
     "code_review_depth": "standard",
     "use_worktrees": false,
-    "_auto_chain_active": false
+    "_auto_chain_active": true
   },
   "hooks": {
     "context_warnings": true

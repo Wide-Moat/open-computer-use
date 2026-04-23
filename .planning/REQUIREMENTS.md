@@ -46,6 +46,18 @@ Requirements for current milestone. Each maps to roadmap phases.
 - [ ] **GATEWAY-11**: README.md "## Open WebUI Integration" section AND docs/INSTALL.md .env configuration table both grow a one-sentence cross-link pointing to docs/claude-code-gateway.md for operators who want to route Claude Code through a gateway. No other README / INSTALL edits.
 - [ ] **GATEWAY-12**: python -m pytest tests/ -v passes fully green inside python:3.13-slim with zero new warnings. grep -rn "ANTHROPIC_API_KEY" computer-use-server/ reports zero new matches compared to the pre-phase baseline (we standardise on ANTHROPIC_AUTH_TOKEN). ./tests/test-docker-image.sh, ./tests/test-no-corporate.sh, ./tests/test-project-structure.sh remain green after docker build --platform linux/amd64 -t open-computer-use:latest ..
 
+### Open WebUI 0.9 Compatibility — Upstream Intake (v0.9.1.0)
+
+- [x] **OWUI-INTAKE-01**: Upstream `open-webui/open-webui@v0.9.1` source is checked out at `~/src/open-webui-upstream/` (OUTSIDE this repo). `git -C ~/src/open-webui-upstream show v0.9.1:package.json` reports `"version": "0.9.1"`. `git -C ~/src/open-webui-upstream show v0.8.12:package.json` reports `"version": "0.8.12"`. Both tags are reachable in `git tag --list`.
+- [x] **OWUI-INTAKE-02**: `.planning/phases/04-owui-intake/04-INVENTORY.md` exists and, for each of the 8 patches in `openwebui/patches/`, carries a section with: (a) upstream file path(s) the patch targets, (b) a `v0.8.12` source excerpt at the anchor, (c) a matching `v0.9.1` source excerpt OR a "NOT FOUND" note with a reproducible grep command as evidence, (d) a 1-sentence rewrite strategy (rewrite regex / rewrite entirely / drop as obsolete).
+- [x] **OWUI-INTAKE-03**: For each of the 4 currently-commented-out patches (`fix_large_tool_args`, `fix_attached_files_position`, `fix_skip_embedding_chat_files`, `fix_skip_rag_files_native_fc`), the inventory explicitly classifies the patch as still-valuable-at-0.9.1 (rewrite) or obsolete-at-0.9.1 (drop + document). Classification is based on the research's obsolescence criteria: anchor existence AND whether the underlying pain point still applies at v0.9.1.
+
+### Open WebUI 0.9 Compatibility — Frontend Patches (v0.9.1.0)
+
+- [x] **OWUI-FE-01**: `openwebui/patches/fix_artifacts_auto_show.py` applied to a freshly-built `ghcr.io/open-webui/open-webui:0.9.1` image succeeds (exit 0, `PATCHED!` line in build log, non-zero diff in target chunk), and live UI verification shows the Artifacts panel auto-opens when an assistant message contains an HTML code block.
+- [x] **OWUI-FE-02**: `openwebui/patches/fix_preview_url_detection.py` applied to the same image succeeds, and live UI verification shows the preview iframe renders inline when a message contains a `{base}/preview/{chat_id}` or `{base}/files/{chat_id}/...` URL.
+- [x] **OWUI-FE-03**: Both patches are idempotent (re-running on an already-patched chunk prints `ALREADY PATCHED` and exits 0) AND fail loudly (`sys.exit(1)` with explicit `ERROR:` message on stderr) if the anchor regex does not match — verified by mutating the target chunk and re-running.
+
 ## Shipped Requirements (previous milestones)
 
 ### v0.8.12.7 System Prompt Extraction (shipped 2026-04-12)
@@ -127,12 +139,20 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | GATEWAY-10 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-11 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-12 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
+| OWUI-INTAKE-01 | Phase 4 — Upstream intake and patch inventory (v0.9.1.0) | Complete |
+| OWUI-INTAKE-02 | Phase 4 — Upstream intake and patch inventory (v0.9.1.0) | Complete |
+| OWUI-INTAKE-03 | Phase 4 — Upstream intake and patch inventory (v0.9.1.0) | Complete |
+| OWUI-FE-01 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
+| OWUI-FE-02 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
+| OWUI-FE-03 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
 - v0.8.12.8 requirements: 12 / 12 mapped ✓
 - v0.8.12.9 requirements: 12 / 12 mapped
+- v0.9.1.0 Phase 4 requirements: 3 / 3 mapped ✓
+- v0.9.1.0 Phase 5 requirements: 3 / 3 mapped ✓
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-12 — milestone v0.8.12.9 requirements added*
+*Last updated: 2026-04-24 — OWUI-FE-01/02/03 minted for Phase 5 (milestone v0.9.1.0)*

@@ -3,8 +3,9 @@
 ## Milestones
 
 - ✅ **v0.8.12.7 — System Prompt Extraction** (Phase 1, shipped 2026-04-12)
-- ✅ **v0.8.12.8 — Preview Filter UX** (Phase 2, shipped 2026-04-12)
-- 🚧 **v0.8.12.9 — Claude Code Gateway Compatibility** (Phase 3, planned)
+- ✅ **v0.8.12.8 — Preview Filter UX** (Phase 2, shipped 2026-04-12; v4.1.0 follow-up 2026-04-19)
+- ✅ **v0.8.12.9 — Claude Code Gateway Compatibility** (Phase 3, code shipped 2026-04-12; rolled into v0.9.1.0 release)
+- 🚧 **v0.9.1.0 — Open WebUI 0.9 Compatibility** (Phases 4–7, planned 2026-04-23)
 
 ## Phases
 
@@ -20,11 +21,20 @@
 
 - [x] **Phase 2: Preview Filter UX** — Added three new Valves to `computer_link_filter.py`, extended `outlet()` to emit preview iframe (default) and preview button (opt-in), bumped filter 3.1.0 → 3.2.0 (commit `b08d472`), documented every Valve in a `VALVES:` docstring block + `docs/openwebui-filter.md` (+ troubleshooting section in `d79f730`), proved both the feature and the existing behaviour with pytest in Docker.
 
-### 🚧 v0.8.12.9 — Claude Code Gateway Compatibility (Planned)
+### ✅ v0.8.12.9 — Claude Code Gateway Compatibility (Code shipped, no release cut)
 
 **Milestone Goal:** The Claude Code sub-agent running inside each sandbox container routes its API calls to whatever Anthropic-compatible destination the operator configured (public Anthropic, LiteLLM proxy, Azure, Bedrock-via-LiteLLM, etc.), with optional model-ID and prompt-caching/beta overrides — all without ever breaking the zero-config `/login` path. Fixes issue #40; inspired by PR #41 but rewritten with tests and without the deploy-specific churn.
 
-- [ ] **Phase 3: Claude Code Gateway Compatibility** — Fix `context_vars.py:14` default so the `ANTHROPIC_BASE_URL` env fallback actually fires in `_create_container`; pass through the ten official Claude Code env vars (`ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `DISABLE_PROMPT_CACHING{,_SONNET,_OPUS,_HAIKU}`) only when set; teach `sub_agent` MCP tool to accept direct model IDs in addition to `sonnet`/`opus` aliases; add pytest coverage for the three operator paths (no vars → stock `/login`; auth-only → public Anthropic; auth + base URL → custom gateway); document the gateway path in `docs/`.
+- [x] **Phase 3: Claude Code Gateway Compatibility** — All 3 plans shipped on `main` in 2026-04-12 via commit `38347fd`. Release not cut separately; per 2026-04-23 decision, folded into the v0.9.1.0 CHANGELOG.
+
+### 🚧 v0.9.1.0 — Open WebUI 0.9 Compatibility (Planned 2026-04-23)
+
+**Milestone Goal:** Upgrade the Open WebUI base image from `ghcr.io/open-webui/open-webui:0.8.12` to `:0.9.1` (latest upstream at milestone start). Rewrite every patch in `openwebui/patches/` against the new upstream frontend (freshly minified Svelte chunks) and backend (possibly reshuffled `middleware.py`). Re-enable the 4 currently commented-out patches in the Dockerfile if they still make sense at 0.9.1. Verify Tool + Filter still load, register, and seed Valves without errors. Ship `v0.9.1.0` as the first release of the new `0.9.X.Y` series; CHANGELOG rolls in the previously-unreleased Phase 3 gateway work.
+
+- [ ] **Phase 4: Upstream intake and patch inventory** — Clone `open-webui/open-webui@v0.9.1` source, diff its frontend chunks and `middleware.py` against `v0.8.12`, produce a per-patch impact matrix documenting where each of the 8 patches' anchor patterns moved / disappeared / were renamed.
+- [ ] **Phase 5: Rewrite frontend patches against v0.9.1** — Rewrite `fix_artifacts_auto_show.py` and `fix_preview_url_detection.py` against the v0.9.1 compiled Svelte. Each patch must detect the new minified identifiers (regexes tightened), stay idempotent (already-patched markers), fail loudly if anchor not found. Smoke-test in a running v0.9.1 container.
+- [ ] **Phase 6: Rewrite backend patches against v0.9.1** — Rewrite `fix_tool_loop_errors.py` and `fix_large_tool_results.py` against v0.9.1 `middleware.py`. Rewrite the 4 currently-commented patches (`fix_large_tool_args`, `fix_attached_files_position`, `fix_skip_embedding_chat_files`, `fix_skip_rag_files_native_fc`) if their target code still exists at 0.9.1 (drop if obsolete, document in REQUIREMENTS.md Out of Scope). Re-enable verified patches in `openwebui/Dockerfile`.
+- [ ] **Phase 7: Release v0.9.1.0** — Bump defaults (`OPENWEBUI_VERSION=0.9.1` in compose + Dockerfile ARG). Run all three test scripts + pytest green. Update CHANGELOG.md with a `v0.9.1.0` entry that (a) announces the base bump and patch rewrites, (b) rolls in Phase 3 Claude Code gateway work, (c) documents the exact upstream tag (`ghcr.io/open-webui/open-webui:0.9.1`) as the supported base. Update README compat line. Commit `chore: release v0.9.1.0`. Do NOT tag (user batches releases).
 
 ## Phase Details
 
@@ -77,13 +87,77 @@ Plans:
 - [x] 03-02-PLAN.md — Tests (three-path env-injection matrix, sub_agent model resolution, ANTHROPIC_CUSTOM_HEADERS regression guard) — Wave 2
 - [x] 03-03-PLAN.md — Config and docs (docker-compose.yml env wiring, .env.example gateway-overrides block, new docs/claude-code-gateway.md, README/INSTALL cross-links) — Wave 2
 
+### Phase 4: Upstream intake and patch inventory (v0.9.1.0)
+
+**Goal:** Produce a hard-evidence inventory of what changed between Open WebUI `v0.8.12` and `v0.9.1` at exactly the anchor points our 8 patches touch, so Phases 5 and 6 have a concrete map (not guesses) for where to rewrite each patch.
+**Depends on:** Nothing. Pure read-only investigation.
+**Requirements:** OWUI-INTAKE-01 (source cloned), OWUI-INTAKE-02 (per-patch impact matrix written), OWUI-INTAKE-03 (obsolete patches flagged)
+**Success Criteria:** (observable)
+  1. `open-webui/open-webui@v0.9.1` source checked out at a known path (outside this repo), with its `package.json` confirming the `0.9.1` tag.
+  2. `.planning/phases/04-owui-intake/04-INVENTORY.md` exists and, for each of the 8 patches, contains: (a) the exact upstream file(s) each patch modifies, (b) a code excerpt at the `v0.8.12` anchor, (c) the matching excerpt at `v0.9.1` (or a "not found" note with evidence), (d) a 1-sentence rewrite-strategy (rename regex / rewrite entirely / drop as obsolete).
+  3. For the 4 currently-commented patches, the inventory also classifies: still-valuable-at-0.9.1 (rewrite), obsolete-at-0.9.1 (drop + document).
+  4. No code changes in this phase. No image rebuild.
+
+**Plans:** 1 plan
+
+Plans:
+- [x] 04-01-PLAN.md — Mint OWUI-INTAKE-01/02/03, clone upstream open-webui, capture per-patch anchors at v0.8.12 and v0.9.1, and write 04-INVENTORY.md with verdicts (read-only investigation) — Wave 1
+
+### Phase 5: Rewrite frontend patches against v0.9.1 (v0.9.1.0)
+
+**Goal:** `fix_artifacts_auto_show.py` and `fix_preview_url_detection.py` apply cleanly against a v0.9.1 image and produce the same observable user-facing behaviour we ship on `v0.8.12`.
+**Depends on:** Phase 4 (needs the inventory to know what to rewrite).
+**Requirements:** OWUI-FE-01 (artifacts auto-show patch applied + verified), OWUI-FE-02 (preview URL detection patch applied + verified), OWUI-FE-03 (both patches idempotent + loud-fail on anchor-not-found)
+**Success Criteria:** (observable)
+  1. `docker build --platform linux/amd64 --build-arg OPENWEBUI_VERSION=0.9.1 …` completes with no patch failing its "already patched" check on a fresh build and with no silent no-op.
+  2. Live UI verification: open the built image, open a chat, ask for an HTML artifact — the Artifacts panel auto-opens; ask for a file preview — the preview iframe renders. Screenshots captured to `.planning/phases/05-frontend-patches/` as evidence.
+  3. Both patches emit a visible error (non-zero exit) if their anchor regex fails to match — caught by re-running the patch script on an already-patched chunk (must see "ALREADY PATCHED" markers, not "MATCH NOT FOUND").
+  4. `./tests/test-docker-image.sh` passes for the `v0.9.1` image.
+
+**Plans:** 2 plans
+
+Plans:
+- [x] 05-01-PLAN.md — Mint OWUI-FE-01/02/03, rewrite both frontend patches with idempotency markers + fail-loud exits, verify docker build + test-docker-image.sh on v0.9.1 (Wave 1, autonomous)
+- [ ] 05-02-PLAN.md — Live-UI smoke test: launch built v0.9.1 image, capture screenshots of Artifacts panel auto-open and preview iframe render (Wave 2, human UAT required)
+
+### Phase 6: Rewrite backend patches against v0.9.1 (v0.9.1.0)
+
+**Goal:** All middleware/Python patches apply cleanly and preserve their behaviour on v0.9.1. The 4 currently-commented patches each get a verdict: rewrite + enable, or drop + document in REQUIREMENTS.md Out of Scope.
+**Depends on:** Phase 4 (inventory).
+**Requirements:** OWUI-BE-01..OWUI-BE-06 (one per patch — `tool_loop_errors`, `large_tool_results`, `large_tool_args`, `attached_files_position`, `skip_embedding_chat_files`, `skip_rag_files_native_fc`)
+**Success Criteria:** (observable)
+  1. Each of the 6 python-target patches has a verdict in `.planning/phases/06-backend-patches/06-VERDICT.md`: rewritten+enabled, rewritten+optional, or dropped-obsolete (with reason).
+  2. For each rewritten+enabled patch: pytest coverage (existing or new) passes against a python:3.13-slim + patched `middleware.py`; the patch is uncommented in `openwebui/Dockerfile`.
+  3. For each dropped patch: `openwebui/patches/` file deleted, `openwebui/Dockerfile` comment removed, reason logged in `REQUIREMENTS.md` Out of Scope.
+  4. `pytest tests/` green on the current repo against the v0.9.1 image (orchestrator suites unchanged, filter suite unchanged, patch suite may change).
+
+**Plans:** 2–3 plans expected — TBD by `/gsd-plan-phase 6`.
+
+### Phase 7: Release v0.9.1.0 (v0.9.1.0)
+
+**Goal:** Ship a clean `v0.9.1.0` release commit. Users cloning `main` and running `docker compose -f docker-compose.webui.yml up --build` get Computer Use working end-to-end against Open WebUI `0.9.1` with no extra configuration.
+**Depends on:** Phase 5 AND Phase 6 (both patch sets must be green).
+**Requirements:** OWUI-REL-01 (defaults bumped), OWUI-REL-02 (CHANGELOG written with Phase 3 gateway rollup), OWUI-REL-03 (README compat line updated), OWUI-REL-04 (full test suite green on the built image)
+**Success Criteria:** (observable)
+  1. `docker-compose.webui.yml` default `OPENWEBUI_VERSION=0.9.1`; `openwebui/Dockerfile` `ARG OPENWEBUI_VERSION=0.9.1`.
+  2. `CHANGELOG.md` has a `## v0.9.1.0 (YYYY-MM-DD)` entry that: (a) states supported upstream = `ghcr.io/open-webui/open-webui:0.9.1`, (b) lists every rewritten patch with a one-line behaviour description, (c) rolls in Phase 3 Claude Code gateway work (GATEWAY-01..12) as "Features" with a pointer to `docs/claude-code-gateway.md`, (d) lists any dropped patches under "Breaking changes" if applicable.
+  3. `README.md` quick-start section states compatibility with Open WebUI `0.9.1`.
+  4. `./tests/test-docker-image.sh`, `./tests/test-no-corporate.sh`, `./tests/test-project-structure.sh` all pass against the rebuilt image. `pytest tests/` green inside `python:3.13-slim`.
+  5. One commit `chore: release v0.9.1.0` merged to `main`. **No git tag created** (user tags manually per memory rule).
+
+**Plans:** 1 plan expected — TBD by `/gsd-plan-phase 7`.
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. System Prompt Extraction (v0.8.12.7)      | 1/1 | ✅ Complete     | 2026-04-12 |
 | 2. Preview Filter UX (v0.8.12.8)             | 1/1 | ✅ Complete     | 2026-04-12 |
-| 3. Claude Code Gateway Compatibility (v0.8.12.9) | 0/3 | 🚧 Planned | — |
+| 3. Claude Code Gateway Compatibility (v0.8.12.9) | 3/3 | ✅ Code shipped (no release) | 2026-04-12 |
+| 4. Upstream intake and patch inventory (v0.9.1.0) | 0/? | 🚧 Planned | — |
+| 5. Rewrite frontend patches (v0.9.1.0)       | 0/? | 🚧 Planned | — |
+| 6. Rewrite backend patches (v0.9.1.0)        | 0/? | 🚧 Planned | — |
+| 7. Release v0.9.1.0                          | 0/? | 🚧 Planned | — |
 
 ---
-*Updated 2026-04-12 — Phase 3 broken down into 3 plans by `/gsd-plan-phase 3`.*
+*Updated 2026-04-23 — v0.9.1.0 milestone added with 4 phases (Phases 4–7). Phase 3 reclassified as shipped-no-release; its CHANGELOG entry rolls into v0.9.1.0.*
