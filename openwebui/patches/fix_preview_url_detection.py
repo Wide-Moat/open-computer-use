@@ -114,30 +114,36 @@ def build_injection(param_name, groups_var):
 
     Pushes an iframe artifact into the htmlGroups array (e).
     The array is mutable (let), so push works in strict mode.
-    Uses PREVIEW_HOST_BARE for regex matching and PREVIEW_BASE_URL for iframe src.
+
+    Host-agnostic: matches any HTTP(S) URL whose path contains /files/<id>/
+    or /preview/<id>. The actual host is read back from the matched URL
+    itself, so the filter's X-Public-Base-URL (localhost, 127.0.0.1,
+    computer-use-server, public domain, etc.) all work without the patch
+    having to know what it is at build time.
     """
-    # Escape dots for regex
-    host_regex = PREVIEW_HOST_BARE.replace('.', '\\.')
-    iframe_html = (
-        f"'<iframe src=\"{PREVIEW_BASE_URL}/preview/'"
-        "+_pm[1]+'\" "
-        "style=\"width:100%;height:100%;border:none\" "
+    # Build the JS expression that, at runtime, produces an iframe tag string.
+    # Two literal fragments + two interpolations (_pm[1]=origin, _pm[2]=id).
+    iframe_html_expr = (
+        "'<iframe src=\"'+_pm[1]+'/preview/'+_pm[2]+"
+        "'\" style=\"width:100%;height:100%;border:none\" "
         "allow=\"clipboard-write; keyboard-map\"></iframe>\\n'"
     )
     iframe_css = (
         "'*{margin:0;padding:0;overflow:hidden}"
         "html,body{height:100%}\\n'"
     )
-    # Injection begins with IDEMPOTENCY_MARKER; legacy /*preview-url-detect*/
-    # comment is kept at the tail so pre-existing 0.8.12-patched images are
-    # also recognised by the LEGACY_PATCHED_MARKER substring check.
+    # Host-agnostic detector: /(files|preview)\/ in url path, then capture
+    # the origin (_pm[1]) and the id segment (_pm[2]) via a single regex.
+    # Guard with `!param.some(o=>o.html)` so genuine fenced <html> blocks
+    # still take precedence.
+    # NOTE: we match origin http(s)://host[:port] then /files|/preview/ then id.
     return (
         f'{IDEMPOTENCY_MARKER}'
         f'if(!{groups_var}.some(o=>o.html)&&{param_name}&&'
-        f'/{host_regex}\\/(files|preview)\\//.test({param_name}))'
+        f'/\\/(files|preview)\\//.test({param_name}))'
         f'{{var _pm={param_name}.match('
-        f'/https?:\\/\\/{host_regex}\\/(?:files|preview)\\/([^\\/\\s\\"\\)]+)/'
-        f');if(_pm){{{groups_var}.push({{html:{iframe_html},css:{iframe_css},js:""}})}}}}'
+        f'/(https?:\\/\\/[^\\/\\s\\"\\)]+)\\/(?:files|preview)\\/([^\\/\\s\\"\\)]+)/'
+        f');if(_pm){{{groups_var}.push({{html:{iframe_html_expr},css:{iframe_css},js:""}})}}}}'
         f'/*{LEGACY_PATCHED_MARKER}*/'
     )
 
