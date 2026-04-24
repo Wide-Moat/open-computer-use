@@ -64,7 +64,10 @@ class TestPatchApplication(unittest.TestCase):
             "                    _saved_output = json.loads(json.dumps(output))  # TOOL_LOOP_ERRORS_UNIFIED: save for restore on error\n"
             "                    try:\n"
             "                        new_form_data = {\n"
-            "                            'model': 'test',\n"
+            "                            **form_data,\n"
+            "                            'model': model_id,\n"
+            "                            'stream': True,\n"
+            "                            'metadata': metadata,\n"
             "                        }\n"
         )
 

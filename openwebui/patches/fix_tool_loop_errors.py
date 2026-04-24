@@ -52,6 +52,7 @@ SEARCH_TOOL_LOOP = """\
                             **form_data,
                             'model': model_id,
                             'stream': True,
+                            'metadata': metadata,
                         }
 
                         if ENABLE_RESPONSES_API_STATEFUL and last_response_id:
@@ -140,6 +141,7 @@ REPLACE_TOOL_LOOP = (
     "                            **form_data,\n"
     "                            'model': model_id,\n"
     "                            'stream': True,\n"
+    "                            'metadata': metadata,\n"
     "                        }\n"
     "\n"
     "                        if ENABLE_RESPONSES_API_STATEFUL and last_response_id:\n"
@@ -403,6 +405,16 @@ def apply_patch():
     if PATCH_MARKER in content or NEW_PATCH_MARKER in content:
         print(f"ALREADY PATCHED: {MIDDLEWARE_PATH} contains {PATCH_MARKER}")
         return True
+
+    # v0.9.1 -> v0.9.2 backward-compat shim: v0.9.2 upstream inserted a new
+    # `'metadata': metadata,` key into the first `new_form_data = {` block. The
+    # SEARCH_TOOL_LOOP anchor targets the v0.9.2 shape; for v0.9.1 input we
+    # inject the missing key in-memory so the single SEARCH matches both
+    # upstream versions. No-op on v0.9.2 (V091_SHIM does not match there).
+    V091_SHIM = "                            'stream': True,\n                        }\n\n                        if ENABLE_RESPONSES_API_STATEFUL"
+    V092_SHIM = "                            'stream': True,\n                            'metadata': metadata,\n                        }\n\n                        if ENABLE_RESPONSES_API_STATEFUL"
+    if V091_SHIM in content and V092_SHIM not in content:
+        content = content.replace(V091_SHIM, V092_SHIM, 1)
 
     # Mod 1/5: tool_loop
     if SEARCH_TOOL_LOOP not in content:

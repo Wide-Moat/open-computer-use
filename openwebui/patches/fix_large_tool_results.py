@@ -161,12 +161,20 @@ def _truncate_tool_messages_in_history(messages: list) -> None:
 # === END PATCH: _truncate_large_results_in_output ===
 '''
 
-# Search pattern: targets code AFTER fix_tool_loop_errors.py (TOOL_LOOP_ERRORS_UNIFIED marker)
+# Search pattern: targets code AFTER fix_tool_loop_errors.py (TOOL_LOOP_ERRORS_UNIFIED marker).
+# v0.9.2: Patch 3's REPLACE now emits `'metadata': metadata,` inside new_form_data — include it
+# in the SEARCH so the cascade region is fully covered and any upstream drift of the metadata
+# key fails loud here rather than silently producing a broken middleware.
 SEARCH_TOOL_LOOP = (
     "                    _saved_output = json.loads(json.dumps(output))"
     "  # TOOL_LOOP_ERRORS_UNIFIED: save for restore on error\n"
     "                    try:\n"
     "                        new_form_data = {\n"
+    "                            **form_data,\n"
+    "                            'model': model_id,\n"
+    "                            'stream': True,\n"
+    "                            'metadata': metadata,\n"
+    "                        }\n"
 )
 
 REPLACE_TOOL_LOOP = (
@@ -176,6 +184,11 @@ REPLACE_TOOL_LOOP = (
     "  # TOOL_LOOP_ERRORS_UNIFIED: save for restore on error\n"
     "                    try:\n"
     "                        new_form_data = {\n"
+    "                            **form_data,\n"
+    "                            'model': model_id,\n"
+    "                            'stream': True,\n"
+    "                            'metadata': metadata,\n"
+    "                        }\n"
 )
 
 
