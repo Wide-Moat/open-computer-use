@@ -376,7 +376,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_middleware_v091  # noqa: E402
+from conftest import load_middleware_v091, load_middleware_v092  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -457,6 +457,71 @@ class TestFixLargeToolResultsV091(unittest.TestCase):
         self.assertEqual(r.returncode, 1, f"stdout={r.stdout} stderr={r.stderr}")
         # Error message points at running fix_tool_loop_errors first
         self.assertIn("fix_tool_loop_errors", r.stderr.lower())
+
+
+class TestFixLargeToolResultsV092(unittest.TestCase):
+    """3-state coverage + cascade tests against real v0.9.2 middleware.py fixture."""
+
+    PATCH_NAME = "fix_large_tool_results"
+    NEW_MARKER = "FIX_LARGE_TOOL_RESULTS"
+    PRIMARY_ANCHOR = (
+        "    form_data['messages'] = process_messages_with_output"
+        "(form_data.get('messages', []))"
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.target = Path(self.tmp) / "middleware.py"
+        self.target.write_text(load_middleware_v092(), encoding="utf-8")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_fresh_apply_v092(self):
+        # Cascade dependency: fix_tool_loop_errors must run first
+        r1 = _run_patch("fix_tool_loop_errors", self.target)
+        self.assertEqual(r1.returncode, 0, f"patch3 stderr={r1.stderr}")
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        self.assertIn(f"PATCHED: {self.PATCH_NAME}", r.stdout)
+        content = self.target.read_text()
+        self.assertIn(self.NEW_MARKER, content)
+        # v0.9.2 specific: post-patch3 content must carry the new metadata key
+        self.assertIn("'metadata': metadata,", content)
+        ast.parse(content)
+
+    def test_idempotent_rerun_v092(self):
+        _run_patch("fix_tool_loop_errors", self.target)
+        r1 = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r1.returncode, 0)
+        after_first = self.target.read_text()
+        r2 = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r2.returncode, 0)
+        self.assertIn("ALREADY PATCHED", r2.stdout)
+        self.assertEqual(after_first, self.target.read_text())
+
+    def test_broken_fixture_fails_loud_v092(self):
+        _run_patch("fix_tool_loop_errors", self.target)
+        content = self.target.read_text()
+        self.assertIn(self.PRIMARY_ANCHOR, content)
+        self.target.write_text(
+            content.replace(self.PRIMARY_ANCHOR, "    # ANCHOR_REMOVED_FOR_TEST")
+        )
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 1, f"stdout={r.stdout} stderr={r.stderr}")
+        self.assertIn("ERROR:", r.stderr)
+        self.assertIn(self.PATCH_NAME, r.stderr)
+
+    def test_cascade_with_patch_3_on_v092(self):
+        r1 = _run_patch("fix_tool_loop_errors", self.target)
+        self.assertEqual(r1.returncode, 0, r1.stderr)
+        r2 = _run_patch("fix_large_tool_results", self.target)
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        content = self.target.read_text()
+        self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
+        self.assertIn("FIX_LARGE_TOOL_RESULTS", content)
+        self.assertIn("'metadata': metadata,", content)
+        ast.parse(content)
 
 
 if __name__ == "__main__":
