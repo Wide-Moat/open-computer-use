@@ -52,6 +52,25 @@ Requirements for current milestone. Each maps to roadmap phases.
 - [x] **OWUI-INTAKE-02**: `.planning/phases/04-owui-intake/04-INVENTORY.md` exists and, for each of the 8 patches in `openwebui/patches/`, carries a section with: (a) upstream file path(s) the patch targets, (b) a `v0.8.12` source excerpt at the anchor, (c) a matching `v0.9.1` source excerpt OR a "NOT FOUND" note with a reproducible grep command as evidence, (d) a 1-sentence rewrite strategy (rewrite regex / rewrite entirely / drop as obsolete).
 - [x] **OWUI-INTAKE-03**: For each of the 4 currently-commented-out patches (`fix_large_tool_args`, `fix_attached_files_position`, `fix_skip_embedding_chat_files`, `fix_skip_rag_files_native_fc`), the inventory explicitly classifies the patch as still-valuable-at-0.9.1 (rewrite) or obsolete-at-0.9.1 (drop + document). Classification is based on the research's obsolescence criteria: anchor existence AND whether the underlying pain point still applies at v0.9.1.
 
+### Open WebUI 0.9.2 Compatibility — Upstream Re-intake (v0.9.2.0 — delta from v0.9.1)
+
+- [x] **OWUI-INTAKE-V092-01**: Upstream `open-webui/open-webui@v0.9.2` source is reachable at `~/src/open-webui-upstream/` (same clone as Phase 4). `git -C ~/src/open-webui-upstream show v0.9.2:package.json` reports `"version": "0.9.2"`. Tag `v0.9.2` is listed by `git -C ~/src/open-webui-upstream tag --list`. v0.9.1 raw anchor excerpts remain reachable from Phase 4's `04-INVENTORY.md` (no re-extraction needed — they are the delta-left-hand-side).
+- [x] **OWUI-INTAKE-V092-02**: `.planning/phases/07-upstream-intake-v0-9-2/07-INVENTORY-DELTA.md` exists and, for each of the 8 patches in `openwebui/patches/` (same ordering as Phase 4's `04-INVENTORY.md`), carries a section with: (a) the v0.9.1 anchor excerpt (copied verbatim from Phase 4), (b) the matching v0.9.2 source excerpt extracted via `git -C ~/src/open-webui-upstream show v0.9.2:<path>`, (c) a verdict `still-matches` / `needs-tweak` / `broken`, (d) if verdict is `needs-tweak` or `broken`: a 1-sentence strategy Phase 8/9 will follow to rewrite the regex/literal. A top-of-file summary table lists all 8 patches with their verdicts. No code, tests, or Dockerfiles are modified in Phase 7.
+
+### Open WebUI 0.9.2 Compatibility — Frontend Patches (v0.9.2.0)
+
+- [x] **OWUI-FE-V092-01**: `openwebui/patches/fix_artifacts_auto_show.py` applied to a freshly-built `ghcr.io/open-webui/open-webui:0.9.2` image succeeds (exit 0, `PATCHED: fix_artifacts_auto_show applied successfully.` line in build log, `/* FIX_ARTIFACTS_AUTO_SHOW */` marker present in at least one `/app/build/_app/immutable/chunks/*.js` file inside the built image). Phase 7's still-matches verdict verified end-to-end.
+- [x] **OWUI-FE-V092-02**: `openwebui/patches/fix_preview_url_detection.py` applied to the same image succeeds (exit 0, `PATCHED: fix_preview_url_detection applied successfully.` line in build log, `/* FIX_PREVIEW_URL_DETECTION */` marker present in at least one `/app/build/_app/immutable/chunks/*.js` file inside the built image). Phase 7's still-matches verdict verified end-to-end.
+
+### Open WebUI 0.9.2 Compatibility — Backend Patches (v0.9.2.0)
+
+- [x] **OWUI-BE-V092-01**: fix_tool_loop_errors.py applied to v0.9.2 middleware.py — 5 sub-anchor match; SEARCH_TOOL_LOOP updated to include new `'metadata': metadata,` key; pytest 3-state green on v0.9.2 fixture; Dockerfile line 13 active.
+- [x] **OWUI-BE-V092-02**: fix_large_tool_results.py applied after Patch 3 on v0.9.2 — SEARCH_TOOL_LOOP re-derived against post-patch3 output; cascade atomic; pytest 3-state + cascade green; Dockerfile line 23 active.
+- [x] **OWUI-BE-V092-03**: fix_large_tool_args.py applied on v0.9.2 — SEARCH byte-identical to v0.9.1; count-assertion holds (exactly 2 matches); pytest 3-state green; Dockerfile line 29 active.
+- [x] **OWUI-BE-V092-04**: fix_attached_files_position.py applied on v0.9.2 — inner block byte-identical; pytest 3-state green; Dockerfile line 33 active.
+- [x] **OWUI-BE-V092-05**: fix_skip_embedding_chat_files.py applied on v0.9.2 retrieval.py — both anchors byte-identical; pytest 3-state green; Dockerfile line 37 active.
+- [x] **OWUI-BE-V092-06**: fix_skip_rag_files_native_fc.py applied on v0.9.2 — SEARCH byte-identical; pytest 3-state green; Dockerfile line 41 active.
+
 ### Open WebUI 0.9 Compatibility — Frontend Patches (v0.9.1.0)
 
 - [x] **OWUI-FE-01**: `openwebui/patches/fix_artifacts_auto_show.py` applied to a freshly-built `ghcr.io/open-webui/open-webui:0.9.1` image succeeds (exit 0, `PATCHED!` line in build log, non-zero diff in target chunk), and live UI verification shows the Artifacts panel auto-opens when an assistant message contains an HTML code block.
@@ -160,6 +179,16 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | OWUI-BE-04 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
 | OWUI-BE-05 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
 | OWUI-BE-06 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-INTAKE-V092-01 | Phase 7 — Upstream re-intake against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-INTAKE-V092-02 | Phase 7 — Upstream re-intake against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-FE-V092-01 | Phase 8 — Re-verify frontend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-FE-V092-02 | Phase 8 — Re-verify frontend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-01 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-02 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-03 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-04 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-05 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-06 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
@@ -168,7 +197,10 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 - v0.9.1.0 Phase 4 requirements: 3 / 3 mapped ✓
 - v0.9.1.0 Phase 5 requirements: 3 / 3 mapped ✓
 - v0.9.1.0 Phase 6 requirements: 6 / 6 mapped ✓
+- v0.9.2.0 Phase 7 requirements: 2 / 2 mapped ✓
+- v0.9.2.0 Phase 8 requirements: 2 / 2 mapped ✓
+- v0.9.2.0 Phase 9 requirements: 6 / 6 mapped ✓
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-24 — OWUI-BE-01..06 minted for Phase 6 (milestone v0.9.1.0)*
+*Last updated: 2026-04-24 — OWUI-BE-V092-01..06 minted for Phase 9 (milestone v0.9.2.0)*
