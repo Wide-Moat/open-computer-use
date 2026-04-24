@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9.1.0
 milestone_name: — Open WebUI 0.9 Compatibility
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-04-23T23:51:50.827Z"
-last_activity: 2026-04-23
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-04-24T00:28:35.080Z"
+last_activity: 2026-04-24
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 6
-  percent: 86
+  completed_phases: 4
+  total_plans: 9
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-23)
 
 **Core value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
-**Current focus:** Phase 05 — frontend-patches
+**Current focus:** Phase 06 — backend-patches
 
 ## Current Position
 
-Phase: 05 (frontend-patches) — EXECUTING
+Phase: 06 (backend-patches) — EXECUTING
 Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-04-23
+Last activity: 2026-04-24
 
 ## Performance Metrics
 
@@ -49,6 +49,8 @@ Last activity: 2026-04-23
 | v0.9.1.0 / Phase 04+ Open WebUI 0.9 Compatibility | 0/0 | 🚧 Defining requirements |
 | Phase 04 P01 | 20m | 5 tasks | 2 files |
 | Phase 05 P01 | 78m | 5 tasks | 4 files |
+| Phase 05-frontend-patches P02 | 180 | 2 tasks | 5 files |
+| Phase 06 P01 | 45m | 5 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -74,6 +76,7 @@ Recent decisions affecting current work:
 - [Phase 04]: Phase 4 verdict: all 8 patches classified rewrite (not obsolete); 6 rewrite-regex, 2 rewrite-entirely
 - [Phase 05]: Regex shape unchanged from v0.8.12 — dry-run at v0.9.1 matched exactly once for both patches; no tolerances needed.
 - [Phase 05]: Fail-loud sys.exit(1) shipped regardless of regex match — primary guard against silently-broken images on future upstream refactors.
+- [Phase 05-frontend-patches]: Plan 05-02: non-UI patch-marker evidence + human UAT fallback (5-step runbook) preferred over blind Playwright DOM-selector hunt overnight
 
 ### Pending Todos
 
@@ -86,9 +89,10 @@ Recent decisions affecting current work:
 - **Frontend-patch risk:** `fix_artifacts_auto_show.py` and `fix_preview_url_detection.py` target specific patterns in Open WebUI's compiled Svelte chunks. 0.9.x almost certainly reshuffles minified variable names — both patches will need their regexes fully rewritten.
 - **Backend-patch risk:** `fix_tool_loop_errors.py` anchors on the exact body of `middleware.py` try/except for tool-loop streaming. Upstream may have refactored the tool-loop error path between 0.8.12 and 0.9.1.
 - **No automated end-to-end test:** docker image tests (`./tests/test-docker-image.sh`) verify image surface, not runtime UI behaviour. Patch correctness will rely on manual smoke tests against a running image.
+- Phase 5 Success Criterion 2 pending human UAT — run .planning/phases/05-frontend-patches/05-SMOKE-MANUAL.md on wake, then flip 05-SMOKE-REPORT.md status from pending_human_uat to passed
 
 ## Session Continuity
 
-Last session: 2026-04-23T23:51:50.825Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-04-24T00:28:35.077Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None

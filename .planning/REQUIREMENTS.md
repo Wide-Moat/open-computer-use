@@ -58,6 +58,15 @@ Requirements for current milestone. Each maps to roadmap phases.
 - [x] **OWUI-FE-02**: `openwebui/patches/fix_preview_url_detection.py` applied to the same image succeeds, and live UI verification shows the preview iframe renders inline when a message contains a `{base}/preview/{chat_id}` or `{base}/files/{chat_id}/...` URL.
 - [x] **OWUI-FE-03**: Both patches are idempotent (re-running on an already-patched chunk prints `ALREADY PATCHED` and exits 0) AND fail loudly (`sys.exit(1)` with explicit `ERROR:` message on stderr) if the anchor regex does not match — verified by mutating the target chunk and re-running.
 
+### Open WebUI 0.9 Compatibility — Backend Patches (v0.9.1.0)
+
+- [x] **OWUI-BE-01**: fix_tool_loop_errors.py applied cleanly to a v0.9.1 middleware.py — pytest green for fresh/idempotent/anchor-miss states; exit 1 + stderr ERROR on any sub-anchor miss; Dockerfile line 13 active.
+- [x] **OWUI-BE-02**: fix_large_tool_results.py applied after Patch 3 — pytest green; cascade verified against patched Patch 3 fixture; Dockerfile line 23 active.
+- [x] **OWUI-BE-03**: fix_large_tool_args.py applied with OLD_ARGS match count == 2 assertion; pytest green; Dockerfile line 29 uncommented.
+- [x] **OWUI-BE-04**: fix_attached_files_position.py applied — inner block byte-match at v0.9.1; pytest green; Dockerfile line 33 uncommented.
+- [x] **OWUI-BE-05**: fix_skip_embedding_chat_files.py applied — both retrieval.py anchors hard-fail on miss; pytest green; Dockerfile line 37 uncommented.
+- [x] **OWUI-BE-06**: fix_skip_rag_files_native_fc.py applied — pytest green; Dockerfile line 41 uncommented; marker name mismatch (file name vs PATCH_MARKER) documented in verdict, not renamed.
+
 ## Shipped Requirements (previous milestones)
 
 ### v0.8.12.7 System Prompt Extraction (shipped 2026-04-12)
@@ -145,6 +154,12 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | OWUI-FE-01 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
 | OWUI-FE-02 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
 | OWUI-FE-03 | Phase 5 — Rewrite frontend patches against v0.9.1 (v0.9.1.0) | In progress |
+| OWUI-BE-01 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-BE-02 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-BE-03 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-BE-04 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-BE-05 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
+| OWUI-BE-06 | Phase 6 — Rewrite backend patches against v0.9.1 (v0.9.1.0) | Complete |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
@@ -152,7 +167,8 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 - v0.8.12.9 requirements: 12 / 12 mapped
 - v0.9.1.0 Phase 4 requirements: 3 / 3 mapped ✓
 - v0.9.1.0 Phase 5 requirements: 3 / 3 mapped ✓
+- v0.9.1.0 Phase 6 requirements: 6 / 6 mapped ✓
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-24 — OWUI-FE-01/02/03 minted for Phase 5 (milestone v0.9.1.0)*
+*Last updated: 2026-04-24 — OWUI-BE-01..06 minted for Phase 6 (milestone v0.9.1.0)*

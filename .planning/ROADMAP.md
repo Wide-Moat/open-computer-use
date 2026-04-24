@@ -118,7 +118,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — Mint OWUI-FE-01/02/03, rewrite both frontend patches with idempotency markers + fail-loud exits, verify docker build + test-docker-image.sh on v0.9.1 (Wave 1, autonomous)
-- [ ] 05-02-PLAN.md — Live-UI smoke test: launch built v0.9.1 image, capture screenshots of Artifacts panel auto-open and preview iframe render (Wave 2, human UAT required)
+- [x] 05-02-PLAN.md — Live-UI smoke test: launch built v0.9.1 image, capture screenshots of Artifacts panel auto-open and preview iframe render (Wave 2, human UAT required)
 
 ### Phase 6: Rewrite backend patches against v0.9.1 (v0.9.1.0)
 
@@ -131,7 +131,11 @@ Plans:
   3. For each dropped patch: `openwebui/patches/` file deleted, `openwebui/Dockerfile` comment removed, reason logged in `REQUIREMENTS.md` Out of Scope.
   4. `pytest tests/` green on the current repo against the v0.9.1 image (orchestrator suites unchanged, filter suite unchanged, patch suite may change).
 
-**Plans:** 2–3 plans expected — TBD by `/gsd-plan-phase 6`.
+**Plans:** 2 plans
+
+Plans:
+- [x] 06-01-PLAN.md — Mint OWUI-BE-01..06, extract v0.9.1 fixtures, rewrite all 6 backend patches (cascade 3+4 atomic) with fail-loud + idempotency markers, add 3-state pytest coverage per patch — Wave 1, autonomous
+- [ ] 06-02-PLAN.md — Uncomment 4 Dockerfile backend patch lines, rebuild open-computer-use:0.9.1-test, run full-repo pytest in python:3.13-slim, write 06-VERDICT.md — Wave 2, autonomous
 
 ### Phase 7: Release v0.9.1.0 (v0.9.1.0)
 
