@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.9.1.0
 milestone_name: — Open WebUI 0.9 Compatibility
-status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-04-24T00:28:35.080Z"
+status: verifying
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-04-24T00:37:08.153Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 9
-  completed_plans: 8
-  percent: 89
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-23)
 
 Phase: 06 (backend-patches) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-24
 
 ## Performance Metrics
@@ -51,6 +51,7 @@ Last activity: 2026-04-24
 | Phase 05 P01 | 78m | 5 tasks | 4 files |
 | Phase 05-frontend-patches P02 | 180 | 2 tasks | 5 files |
 | Phase 06 P01 | 45m | 5 tasks | 17 files |
+| Phase 06 P02 | ~6 minutes | 4 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -77,10 +78,11 @@ Recent decisions affecting current work:
 - [Phase 05]: Regex shape unchanged from v0.8.12 — dry-run at v0.9.1 matched exactly once for both patches; no tolerances needed.
 - [Phase 05]: Fail-loud sys.exit(1) shipped regardless of regex match — primary guard against silently-broken images on future upstream refactors.
 - [Phase 05-frontend-patches]: Plan 05-02: non-UI patch-marker evidence + human UAT fallback (5-step runbook) preferred over blind Playwright DOM-selector hunt overnight
+- [Phase 06]: Phase 6 backend patches: all 6 rewrite+enabled, zero dropped; ARG OPENWEBUI_VERSION default bump deferred to Phase 7
 
 ### Pending Todos
 
-- After Phase 03 merges: comment on issue #40 with fix version and close; comment on PR #41 with pointer to merged PR, credit @rahxam, close (or let author close). **Status:** Ready to execute
+- After Phase 03 merges: comment on issue #40 with fix version and close; comment on PR #41 with pointer to merged PR, credit @rahxam, close (or let author close). **Status:** Phase complete — ready for verification
 - Issue #1 (security review): separate decision — likely close with "answered, no reporter response for 2+ weeks".
 - Add CI smoke tests for sandbox image and browser — `.planning/todos/pending/2026-04-13-add-ci-smoke-tests-for-sandbox-image-and-browser.md`
 
@@ -93,6 +95,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-04-24T00:28:35.077Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-04-24T00:37:04.200Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None

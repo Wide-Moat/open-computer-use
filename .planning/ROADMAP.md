@@ -135,7 +135,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md — Mint OWUI-BE-01..06, extract v0.9.1 fixtures, rewrite all 6 backend patches (cascade 3+4 atomic) with fail-loud + idempotency markers, add 3-state pytest coverage per patch — Wave 1, autonomous
-- [ ] 06-02-PLAN.md — Uncomment 4 Dockerfile backend patch lines, rebuild open-computer-use:0.9.1-test, run full-repo pytest in python:3.13-slim, write 06-VERDICT.md — Wave 2, autonomous
+- [x] 06-02-PLAN.md — Uncomment 4 Dockerfile backend patch lines, rebuild open-computer-use:0.9.1-test, run full-repo pytest in python:3.13-slim, write 06-VERDICT.md — Wave 2, autonomous
 
 ### Phase 7: Release v0.9.1.0 (v0.9.1.0)
 
