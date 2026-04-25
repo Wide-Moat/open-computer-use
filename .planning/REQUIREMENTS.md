@@ -3,11 +3,61 @@
 **Defined:** 2026-04-12
 **Core Value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
 
-## v1 Requirements (current milestone — v0.8.12.9 Claude Code Gateway Compatibility)
+## Current Milestone (v0.9.2.1 Multi-CLI Sub-Agent Runtime)
 
-Requirements for current milestone. Each maps to roadmap phases.
+Requirements for the active milestone. Each maps to a roadmap phase below.
 
-### Preview Artifact (filter outlet)
+### CLI Runtime Switch (env-driven)
+
+- [ ] **CLI-01**: A new env var `SUBAGENT_CLI` selects the runtime: accepted values are `claude` (default), `codex`, `opencode`. Read once at orchestrator boot in `computer-use-server/docker_manager.py` module load and propagated to every spawned sandbox container as the same env var. Empty string and unset both resolve to `claude` — no behavioural change for existing deployments.
+- [ ] **CLI-02**: Invalid `SUBAGENT_CLI` values (e.g. `cline`, typo) fail loud at orchestrator startup with a single-line error naming the offending value and the three accepted values. The orchestrator does NOT silently fall back to `claude` for typos.
+- [ ] **CLI-03**: A pure-Python resolver `cli_runtime.resolve_cli()` returns the active CLI as an enum-like value (`Cli.CLAUDE | Cli.CODEX | Cli.OPENCODE`); used by `mcp_tools.sub_agent` and by the per-CLI auth-env passthrough loop. Single source of truth — no string comparisons scattered across the codebase.
+
+### Adapter Layer (per-CLI argv & I/O parsing)
+
+- [ ] **ADAPT-01**: A new package `computer-use-server/cli_adapters/` holds one adapter per CLI: `claude.py`, `codex.py`, `opencode.py`. Each exposes the same interface: `build_argv(task: str, system_prompt: str, model: str, max_turns: int, timeout_s: int) -> list[str]` and `parse_result(stdout: str, stderr: str, returncode: int) -> SubAgentResult`. Adapter dispatch lives in `cli_runtime.dispatch(...)`.
+- [ ] **ADAPT-02**: The Claude adapter is a lift-and-shift of the existing `claude --print --append-system-prompt …` invocation and JSON-parse logic from `mcp_tools.py` (current code). Goal: byte-identical output for `SUBAGENT_CLI=claude` (or unset) compared with v0.9.2.0 baseline — proven by a golden-snapshot test.
+- [ ] **ADAPT-03**: The Codex adapter invokes `codex exec --ephemeral --json --output-last-message <tmpfile> "<prompt>"` and reads the last-message file for the result text. System-prompt injection is via `AGENTS.md` written to `/tmp/codex-agents-<uuid>/AGENTS.md` and `--cd` set to that dir (Codex has no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None, raw_events=[…])`.
+- [ ] **ADAPT-04**: The OpenCode adapter invokes `opencode run "<prompt>" --model <provider/model> --format json` and parses the documented JSON event schema. System-prompt injection is via `instructions[]` in the rendered config (no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None | usd_value)`.
+- [ ] **ADAPT-05**: `mcp_tools.sub_agent(...)` is rewritten as a thin orchestration layer that calls `cli_runtime.dispatch(...)`. The MCP tool signature is unchanged: `sub_agent(task: str, max_turns: int = 25, model: str = "sonnet")` — backwards-compatible for all existing skill callers.
+- [ ] **ADAPT-06**: Model resolution is per-CLI: `resolve_subagent_model(alias, cli)` returns a Claude ID for `Cli.CLAUDE` (today's behaviour preserved), an OpenAI / OpenAI-compat ID for `Cli.CODEX` (`gpt-5-codex` default; honours `CODEX_MODEL` env), and a `provider/model` string for `Cli.OPENCODE` (`anthropic/claude-sonnet-4-6` default; honours `OPENCODE_MODEL` env). Aliases like `sonnet` resolve sensibly per CLI (e.g. for opencode: `anthropic/claude-sonnet-4-6`).
+
+### Auth & Config (per-CLI passthrough)
+
+- [ ] **AUTH-01**: `docker_manager.py` defines three CLI-scoped passthrough tuples: `CLAUDE_CODE_PASSTHROUGH_ENVS` (existing, unchanged), `CODEX_PASSTHROUGH_ENVS` (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CODEX_MODEL`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`), and `OPENCODE_PASSTHROUGH_ENVS` (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_MODEL`). The active set is selected by `SUBAGENT_CLI`; only the active set is injected into the sandbox env. No auth bleed across CLIs.
+- [ ] **AUTH-02**: For `SUBAGENT_CLI=opencode`, the entrypoint heredoc in `Dockerfile` writes `~/.config/opencode/opencode.json` with `{env:OPENROUTER_API_KEY}` / `{env:OPENAI_API_KEY}` / `{env:ANTHROPIC_API_KEY}` substitution syntax (NOT plain values) so the file itself contains no secrets. File written to `/tmp/opencode.json` and `OPENCODE_CONFIG=/tmp/opencode.json` exported, NOT to the `/home/assistant` volume — prevents the OpenCode `auth.json` leak vector flagged in PITFALLS.
+- [ ] **AUTH-03**: For `SUBAGENT_CLI=codex`, the entrypoint renders `~/.codex/config.toml` with a `[model_providers.X]` block when `OPENAI_BASE_URL` is set (gateway path), or leaves it empty when only `OPENAI_API_KEY` is set (direct OpenAI path). Both paths verified by a real `codex --version` + smoke invocation.
+- [ ] **AUTH-04**: Marker-gated bootstrap — entrypoint writes `opencode.json` / `config.toml` only on first start (sentinel file `/tmp/.cli-runtime-initialised`), NOT on every container restart. Mirrors the existing `init.sh` marker pattern. `init.sh` itself is NOT modified.
+
+### Terminal UX (ttyd preview)
+
+- [ ] **TERM-01**: When the operator opens the in-browser ttyd terminal, it auto-launches the chosen CLI based on `SUBAGENT_CLI` (`exec claude` / `exec codex` / `exec opencode`). The autostart is implemented in `.bashrc` (touched in `Dockerfile`), NOT in `app.py:848` ttyd command — keeps the orchestrator CLI-agnostic.
+- [ ] **TERM-02**: `NO_AUTOSTART=1` environment variable disables the autostart and drops the operator into a plain bash. Discoverable via the existing terminal welcome text. Escape hatch for advanced users.
+- [ ] **TERM-03**: The `.bashrc` autostart marker is renamed `CLAUDE_AUTOSTARTED` → `SUBAGENT_AUTOSTARTED` and the variable expands `${SUBAGENT_CLI:-claude}` so the default path is unchanged for existing deployments.
+
+### Test Coverage (mandatory)
+
+- [ ] **TEST-01**: `tests/test-docker-image.sh` is extended with `--version` checks for all three CLIs (`claude --version`, `codex --version`, `opencode --version`). Test fails loud if any CLI is missing or returns a non-zero exit code.
+- [ ] **TEST-02**: A new pytest suite `tests/orchestrator/test_cli_runtime.py` covers the resolver: (a) unset → claude; (b) empty → claude; (c) `claude`/`codex`/`opencode` → corresponding enum; (d) invalid value → raises with helpful message; (e) per-CLI passthrough tuple is correct (no auth bleed across CLIs).
+- [ ] **TEST-03**: A new pytest suite `tests/orchestrator/test_cli_adapters.py` covers adapter argv-building and result-parsing for all three CLIs using captured fixtures (real CLI output committed to `tests/fixtures/cli/`). Includes the golden-snapshot test for Claude byte-compat with v0.9.2.0.
+- [ ] **TEST-04**: A new pytest suite `tests/orchestrator/test_sub_agent_dispatch.py` exercises the full `sub_agent(...)` MCP entry point with each CLI mocked at the subprocess boundary (`monkeypatch` of `subprocess.run`). Verifies signature is unchanged and dispatch routes to the correct adapter.
+- [ ] **TEST-05**: A regression grep-test `tests/test_init_sh_unchanged.sh` asserts `openwebui/init.sh` byte-equals the v0.9.2.0 baseline. Fails CI if any phase modifies it (per the marker-gated init.sh constraint in saved memory).
+- [ ] **TEST-06**: `tests/test-docker-image.sh` runs end-to-end with `SUBAGENT_CLI` set to each of the three values in turn, with stub auth env vars, and asserts the container starts and the chosen CLI is the autostart target. Smoke depth: `--version` exit-code 0 + autostart command echo. No real LLM calls.
+
+### Operator Docs (step-by-step copy-paste)
+
+- [ ] **DOCS-MULTICLI-01**: A new authoritative doc `docs/multi-cli.md` (English-only) walks the operator through: (a) what `SUBAGENT_CLI` does and why; (b) install per CLI (already in image — note this); (c) env vars per CLI in copy-paste blocks; (d) verification commands per CLI; (e) what changes when you flip the switch. Format follows the saved feedback memory: "do this, then this, verify" — not scattered.
+- [ ] **DOCS-MULTICLI-02**: `docs/multi-cli.md` includes a worked OpenCode + qwen3-coder + OpenRouter recipe: exact `.env` block (`SUBAGENT_CLI=opencode`, `OPENROUTER_API_KEY=…`, `OPENCODE_MODEL=openrouter/qwen/qwen-3-coder`), exact `docker compose up` command, sample sub-agent invocation, expected output shape. Reproducible end-to-end on a clean clone.
+- [ ] **DOCS-MULTICLI-03**: `README.md` and `docs/INSTALL.md` cross-link `docs/multi-cli.md` from the existing "Sub-agent" / "Open WebUI Integration" sections. `.env.example` grows a `# === Optional: Multi-CLI sub-agent runtime ===` block with `SUBAGENT_CLI=` (commented) and the three auth-env templates per CLI.
+- [ ] **DOCS-MULTICLI-04**: `CHANGELOG.md` v0.9.2.1 entry summarises the milestone, lists every CLI-/ADAPT-/AUTH-/TERM-/TEST-/DOCS- requirement IDs, and credits prior art (Codex docs, sst/opencode docs, OpenRouter qwen3-coder).
+
+---
+
+## Validated Requirements (shipped milestones)
+
+Validated requirements from previous milestones (v0.8.12.7, v0.8.12.8, v0.8.12.9 — all shipped in v0.9.2.0 release on 2026-04-25). Kept here for traceability.
+
+### Preview Artifact (filter outlet) — Phase 2 (v0.8.12.8)
 
 - [x] **PREVIEW-01**: Filter's `outlet()` appends an inline HTML iframe artifact pointing at `{FILE_SERVER_URL}/preview/{chat_id}` to assistant messages that contain a file URL for the current `chat_id`, when `ENABLE_PREVIEW_ARTIFACT=True` (new project default). Artifact format: fenced ```html code block wrapping `<iframe src=… style="width:100%;height:100%;border:none" allow="clipboard-write; keyboard-map"></iframe>`.
 - [x] **PREVIEW-02**: Filter's `outlet()` appends a markdown link `[{PREVIEW_BUTTON_TEXT}]({FILE_SERVER_URL}/preview/{chat_id})` to the same qualifying messages when `ENABLE_PREVIEW_BUTTON=True` (default `False` — opt-in for stock Open WebUI without artifact rendering).
