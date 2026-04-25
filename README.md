@@ -260,7 +260,7 @@ services:
       context: ./openwebui   # path into this repo
       dockerfile: Dockerfile
       args:
-        OPENWEBUI_VERSION: "0.8.12"
+        OPENWEBUI_VERSION: "0.9.2"
         COMPUTER_USE_SERVER_URL: "cu.your-domain.com"   # see Step 2 — NOT an internal hostname
     image: open-webui-with-cu-patches:latest   # local tag, do not pull
 ```
