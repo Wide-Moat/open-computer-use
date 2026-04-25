@@ -30,19 +30,24 @@ A single user can pull one image, wire it into Open WebUI, and get real Computer
 
 <!-- In this milestone. -->
 
-## Current Milestone: v0.8.12.8 Preview Filter UX
+## Current Milestone: v0.9.2.1 Multi-CLI Sub-Agent Runtime
 
-**Goal:** Expose the already-shipped `/preview/{chat_id}` SPA to stock Open WebUI users by teaching the filter's `outlet()` to emit an inline iframe artifact (default) and an opt-in markdown preview button, while preserving every v3.1.0 correctness invariant and documenting all Valves in one authoritative place.
+**Goal:** Add Codex CLI and OpenCode as drop-in alternatives to Claude Code across the entire sub-agent surface (skills/public/sub-agent/, computer-use-server orchestrator, ttyd preview terminal). A single `SUBAGENT_CLI=claude|codex|opencode` env switch routes every sub-agent invocation through the chosen CLI with identical operator UX.
 
 **Target features:**
 
-- Inline iframe preview artifact in assistant messages (`ENABLE_PREVIEW_ARTIFACT=True` default — project's opinionated UX)
-- Opt-in markdown preview button for stock Open WebUI without artifact rendering (`ENABLE_PREVIEW_BUTTON=False` default)
-- Authoritative Valve reference: in-file `VALVES:` docstring block + external docs page + drift-check test
+- `SUBAGENT_CLI` env switch: one variable picks the runtime (`claude` default for backwards compat, `codex`, or `opencode`); read once at orchestrator boot, propagated into every sandbox container
+- Codex CLI integration: install in image, env-mapped auth (OPENAI_API_KEY / OPENAI_BASE_URL or codex-managed login), I/O-contract adapter that matches the existing `sub_agent` MCP tool contract
+- OpenCode CLI integration: install in image, provider-router config (OpenRouter, Anthropic, etc.), model resolution that accepts both aliases (`sonnet`, `opus`, `haiku`, `qwen3.6`) and direct provider/model IDs
+- ttyd preview terminal launches the chosen CLI when the operator opens the in-browser terminal — no need to re-type `claude` / `codex` / `opencode`
+- Identical operator UX: same `sub_agent(...)` call signature, same skill prompts, same max_turns ceiling, same cost guardrails (COSTLY markings)
+- Full test coverage: `tests/test-docker-image.sh` verifies all three CLIs are installed and resolvable; new behavior tests for the env-switch resolver in `computer-use-server`; new fixture tests for sub-agent skill dispatch per CLI mode; tests are mandatory, not optional
+- Step-by-step copy-paste docs (per `CLAUDE.md` preference): install per CLI, env switch how-to, verification commands per CLI, what changes when you flip the switch
+- Worked OpenCode example wired to qwen3.6 via OpenRouter: env vars block, sample prompt, expected output
 
-**Why now:** community PR #42 by `rahxam` surfaced real demand for this UX; that PR targets v3.0.2 and cannot be mechanically rebased onto v3.1.0 without losing the hardening done in Phase 1 (`role == "assistant"` guard, `isinstance(content, str)` guard, `chat_id`-scoped `file_url_pattern`, `rstrip("/")` base). We re-implement the idea on top of v3.1.0 and credit the author.
+**Why now:** Phase 3 (v0.8.12.9 / Claude Code Gateway Compatibility) made Claude Code itself gateway-friendly, but operators who want to drive sub-agent runs through OpenAI's Codex CLI or the open-source OpenCode CLI (which already supports OpenRouter, Anthropic, OpenAI, Azure, local models) still have no path. Adding the runtime switch closes the "stuck on Anthropic + Claude Code" perception gap and unlocks the qwen / DeepSeek / OSS-LLM communities.
 
-**Context:** server endpoint `/preview/{chat_id}` already exists (`computer-use-server/app.py:1102`) — this milestone is pure filter + docs work, no server changes.
+**Context:** Claude Code's `--print --append-system-prompt` invocation is the current contract in `mcp_tools.sub_agent`. Codex (`codex exec`) and OpenCode (`opencode run`) have different CLIs, different auth, and different model resolvers — the adapter layer must hide all of that behind the same MCP tool surface so skills don't change.
 
 ### Out of Scope
 
@@ -54,6 +59,10 @@ A single user can pull one image, wire it into Open WebUI, and get real Computer
 - Russian-language skill triggers and i18n for preview UI — community is English-only per `CLAUDE.md`.
 - Corporate CA cert bundle, corporate peer-matching skill, NTLM/Kerberos overlay — corporate specifics.
 - Retroactive bump of bundled `claude-code` CLI — image pulls `@latest`, no pinning needed.
+- (v0.9.2.1) Per-call CLI override (e.g. `sub_agent(cli="codex", ...)`): env-switch only; runtime CLI is fixed per orchestrator/sandbox boot. Per-call would multiply test surface and confuse skills.
+- (v0.9.2.1) Migrating off Claude Code for the *interactive* terminal default — the ttyd terminal honours `SUBAGENT_CLI`, but Claude Code remains the project's recommended runtime; codex/opencode are explicit alternatives, not replacements.
+- (v0.9.2.1) Auto-installing provider tokens for the user — operator brings their own `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`, the project never ships keys.
+- (v0.9.2.1) New CLIs beyond claude/codex/opencode (Aider, GPT Engineer, Continue.dev) — three is the supported set for this milestone; further CLIs are future milestones if there's demand.
 
 ## Context
 
@@ -80,6 +89,11 @@ A single user can pull one image, wire it into Open WebUI, and get real Computer
 | Per-user skills via optional external provider, graceful fallback built-in | Community ships without `MCP_TOKENS_URL`; server returns default public skills in that case. Operators who self-host a provider get per-user `<available_skills>` for free. Same call path either way. | ✅ Shipped (Phase 1) |
 | Filter caches `(chat_id, user_email) → prompt` in an LRU (5-min TTL, 100 entries) with stale-cache fallback on fetch failure | Serving a slightly-stale prompt is better UX than silently disabling Computer Use. Skip-injection remains the fallback only when cache is cold. Matches the internal v3.8.0 behaviour. Cache key includes `user_email` to prevent one user's baked `<available_skills>` from leaking to another user on the same `chat_id`. | ✅ Shipped (Phase 1) |
 | Keep `file_base_url` / `archive_url` legacy query params on the endpoint | Copied verbatim from the internal implementation for forward/backward compatibility with existing deployments; cheap to carry. | ✅ Shipped (Phase 1) |
+| (v0.9.2.1) `SUBAGENT_CLI` is **boot-time, not per-call** | Per-call CLI override would multiply test surface (3 CLIs × every skill) and confuse the sub-agent prompt contract. Boot-time switch is one resolver, three adapters, identical MCP surface. | 🚧 Active |
+| (v0.9.2.1) Adapter layer hides CLI differences behind the existing `sub_agent` MCP tool | Skills (`skills/public/sub-agent/`, `skills/public/playwright-cli/`, etc.) must NOT learn three invocation patterns. The orchestrator translates `sub_agent(...)` → `claude --print … \| codex exec … \| opencode run …` based on `SUBAGENT_CLI`. | 🚧 Active |
+| (v0.9.2.1) `claude` remains the default | Backwards compatibility — every existing deployment ships with no `SUBAGENT_CLI` env var. Default `claude` keeps the silent-noop guarantee from Phase 3. | 🚧 Active |
+| (v0.9.2.1) OpenCode + qwen3.6 + OpenRouter is the worked example | qwen-coder is the strongest open-weight coding model that runs cheaply on OpenRouter; pairing it with OpenCode (which natively speaks OpenRouter) is the highest-leverage proof point for "you can run sub-agents without Anthropic." | 🚧 Active |
+| (v0.9.2.1) Tests are mandatory, not optional | Per CLAUDE.md and explicit user instruction. CI must verify all three CLIs install + resolve + dispatch correctly before any release. | 🚧 Active |
 
 ## Evolution
 
@@ -99,4 +113,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-12 — milestone v0.8.12.8 (Preview Filter UX) started*
+*Last updated: 2026-04-25 — milestone v0.9.2.1 (Multi-CLI Sub-Agent Runtime) started; v0.8.12.8 / v0.8.12.9 shipped*

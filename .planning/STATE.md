@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.8.12.9
-milestone_name: — Claude Code Gateway Compatibility
-status: shipped
-stopped_at: Phase 03 shipped in v0.9.2.0 (2026-04-25)
+milestone: v0.9.2.1
+milestone_name: Multi-CLI Sub-Agent Runtime
+status: defining_requirements
+stopped_at: Defining requirements for new milestone
 last_updated: "2026-04-25T00:00:00.000Z"
 last_activity: 2026-04-25
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-12)
 
 **Core value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
-**Current focus:** Milestone v0.8.12.9 shipped in v0.9.2.0 (2026-04-25). Ready for next milestone.
+**Current focus:** Milestone v0.9.2.1 — Multi-CLI Sub-Agent Runtime (Codex + OpenCode as drop-in alternatives to Claude Code).
 
 ## Current Position
 
-Phase: 03 (shipped)
-Plan: All 3 plans complete
-Status: Shipped in v0.9.2.0
-Last activity: 2026-04-25
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-25 — Milestone v0.9.2.1 started
 
 ## Performance Metrics
 
