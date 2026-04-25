@@ -307,7 +307,7 @@ Existing deployments have no `SUBAGENT_CLI` set. If the orchestrator reads it wi
 
 **How to avoid (actionable):**
 - Read once at boot: `SUBAGENT_CLI = os.getenv("SUBAGENT_CLI", "claude").strip().lower() or "claude"`. Empty string and unset both → `"claude"`.
-- Validate against a fixed allowlist `{"claude", "codex", "opencode"}`. Anything else → log error + fall back to `"claude"` (same lenient pattern as `SINGLE_USER_MODE`).
+- Validate against a fixed allowlist `{"claude", "codex", "opencode"}`. Anything else → fail loud at module load (`sys.exit(1)` with message to stderr) naming the offending value and the three accepted values. Operator-set env vars are not user-set per request — a typo blocking boot is preferable to silently running the wrong CLI. (Phase 4 D1 decision overrides the earlier "lenient pattern as SINGLE_USER_MODE" recommendation.)
 - For the `claude` branch, the adapter must be a **byte-identical wrapper** around today's code path: same argv, same env, same parser. Concretely: the existing `claude_command` construction at `mcp_tools.py:967–1019` should be lifted into `adapters/claude.py` unchanged — diff between old and new claude path is zero except for import.
 - Regression test: snapshot today's `sub_agent` end-to-end output for a fixed prompt with a fixed mocked Claude response. New test asserts `SUBAGENT_CLI=""` and `SUBAGENT_CLI="claude"` produce identical orchestrator-side output.
 

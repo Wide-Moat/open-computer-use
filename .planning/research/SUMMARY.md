@@ -95,7 +95,7 @@ Based on cross-cutting findings, the milestone splits cleanly into 5 phases. Pha
 ### Phase 1: Env Switch + Adapter Scaffolding
 **Rationale:** Pure-Python work with no Docker dependency runs first; everything downstream imports `cli_runtime`. Establishes backwards-compat contract before any CLI is installed in the image.
 **Delivers:**
-- `SUBAGENT_CLI = os.getenv("SUBAGENT_CLI", "claude").strip().lower() or "claude"` constant in `docker_manager.py` (with allowlist `{"claude","codex","opencode"}`, lenient fallback to `"claude"`)
+- `SUBAGENT_CLI = os.getenv("SUBAGENT_CLI", "").strip().lower() or "claude"` constant in `docker_manager.py` (with allowlist `{"claude","codex","opencode"}`, hard-fail (sys.exit) at module load for invalid values; empty/unset → `"claude"` for backwards compat) — Phase 4 D1 decision overrides the earlier pre-D1 wording
 - `cli_runtime.py` with `resolve_subagent_model(alias, cli)` + `build_command(cli, ...)` + `_RESOLVERS` dict
 - `cli_adapters/__init__.py` package skeleton
 - Three CLI-scoped passthrough tuples + `ALL_CLI_PASSTHROUGH_ENVS` union

@@ -38,10 +38,10 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 ### Test Coverage (mandatory)
 
 - [ ] **TEST-01**: `tests/test-docker-image.sh` is extended with `--version` checks for all three CLIs (`claude --version`, `codex --version`, `opencode --version`). Test fails loud if any CLI is missing or returns a non-zero exit code.
-- [ ] **TEST-02**: A new pytest suite `tests/orchestrator/test_cli_runtime.py` covers the resolver: (a) unset → claude; (b) empty → claude; (c) `claude`/`codex`/`opencode` → corresponding enum; (d) invalid value → raises with helpful message; (e) per-CLI passthrough tuple is correct (no auth bleed across CLIs).
+- [x] **TEST-02**: A new pytest suite `tests/orchestrator/test_cli_runtime.py` covers the resolver: (a) unset → claude; (b) empty → claude; (c) `claude`/`codex`/`opencode` → corresponding enum; (d) invalid value → raises with helpful message; (e) per-CLI passthrough tuple is correct (no auth bleed across CLIs).
 - [ ] **TEST-03**: A new pytest suite `tests/orchestrator/test_cli_adapters.py` covers adapter argv-building and result-parsing for all three CLIs using captured fixtures (real CLI output committed to `tests/fixtures/cli/`). Includes the golden-snapshot test for Claude byte-compat with v0.9.2.0.
 - [ ] **TEST-04**: A new pytest suite `tests/orchestrator/test_sub_agent_dispatch.py` exercises the full `sub_agent(...)` MCP entry point with each CLI mocked at the subprocess boundary (`monkeypatch` of `subprocess.run`). Verifies signature is unchanged and dispatch routes to the correct adapter.
-- [ ] **TEST-05**: A regression grep-test `tests/test_init_sh_unchanged.sh` asserts `openwebui/init.sh` byte-equals the v0.9.2.0 baseline. Fails CI if any phase modifies it (per the marker-gated init.sh constraint in saved memory).
+- [x] **TEST-05**: A regression grep-test `tests/test_init_sh_unchanged.sh` asserts `openwebui/init.sh` byte-equals the v0.9.2.0 baseline. Fails CI if any phase modifies it (per the marker-gated init.sh constraint in saved memory).
 - [ ] **TEST-06**: `tests/test-docker-image.sh` runs end-to-end with `SUBAGENT_CLI` set to each of the three values in turn, with stub auth env vars, and asserts the container starts and the chosen CLI is the autostart target. Smoke depth: `--version` exit-code 0 + autostart command echo. No real LLM calls.
 
 ### Operator Docs (step-by-step copy-paste)
@@ -194,10 +194,10 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | TERM-02 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
 | TERM-03 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
 | TEST-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
-| TEST-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| TEST-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | TEST-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | TEST-04 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
-| TEST-05 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| TEST-05 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | TEST-06 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
 | DOCS-MULTICLI-01 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
 | DOCS-MULTICLI-02 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
