@@ -71,6 +71,13 @@ Requirements for current milestone. Each maps to roadmap phases.
 - [x] **OWUI-BE-V092-05**: fix_skip_embedding_chat_files.py applied on v0.9.2 retrieval.py — both anchors byte-identical; pytest 3-state green; Dockerfile line 37 active.
 - [x] **OWUI-BE-V092-06**: fix_skip_rag_files_native_fc.py applied on v0.9.2 — SEARCH byte-identical; pytest 3-state green; Dockerfile line 41 active.
 
+### Open WebUI 0.9.2 Compatibility — Release (v0.9.2.0)
+
+- [ ] **OWUI-REL-V092-01**: `openwebui/Dockerfile` ARG default bumped `OPENWEBUI_VERSION=0.8.12` → `OPENWEBUI_VERSION=0.9.2`. `grep -q "^ARG OPENWEBUI_VERSION=0.9.2" openwebui/Dockerfile` passes. No other Dockerfile lines changed.
+- [ ] **OWUI-REL-V092-02**: `docker-compose.webui.yml` build-arg default bumped `OPENWEBUI_VERSION:-0.8.12` → `OPENWEBUI_VERSION:-0.9.2`. `grep -q "OPENWEBUI_VERSION:-0.9.2" docker-compose.webui.yml` passes. No other compose keys changed.
+- [ ] **OWUI-REL-V092-03**: `CHANGELOG.md` top entry is `## v0.9.2.0 (<release date>)` and documents (a) Open WebUI base image bump from 0.8.12 to 0.9.2 (no 0.9.1 release cut), (b) the 8 rewritten patches with one-line behaviour summaries, (c) the Phase 3 Claude Code Gateway rollup (GATEWAY-01..12) with a link to `docs/claude-code-gateway.md`. `grep -q "^## v0.9.2.0" CHANGELOG.md` passes; `grep -q "GATEWAY-" CHANGELOG.md` passes; `grep -q "claude-code-gateway.md" CHANGELOG.md` passes.
+- [ ] **OWUI-REL-V092-04**: `README.md` compatibility line references Open WebUI `0.9.2` (the `v0.8.11–0.8.12` text is updated to include 0.9.2 or is replaced). `docs/INSTALL.md` base-version references (if any) updated to 0.9.2. `grep -q "0.9.2" README.md` passes.
+
 ### Open WebUI 0.9 Compatibility — Frontend Patches (v0.9.1.0)
 
 - [x] **OWUI-FE-01**: `openwebui/patches/fix_artifacts_auto_show.py` applied to a freshly-built `ghcr.io/open-webui/open-webui:0.9.1` image succeeds (exit 0, `PATCHED!` line in build log, non-zero diff in target chunk), and live UI verification shows the Artifacts panel auto-opens when an assistant message contains an HTML code block.
@@ -183,12 +190,16 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | OWUI-INTAKE-V092-02 | Phase 7 — Upstream re-intake against v0.9.2 (v0.9.2.0) | In progress |
 | OWUI-FE-V092-01 | Phase 8 — Re-verify frontend patches against v0.9.2 (v0.9.2.0) | Complete |
 | OWUI-FE-V092-02 | Phase 8 — Re-verify frontend patches against v0.9.2 (v0.9.2.0) | Complete |
-| OWUI-BE-V092-01 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
-| OWUI-BE-V092-02 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
-| OWUI-BE-V092-03 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
-| OWUI-BE-V092-04 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
-| OWUI-BE-V092-05 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
-| OWUI-BE-V092-06 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | In progress |
+| OWUI-BE-V092-01 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-02 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-03 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-04 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-05 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-BE-V092-06 | Phase 9 — Re-verify backend patches against v0.9.2 (v0.9.2.0) | Complete |
+| OWUI-REL-V092-01 | Phase 10 — Release v0.9.2.0 | In progress |
+| OWUI-REL-V092-02 | Phase 10 — Release v0.9.2.0 | In progress |
+| OWUI-REL-V092-03 | Phase 10 — Release v0.9.2.0 | In progress |
+| OWUI-REL-V092-04 | Phase 10 — Release v0.9.2.0 | In progress |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
@@ -200,7 +211,8 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 - v0.9.2.0 Phase 7 requirements: 2 / 2 mapped ✓
 - v0.9.2.0 Phase 8 requirements: 2 / 2 mapped ✓
 - v0.9.2.0 Phase 9 requirements: 6 / 6 mapped ✓
+- v0.9.2.0 Phase 10 requirements: 4 / 4 mapped ✓
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-24 — OWUI-BE-V092-01..06 minted for Phase 9 (milestone v0.9.2.0)*
+*Last updated: 2026-04-25 — Phase 10 release minted — OWUI-REL-V092-01..04*
