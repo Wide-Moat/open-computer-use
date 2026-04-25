@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.9.2.1
-milestone_name: Multi-CLI Sub-Agent Runtime
-status: roadmap_defined
-stopped_at: Roadmap for v0.9.2.1 created (Phases 4-8); ready to plan Phase 4
-last_updated: "2026-04-25T00:00:00.000Z"
+milestone_name: — Multi-CLI Sub-Agent Runtime
+status: executing
+stopped_at: Completed 04-01-PLAN.md (env switch + cli_runtime scaffolding)
+last_updated: "2026-04-25T23:01:12.898Z"
 last_activity: 2026-04-25
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 5
+  percent: 56
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25)
 
 **Core value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
-**Current focus:** Milestone v0.9.2.1 — Multi-CLI Sub-Agent Runtime (Codex + OpenCode as drop-in alternatives to Claude Code).
+**Current focus:** Phase 4 — env-switch-adapter-scaffolding
 
 ## Current Position
 
-Phase: 4 of 8 (Env switch + adapter scaffolding) — next up
-Plan: — (run `/gsd-plan-phase 4`)
-Status: Ready to plan Phase 4
-Last activity: 2026-04-25 — Milestone v0.9.2.1 roadmap created (5 phases: 4–8)
+Phase: 4 (env-switch-adapter-scaffolding) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-04-25
 
 Progress: [░░░░░░░░░░] 0% (0/5 phases in current milestone)
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0% (0/5 phases in current milestone)
 | v0.9.2.1 / Phase 06 Per-CLI auth + config rendering | 0/? | Not started |
 | v0.9.2.1 / Phase 07 Cost guardrail + ttyd UX | 0/? | Not started |
 | v0.9.2.1 / Phase 08 Operator docs | 0/? | Not started |
+| Phase 04 P01 | 1m 15s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - v0.9.2.1: OpenCode + qwen3-coder + OpenRouter is the worked headline recipe.
 - v0.9.2.1: Tests are mandatory, ship with the code under test, not deferred to a final phase.
 - v0.9.2.1: `openwebui/init.sh` MUST NOT be touched (saved-memory hard rule); regression-grep test (TEST-05) lives in Phase 4 onward.
+- [Phase 04]: Used print(stderr)+sys.exit(1) shape for SUBAGENT_CLI hard-fail (NOT sys.exit(message)) — guarantees stderr visibility under pytest/lifespan; resolver tests must use capfd not capsys.
+- [Phase 04]: Picked D5 shape (a) — explicit single-line extra_env["SUBAGENT_CLI"]=SUBAGENT_CLI assignment over module-level tuple — Phase 6 per-CLI passthroughs use the existing if-guarded tuple pattern, no need for runtime-level tuple yet.
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-25
-Stopped at: Roadmap for milestone v0.9.2.1 created (Phases 4–8). Next: `/gsd-plan-phase 4`.
+Last session: 2026-04-25T23:01:12.896Z
+Stopped at: Completed 04-01-PLAN.md (env switch + cli_runtime scaffolding)
 Resume file: None

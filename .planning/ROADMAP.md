@@ -31,7 +31,7 @@
 
 **Milestone Goal:** Add Codex CLI (`@openai/codex`) and OpenCode (`opencode-ai`, sst fork) as drop-in alternatives to Claude Code across the entire sub-agent surface. A single `SUBAGENT_CLI=claude|codex|opencode` env switch, read once at orchestrator boot, routes every sub-agent invocation through the chosen CLI with identical operator UX. Default unset = `claude` (byte-identical backwards compat). MCP `sub_agent(...)` tool signature unchanged. Tests are mandatory and ship with the code under test.
 
-- [ ] **Phase 4: Env switch + adapter scaffolding** — `SUBAGENT_CLI` constant in `docker_manager.py`, allowlist + lenient-fallback resolver in `cli_runtime.py`, `cli_adapters/` package skeleton, `extra_env["SUBAGENT_CLI"]` injection, resolver tests + init.sh regression-grep test (CLI-01..03, ADAPT-01, TEST-02, TEST-05).
+- [ ] **Phase 4: Env switch + adapter scaffolding** — `SUBAGENT_CLI` constant in `docker_manager.py`, allowlist + hard-fail-on-invalid resolver in `cli_runtime.py`, `cli_adapters/` package skeleton, `extra_env["SUBAGENT_CLI"]` injection, resolver tests + init.sh regression-grep test (CLI-01..03, ADAPT-01, TEST-02, TEST-05).
 - [ ] **Phase 5: Adapter layer (per-CLI argv + result parsing)** — Three adapters (`claude.py` lift-and-shift, `codex.py`, `opencode.py`), normalised `SubAgentResult` dataclass, `mcp_tools.sub_agent` rewritten as thin orchestration over `cli_runtime.dispatch(...)`, per-CLI model resolution. Adapter tests + golden Claude snapshot ship with the code (ADAPT-02..06, TEST-03).
 - [ ] **Phase 6: Per-CLI auth + config rendering** — Three CLI-scoped passthrough tuples, marker-gated entrypoint heredoc rendering `~/.config/opencode/opencode.json` (env-substituted, in `/tmp`) and `~/.codex/config.toml`, codex + opencode npm-global installs in image, image-level `--version` and per-CLI autostart smoke tests (AUTH-01..04, TEST-01, TEST-06).
 - [ ] **Phase 7: Cost guardrail + ttyd UX** — `.bashrc` autostart honours `${SUBAGENT_CLI:-claude}` with renamed `SUBAGENT_AUTOSTARTED` marker, `NO_AUTOSTART=1` escape hatch, `sub_agent` dispatch end-to-end test (TERM-01..03, TEST-04).
@@ -96,7 +96,12 @@
   4. **Backwards compat is byte-identical.** `pytest tests/orchestrator/test_cli_runtime.py` is fully green and asserts the unset/empty/`claude` paths produce identical resolver output. The MCP `sub_agent` tool signature and behaviour are unchanged in this phase (adapters are scaffolded only — dispatch flip happens in Phase 7).
   5. **`init.sh` is untouched.** `tests/test_init_sh_unchanged.sh` runs in CI and asserts `openwebui/init.sh` byte-equals the v0.9.2.0 baseline; the test fails if any later phase modifies it.
 
-**Plans:** TBD
+**Plans:** 5 plans
+- [ ] `04-01-PLAN.md` — SUBAGENT_CLI constant + allowlist hard-fail validation in docker_manager.py + extra_env injection + cli_runtime.py with Cli StrEnum and resolve_cli() (CLI-01, CLI-02, CLI-03)
+- [ ] `04-02-PLAN.md` — cli_adapters/ package skeleton: CliAdapter Protocol + SubAgentResult dataclass + ClaudeAdapter byte-identical lift-and-shift (DORMANT) + Codex/OpenCode stubs (ADAPT-01, CLI-03)
+- [ ] `04-03-PLAN.md` — warn_subagent_cli() banner in docker_manager.py + app.py lifespan wiring (CLI-01)
+- [ ] `04-04-PLAN.md` — Tests: TEST-02 resolver suite + golden-snapshot ClaudeAdapter byte-compat + TEST-05 init.sh sha256 regression (TEST-02, TEST-05)
+- [ ] `04-05-PLAN.md` — Doc amendments: drop "lenient fallback" wording from research/SUMMARY.md + research/PITFALLS.md Pitfall 12 + ROADMAP Phase 4 line, per CONTEXT.md D1 hard-fail decision (CLI-02)
 
 ### Phase 5: Adapter layer (per-CLI argv + result parsing) (v0.9.2.1)
 
@@ -160,11 +165,11 @@
 | 1. System Prompt Extraction (v0.8.12.7)         | 1/1 | ✅ Complete | 2026-04-12 |
 | 2. Preview Filter UX (v0.8.12.8)                | 1/1 | ✅ Complete | 2026-04-12 |
 | 3. Claude Code Gateway Compatibility (v0.8.12.9)| 3/3 | ✅ Shipped  | 2026-04-25 (v0.9.2.0) |
-| 4. Env switch + adapter scaffolding (v0.9.2.1)  | 0/? | Not started | - |
+| 4. Env switch + adapter scaffolding (v0.9.2.1)  | 0/5 | Planned     | - |
 | 5. Adapter layer (v0.9.2.1)                     | 0/? | Not started | - |
 | 6. Per-CLI auth + config rendering (v0.9.2.1)   | 0/? | Not started | - |
 | 7. Cost guardrail + ttyd UX (v0.9.2.1)          | 0/? | Not started | - |
 | 8. Operator docs (v0.9.2.1)                     | 0/? | Not started | - |
 
 ---
-*Updated 2026-04-25 — Milestone v0.9.2.1 (Multi-CLI Sub-Agent Runtime) roadmap added (Phases 4–8). Tests are mandatory and ship with the code under test in each phase, not deferred.*
+*Updated 2026-04-26 — Phase 4 planned: 5 plans (env switch + cli_runtime, cli_adapters package, banner wiring, tests, doc amendments). Phase 4 line amended from "lenient-fallback" to "hard-fail-on-invalid" per CONTEXT.md D1 decision.*

@@ -9,9 +9,9 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 ### CLI Runtime Switch (env-driven)
 
-- [ ] **CLI-01**: A new env var `SUBAGENT_CLI` selects the runtime: accepted values are `claude` (default), `codex`, `opencode`. Read once at orchestrator boot in `computer-use-server/docker_manager.py` module load and propagated to every spawned sandbox container as the same env var. Empty string and unset both resolve to `claude` — no behavioural change for existing deployments.
-- [ ] **CLI-02**: Invalid `SUBAGENT_CLI` values (e.g. `cline`, typo) fail loud at orchestrator startup with a single-line error naming the offending value and the three accepted values. The orchestrator does NOT silently fall back to `claude` for typos.
-- [ ] **CLI-03**: A pure-Python resolver `cli_runtime.resolve_cli()` returns the active CLI as an enum-like value (`Cli.CLAUDE | Cli.CODEX | Cli.OPENCODE`); used by `mcp_tools.sub_agent` and by the per-CLI auth-env passthrough loop. Single source of truth — no string comparisons scattered across the codebase.
+- [x] **CLI-01**: A new env var `SUBAGENT_CLI` selects the runtime: accepted values are `claude` (default), `codex`, `opencode`. Read once at orchestrator boot in `computer-use-server/docker_manager.py` module load and propagated to every spawned sandbox container as the same env var. Empty string and unset both resolve to `claude` — no behavioural change for existing deployments.
+- [x] **CLI-02**: Invalid `SUBAGENT_CLI` values (e.g. `cline`, typo) fail loud at orchestrator startup with a single-line error naming the offending value and the three accepted values. The orchestrator does NOT silently fall back to `claude` for typos.
+- [x] **CLI-03**: A pure-Python resolver `cli_runtime.resolve_cli()` returns the active CLI as an enum-like value (`Cli.CLAUDE | Cli.CODEX | Cli.OPENCODE`); used by `mcp_tools.sub_agent` and by the per-CLI auth-env passthrough loop. Single source of truth — no string comparisons scattered across the codebase.
 
 ### Adapter Layer (per-CLI argv & I/O parsing)
 
@@ -177,9 +177,9 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | GATEWAY-10 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-11 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-12 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
-| CLI-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
-| CLI-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
-| CLI-03 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| CLI-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
+| CLI-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
+| CLI-03 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | ADAPT-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
 | ADAPT-02 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
