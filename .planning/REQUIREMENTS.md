@@ -15,7 +15,7 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 ### Adapter Layer (per-CLI argv & I/O parsing)
 
-- [ ] **ADAPT-01**: A new package `computer-use-server/cli_adapters/` holds one adapter per CLI: `claude.py`, `codex.py`, `opencode.py`. Each exposes the same interface: `build_argv(task: str, system_prompt: str, model: str, max_turns: int, timeout_s: int) -> list[str]` and `parse_result(stdout: str, stderr: str, returncode: int) -> SubAgentResult`. Adapter dispatch lives in `cli_runtime.dispatch(...)`.
+- [x] **ADAPT-01**: A new package `computer-use-server/cli_adapters/` holds one adapter per CLI: `claude.py`, `codex.py`, `opencode.py`. Each exposes the same interface: `build_argv(task: str, system_prompt: str, model: str, max_turns: int, timeout_s: int) -> list[str]` and `parse_result(stdout: str, stderr: str, returncode: int) -> SubAgentResult`. Adapter dispatch lives in `cli_runtime.dispatch(...)`.
 - [ ] **ADAPT-02**: The Claude adapter is a lift-and-shift of the existing `claude --print --append-system-prompt …` invocation and JSON-parse logic from `mcp_tools.py` (current code). Goal: byte-identical output for `SUBAGENT_CLI=claude` (or unset) compared with v0.9.2.0 baseline — proven by a golden-snapshot test.
 - [ ] **ADAPT-03**: The Codex adapter invokes `codex exec --ephemeral --json --output-last-message <tmpfile> "<prompt>"` and reads the last-message file for the result text. System-prompt injection is via `AGENTS.md` written to `/tmp/codex-agents-<uuid>/AGENTS.md` and `--cd` set to that dir (Codex has no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None, raw_events=[…])`.
 - [ ] **ADAPT-04**: The OpenCode adapter invokes `opencode run "<prompt>" --model <provider/model> --format json` and parses the documented JSON event schema. System-prompt injection is via `instructions[]` in the rendered config (no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None | usd_value)`.
@@ -180,7 +180,7 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | CLI-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | CLI-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | CLI-03 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
-| ADAPT-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| ADAPT-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | ADAPT-02 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-04 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
