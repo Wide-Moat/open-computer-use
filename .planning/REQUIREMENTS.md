@@ -177,12 +177,39 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | GATEWAY-10 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-11 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
 | GATEWAY-12 | Phase 3 — Claude Code Gateway Compatibility (v0.8.12.9) | Pending |
+| CLI-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| CLI-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| CLI-03 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| ADAPT-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| ADAPT-02 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-04 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-05 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-06 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| AUTH-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| AUTH-02 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| AUTH-03 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| AUTH-04 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| TERM-01 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
+| TERM-02 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
+| TERM-03 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
+| TEST-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| TEST-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| TEST-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| TEST-04 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
+| TEST-05 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Pending |
+| TEST-06 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| DOCS-MULTICLI-01 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
+| DOCS-MULTICLI-02 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
+| DOCS-MULTICLI-03 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
+| DOCS-MULTICLI-04 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
 - v0.8.12.8 requirements: 12 / 12 mapped ✓
-- v0.8.12.9 requirements: 12 / 12 mapped
+- v0.8.12.9 requirements: 12 / 12 mapped ✓
+- v0.9.2.1 requirements: 22 / 22 mapped ✓
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-12 — milestone v0.8.12.9 requirements added*
+*Last updated: 2026-04-25 — milestone v0.9.2.1 requirements mapped to Phases 4–8*
