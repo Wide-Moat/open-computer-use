@@ -39,7 +39,7 @@
 - [ ] **Phase 7: Upstream re-intake against v0.9.2** — Fetch `open-webui@v0.9.2` (already pulled in upstream clone). Diff `middleware.py`, `retrieval.py`, and the Svelte source anchors between v0.9.1 and v0.9.2. Produce `07-INVENTORY-DELTA.md` mapping each of the 8 patch anchors → still-matches / needs-tweak / broken. Pure read-only investigation; no code changes. Reuses `~/src/open-webui-upstream`.
 - [ ] **Phase 8: Re-verify frontend patches against v0.9.2** — For each of 2 frontend patches: pull v0.9.2 image chunks, grep for structural anchor; if still matches → keep regex, re-run 3-state tests against v0.9.2 fixture; if broken → re-derive regex from v0.9.2 compiled chunk, retain idempotency marker + fail-loud. Build `open-computer-use:0.9.2-test` image green; chunks served over HTTP contain patch markers.
 - [ ] **Phase 9: Re-verify backend patches against v0.9.2** — For each of 6 backend patches: diff the anchor lines in v0.9.2 `middleware.py`/`retrieval.py`, update regex/SEARCH blocks where v0.9.2 drift (new try/except wraps, async changes, renamed fields) requires it; keep idempotency markers; ensure cascade (patches 3+4) stays atomic. pytest 3-state + cascade tests all green on v0.9.2. Rebuild `open-computer-use:0.9.2-test` — build log has 8 PATCHED markers.
-- [ ] **Phase 10: Release v0.9.2.0** — Bump `ARG OPENWEBUI_VERSION=0.9.2` in `openwebui/Dockerfile`, `OPENWEBUI_VERSION=0.9.2` in `docker-compose.webui.yml`. Run the three shell tests + full pytest. Prepend `## v0.9.2.0 (YYYY-MM-DD)` in CHANGELOG.md with (a) base bump 0.8.12 → 0.9.2, (b) 8 rewritten patches one-liner each, (c) Phase 3 GATEWAY-01..12 rollup → `docs/claude-code-gateway.md`. Update README compat line. ONE commit `chore: release v0.9.2.0`. NO git tag. NO git push.
+- [x] **Phase 10: Release v0.9.2.0** — Bump `ARG OPENWEBUI_VERSION=0.9.2` in `openwebui/Dockerfile`, `OPENWEBUI_VERSION=0.9.2` in `docker-compose.webui.yml`. Run the three shell tests + full pytest. Prepend `## v0.9.2.0 (YYYY-MM-DD)` in CHANGELOG.md with (a) base bump 0.8.12 → 0.9.2, (b) 8 rewritten patches one-liner each, (c) Phase 3 GATEWAY-01..12 rollup → `docs/claude-code-gateway.md`. Update README compat line. ONE commit `chore: release v0.9.2.0`. NO git tag. NO git push. (completed 2026-04-25)
 
 ## Phase Details
 
@@ -196,7 +196,28 @@ Plans:
 
 Plans:
 - [x] 09-01-PLAN.md — Mint OWUI-BE-V092-01..06, add v0.9.2 middleware/retrieval fixtures, cascade-update patches 3 & 4 SEARCH blocks for the new `'metadata': metadata,` key (atomic), dry-verify patches 5/6/7/8 still-match v0.9.2, extend pytest 3-state + cascade coverage to the v0.9.2 fixture — Wave 1, autonomous
-- [ ] 09-02-PLAN.md — Full production-Dockerfile rebuild at `--build-arg OPENWEBUI_VERSION=0.9.2`, verify 8 PATCHED markers + 0 ERROR lines, full-repo pytest green in python:3.13-slim, author 09-VERDICT.md, flip REQUIREMENTS.md OWUI-BE-V092-01..06 to Complete — Wave 2, autonomous
+- [x] 09-02-PLAN.md — Full production-Dockerfile rebuild at `--build-arg OPENWEBUI_VERSION=0.9.2`, verify 8 PATCHED markers + 0 ERROR lines, full-repo pytest green in python:3.13-slim, author 09-VERDICT.md, flip REQUIREMENTS.md OWUI-BE-V092-01..06 to Complete — Wave 2, autonomous
+
+### Phase 10: Release v0.9.2.0 (v0.9.2.0)
+
+**Goal:** Bump `ARG OPENWEBUI_VERSION=0.8.12` → `0.9.2` in `openwebui/Dockerfile` and `docker-compose.webui.yml`; prepend a `## v0.9.2.0 (YYYY-MM-DD)` entry to `CHANGELOG.md` that documents the base bump, the 8 rewritten patches (Phases 4–9) with their markers and behaviours, and the Phase 3 Claude Code Gateway rollup (GATEWAY-01..12) linking to `docs/claude-code-gateway.md`; refresh README + INSTALL compatibility references. Run the three project shell tests + full pytest green, create ONE commit `chore: release v0.9.2.0`. NO git tag. NO git push.
+**Depends on:** Phase 8 (frontend patches re-verified at v0.9.2), Phase 9 (backend patches re-verified at v0.9.2, pytest green).
+**Requirements:** OWUI-REL-V092-01, OWUI-REL-V092-02, OWUI-REL-V092-03, OWUI-REL-V092-04
+**Success Criteria:** (observable)
+  1. `openwebui/Dockerfile` line 3 reads `ARG OPENWEBUI_VERSION=0.9.2` (no occurrences of `0.8.12` remain in the file).
+  2. `docker-compose.webui.yml` line 18 reads `OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-0.9.2}`.
+  3. `CHANGELOG.md` top entry is `## v0.9.2.0 (<release date>)` and contains: (a) base bump statement 0.8.12 → 0.9.2 with "no 0.9.1 release cut" note, (b) 8 patches one-liner each with marker names, (c) Phase 3 GATEWAY-01..12 rollup with link to `docs/claude-code-gateway.md`, (d) Known Limitations paragraph flagging that v0.9.2 live UI UAT is deferred to the user's post-release run.
+  4. `README.md` compatibility copy references Open WebUI 0.9.2 in both the "Compatibility:" line and the "Why not a fork?" paragraph. `docs/INSTALL.md` has any base-version callouts updated to 0.9.2.
+  5. `./tests/test-docker-image.sh` (skipped cleanly if no `:latest` image present), `./tests/test-no-corporate.sh`, `./tests/test-project-structure.sh` return exit 0; `python -m pytest tests/` inside `python:3.13-slim` returns exit 0 with 0 failed / 0 errored.
+  6. Exactly ONE new commit lands with subject `chore: release v0.9.2.0`, touching exactly 6 files (REQUIREMENTS.md, Dockerfile, docker-compose.webui.yml, README.md, docs/INSTALL.md, CHANGELOG.md).
+  7. `git tag --list | grep -Fx v0.9.2.0` returns zero results (user tags manually).
+  8. No `git push` was invoked by the phase (user pushes manually).
+  9. `git config user.email` is `i@yambr.com` at commit time.
+
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 10-01-PLAN.md — Mint OWUI-REL-V092-01..04, bump Dockerfile + docker-compose.webui.yml defaults 0.8.12 → 0.9.2, refresh README + INSTALL compat references, prepend CHANGELOG v0.9.2.0 entry (8 patches + GATEWAY-01..12 rollup), run three shell tests + full pytest (BLOCKS commit on red), create ONE `chore: release v0.9.2.0` commit with 4-layer protection (identity gate, idempotency gate, allowlist staging, post-commit tag/push/file-count verification) — Wave 1, autonomous
 
 
 ## Progress
@@ -212,7 +233,7 @@ Plans:
 | 7. Upstream re-intake against v0.9.2 (v0.9.2.0) | 0/1 | 🚧 Planned | — |
 | 8. Re-verify frontend patches against v0.9.2 | 0/1 | 🚧 Planned | — |
 | 9. Re-verify backend patches against v0.9.2  | 0/2 | 🚧 Planned | — |
-| 10. Release v0.9.2.0                         | 0/? | 🚧 Not planned | — |
+| 10. Release v0.9.2.0                         | 1/1 | Complete   | 2026-04-25 |
 
 ---
-*Updated 2026-04-24 — Phase 9 planned (2 plans, Waves 1-2, autonomous). Phase 10 (release v0.9.2.0) still awaiting planning.*
+*Updated 2026-04-24 — Phase 10 planned (1 plan, Wave 1, autonomous, held pending user UAT). Release commit only — no tag, no push.*

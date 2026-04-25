@@ -73,10 +73,10 @@ Requirements for current milestone. Each maps to roadmap phases.
 
 ### Open WebUI 0.9.2 Compatibility — Release (v0.9.2.0)
 
-- [ ] **OWUI-REL-V092-01**: `openwebui/Dockerfile` ARG default bumped `OPENWEBUI_VERSION=0.8.12` → `OPENWEBUI_VERSION=0.9.2`. `grep -q "^ARG OPENWEBUI_VERSION=0.9.2" openwebui/Dockerfile` passes. No other Dockerfile lines changed.
-- [ ] **OWUI-REL-V092-02**: `docker-compose.webui.yml` build-arg default bumped `OPENWEBUI_VERSION:-0.8.12` → `OPENWEBUI_VERSION:-0.9.2`. `grep -q "OPENWEBUI_VERSION:-0.9.2" docker-compose.webui.yml` passes. No other compose keys changed.
-- [ ] **OWUI-REL-V092-03**: `CHANGELOG.md` top entry is `## v0.9.2.0 (<release date>)` and documents (a) Open WebUI base image bump from 0.8.12 to 0.9.2 (no 0.9.1 release cut), (b) the 8 rewritten patches with one-line behaviour summaries, (c) the Phase 3 Claude Code Gateway rollup (GATEWAY-01..12) with a link to `docs/claude-code-gateway.md`. `grep -q "^## v0.9.2.0" CHANGELOG.md` passes; `grep -q "GATEWAY-" CHANGELOG.md` passes; `grep -q "claude-code-gateway.md" CHANGELOG.md` passes.
-- [ ] **OWUI-REL-V092-04**: `README.md` compatibility line references Open WebUI `0.9.2` (the `v0.8.11–0.8.12` text is updated to include 0.9.2 or is replaced). `docs/INSTALL.md` base-version references (if any) updated to 0.9.2. `grep -q "0.9.2" README.md` passes.
+- [x] **OWUI-REL-V092-01**: `openwebui/Dockerfile` ARG default bumped `OPENWEBUI_VERSION=0.8.12` → `OPENWEBUI_VERSION=0.9.2`. `grep -q "^ARG OPENWEBUI_VERSION=0.9.2" openwebui/Dockerfile` passes. No other Dockerfile lines changed.
+- [x] **OWUI-REL-V092-02**: `docker-compose.webui.yml` build-arg default bumped `OPENWEBUI_VERSION:-0.8.12` → `OPENWEBUI_VERSION:-0.9.2`. `grep -q "OPENWEBUI_VERSION:-0.9.2" docker-compose.webui.yml` passes. No other compose keys changed.
+- [x] **OWUI-REL-V092-03**: `CHANGELOG.md` top entry is `## v0.9.2.0 (<release date>)` and documents (a) Open WebUI base image bump from 0.8.12 to 0.9.2 (no 0.9.1 release cut), (b) the 8 rewritten patches with one-line behaviour summaries, (c) the Phase 3 Claude Code Gateway rollup (GATEWAY-01..12) with a link to `docs/claude-code-gateway.md`. `grep -q "^## v0.9.2.0" CHANGELOG.md` passes; `grep -q "GATEWAY-" CHANGELOG.md` passes; `grep -q "claude-code-gateway.md" CHANGELOG.md` passes.
+- [x] **OWUI-REL-V092-04**: `README.md` compatibility line references Open WebUI `0.9.2` (the `v0.8.11–0.8.12` text is updated to include 0.9.2 or is replaced). `docs/INSTALL.md` base-version references (if any) updated to 0.9.2. `grep -q "0.9.2" README.md` passes.
 
 ### Open WebUI 0.9 Compatibility — Frontend Patches (v0.9.1.0)
 
