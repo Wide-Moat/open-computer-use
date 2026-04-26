@@ -154,7 +154,10 @@
   4. **End-to-end dispatch works for all three CLIs.** `pytest tests/orchestrator/test_sub_agent_dispatch.py` exercises `sub_agent(...)` with each `SUBAGENT_CLI` value (subprocess boundary mocked); the test asserts dispatch routes to the correct adapter and the MCP signature is unchanged. The `mcp_tools.sub_agent` flip from Phase 5's scaffolding to live dispatch through `cli_runtime` is in effect.
   5. **Cost-guardrail caveat is observable.** For non-claude CLIs, `cost_usd=None` is rendered as `cost: unavailable` in the sub-agent result blob (never `$0.00`). `SUB_AGENT_TIMEOUT` is the documented backstop for codex/opencode; the caveat is surfaced in the result string when applicable.
 
-**Plans:** TBD
+**Plans:** 3 plans
+- [ ] `07-01-PLAN.md` — Dockerfile .bashrc autostart rewrite (CLAUDE_AUTOSTARTED → SUBAGENT_AUTOSTARTED, exec ${SUBAGENT_CLI:-claude}, NO_AUTOSTART + /tmp/.no_autostart escape hatches, welcome banner hint) (TERM-01, TERM-02, TERM-03)
+- [ ] `07-02-PLAN.md` — tests/orchestrator/test_sub_agent_dispatch.py: end-to-end dispatch parametrised over SUBAGENT_CLI + cost-rendering 'unavailable' regression test (TEST-04)
+- [ ] `07-03-PLAN.md` — Extend tests/test-docker-image.sh with per-CLI autostart-target + NO_AUTOSTART escape-hatch + welcome-hint smoke; image rebuild + full test suite verification gate (TERM-01..03 + TEST-04 umbrella)
 
 ### Phase 8: Operator docs (v0.9.2.1)
 
@@ -179,8 +182,8 @@
 | 4. Env switch + adapter scaffolding (v0.9.2.1)  | 5/5 | ✅ Complete | 2026-04-25 |
 | 5. Adapter layer (v0.9.2.1)                     | 0/6 | Planned     | - |
 | 6. Per-CLI auth + config rendering (v0.9.2.1)   | 0/? | Not started | - |
-| 7. Cost guardrail + ttyd UX (v0.9.2.1)          | 0/? | Not started | - |
+| 7. Cost guardrail + ttyd UX (v0.9.2.1)          | 0/3 | Planned     | - |
 | 8. Operator docs (v0.9.2.1)                     | 0/? | Not started | - |
 
 ---
-*Updated 2026-04-26 — Phase 5 planned: 6 plans across 4 waves (Wave 1 parallel: 05-01 resolver + 05-02 codex + 05-03 opencode; Wave 2: 05-04 tests + fixtures; Wave 3: 05-05 dispatch flip; Wave 4: 05-06 byte-compat regression test).*
+*Updated 2026-04-26 — Phase 7 planned: 3 plans across 3 waves (Wave 1: 07-01 Dockerfile .bashrc autostart rewrite; Wave 2: 07-02 dispatch + cost-rendering pytest; Wave 3: 07-03 image rebuild + full test suite gate).*
