@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9.2.1
 milestone_name: — Multi-CLI Sub-Agent Runtime
 status: executing
-stopped_at: Completed 06-03-PLAN.md (per-CLI config render in entrypoint)
-last_updated: "2026-04-26T01:54:29.689Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-04-26T02:00:36.855Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-25)
 ## Current Position
 
 Phase: 6 (per-cli-auth-config) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-04-26
 
@@ -66,6 +66,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
 | Phase 06 P01 | 10min | 2 tasks | 1 files |
 | Phase 06 P02 | 5min | 2 tasks | 1 files |
 | Phase 06-per-cli-auth-config P03 | 4min | 1 tasks | 1 files |
+| Phase 06 P04 | 12m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Gate legacy Anthropic standalone block and ANTHROPIC_CUSTOM_HEADERS on SUBAGENT_CLI=='claude' to fully close Pitfall 1 across all auth injection paths
 - [Phase 06]: Pin OPENCODE_CONFIG=/tmp/opencode.json into container Env (not just entrypoint export) so docker exec subprocesses inherit it (Pitfall 7)
 - [Phase 06-per-cli-auth-config]: 06-03: Hardcoded OpenCode model default in JSON since single-quoted heredoc cannot expand bash vars; OPENCODE_MODEL env override happens at OpenCode CLI runtime
+- [Phase 06]: test_passthrough_isolation captures containers.create kwargs (not .run — that is the ephemeral mkdir shim)
+- [Phase 06]: Docker smoke step uses long-running container + docker exec entrypoint twice + GATED-SENTINEL overwrite to verify marker gating
 
 ### Pending Todos
 
@@ -111,6 +114,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-26T01:54:29.686Z
-Stopped at: Completed 06-03-PLAN.md (per-CLI config render in entrypoint)
+Last session: 2026-04-26T02:00:36.852Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
