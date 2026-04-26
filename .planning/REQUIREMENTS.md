@@ -31,9 +31,9 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 ### Terminal UX (ttyd preview)
 
-- [ ] **TERM-01**: When the operator opens the in-browser ttyd terminal, it auto-launches the chosen CLI based on `SUBAGENT_CLI` (`exec claude` / `exec codex` / `exec opencode`). The autostart is implemented in `.bashrc` (touched in `Dockerfile`), NOT in `app.py:848` ttyd command — keeps the orchestrator CLI-agnostic.
-- [ ] **TERM-02**: `NO_AUTOSTART=1` environment variable disables the autostart and drops the operator into a plain bash. Discoverable via the existing terminal welcome text. Escape hatch for advanced users.
-- [ ] **TERM-03**: The `.bashrc` autostart marker is renamed `CLAUDE_AUTOSTARTED` → `SUBAGENT_AUTOSTARTED` and the variable expands `${SUBAGENT_CLI:-claude}` so the default path is unchanged for existing deployments.
+- [x] **TERM-01**: When the operator opens the in-browser ttyd terminal, it auto-launches the chosen CLI based on `SUBAGENT_CLI` (`exec claude` / `exec codex` / `exec opencode`). The autostart is implemented in `.bashrc` (touched in `Dockerfile`), NOT in `app.py:848` ttyd command — keeps the orchestrator CLI-agnostic.
+- [x] **TERM-02**: `NO_AUTOSTART=1` environment variable disables the autostart and drops the operator into a plain bash. Discoverable via the existing terminal welcome text. Escape hatch for advanced users.
+- [x] **TERM-03**: The `.bashrc` autostart marker is renamed `CLAUDE_AUTOSTARTED` → `SUBAGENT_AUTOSTARTED` and the variable expands `${SUBAGENT_CLI:-claude}` so the default path is unchanged for existing deployments.
 
 ### Test Coverage (mandatory)
 
@@ -190,9 +190,9 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | AUTH-02 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
 | AUTH-03 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
 | AUTH-04 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
-| TERM-01 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
-| TERM-02 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
-| TERM-03 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Pending |
+| TERM-01 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Complete |
+| TERM-02 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Complete |
+| TERM-03 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Complete |
 | TEST-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
 | TEST-02 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | TEST-03 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
