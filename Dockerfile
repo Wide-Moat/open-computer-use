@@ -425,7 +425,11 @@ if [ ! -f /tmp/.cli-runtime-initialised ]; then\n\
     case "${SUBAGENT_CLI:-claude}" in\n\
         opencode)\n\
             mkdir -p /tmp\n\
-            cat > /tmp/opencode.json <<'"'"'OCEOF'"'"'\n\
+            if [ -n "${OPENCODE_CONFIG_EXTRA:-}" ]; then\n\
+                printf "%s" "$OPENCODE_CONFIG_EXTRA" > /tmp/opencode.json\n\
+                echo "OpenCode config sourced from OPENCODE_CONFIG_EXTRA (operator override; canonical block skipped)"\n\
+            else\n\
+                cat > /tmp/opencode.json <<'"'"'OCEOF'"'"'\n\
 {\n\
   "$schema": "https://opencode.ai/config.json",\n\
   "provider": {\n\
@@ -442,8 +446,9 @@ if [ ! -f /tmp/.cli-runtime-initialised ]; then\n\
   "model": "anthropic/claude-sonnet-4-6"\n\
 }\n\
 OCEOF\n\
+                echo "OpenCode config rendered to /tmp/opencode.json (env-substituted, no plaintext secrets)"\n\
+            fi\n\
             export OPENCODE_CONFIG=/tmp/opencode.json\n\
-            echo "OpenCode config rendered to /tmp/opencode.json (env-substituted, no plaintext secrets)"\n\
             ;;\n\
         codex)\n\
             mkdir -p /home/assistant/.codex\n\
@@ -462,6 +467,10 @@ CXEOF\n\
             else\n\
                 : > /home/assistant/.codex/config.toml\n\
                 echo "Codex config empty — public OpenAI defaults"\n\
+            fi\n\
+            if [ -n "${CODEX_CONFIG_EXTRA:-}" ]; then\n\
+                printf "\\n# === CODEX_CONFIG_EXTRA (operator-supplied) ===\\n%s\\n" "$CODEX_CONFIG_EXTRA" >> /home/assistant/.codex/config.toml\n\
+                echo "Codex config extended via CODEX_CONFIG_EXTRA"\n\
             fi\n\
             chown -R assistant:assistant /home/assistant/.codex\n\
             ;;\n\

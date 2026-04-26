@@ -140,6 +140,10 @@ The orchestrator injects only the active CLI's auth env vars into the sandbox co
 
 This prevents an operator's leftover `OPENAI_API_KEY` (from a previous Codex experiment) from silently routing OpenCode traffic through OpenAI when they meant OpenRouter.
 
+## Advanced configs
+
+The image entrypoint renders **minimal viable** configs only — what works for the common case. For Azure routing, approval modes, MCP federation, custom OpenAI-compat gateways behind nginx, opencode personas, and operator-supplied overrides via `OPENCODE_CONFIG_EXTRA` / `CODEX_CONFIG_EXTRA` env hooks, see [`docs/cli-config-templates.md`](cli-config-templates.md).
+
 ## Troubleshooting
 
 - **Banner shows the wrong CLI** — `SUBAGENT_CLI` is read once at orchestrator boot, not per-request. Restart: `docker compose restart computer-use-server`.
