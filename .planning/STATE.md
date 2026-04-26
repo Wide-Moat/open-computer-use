@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9.2.1
 milestone_name: — Multi-CLI Sub-Agent Runtime
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-04-26T00:56:22.635Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-04-26T01:03:08.918Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-25)
 ## Current Position
 
 Phase: 5 (adapter-layer) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-04-26
 
@@ -60,6 +60,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
 | Phase 04 P04 | 3m 30s | 3 tasks | 4 files |
 | Phase 05-adapter-layer P01 | 3min | 2 tasks | 2 files |
 | Phase 05 P02 | ~6min | 2 tasks | 2 files |
+| Phase 05 P04 | 6m | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,7 @@ Recent decisions affecting current work:
 - [Phase 04]: capfd (not capsys) for stderr capture in resolver tests — print(..., file=sys.stderr)+sys.exit(1) shape requires file-descriptor capture.
 - [Phase 05-adapter-layer]: Env vars read at call-time inside _resolve_* (not module-load) so tests monkeypatch.setenv without importlib.reload.
 - [Phase 05-adapter-layer]: _CLAUDE_ALIAS_MAP values are zero-arg lambdas to preserve v0.9.2.0 mcp_tools.py:909-924 fallback semantics.
+- [Phase 05]: Plan 05-04: Used pytest.mark.xfail(strict=True) as a cross-plan handover marker for the BLOCKER 1 ClaudeAdapter returncode patch — XPASS-under-strict forces the marker removal in lockstep with the 05-05 fix.
 
 ### Pending Todos
 
@@ -98,6 +100,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-26T00:52:42.243Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-04-26T01:03:04.201Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
