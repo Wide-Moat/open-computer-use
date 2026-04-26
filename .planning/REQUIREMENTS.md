@@ -17,7 +17,7 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 - [x] **ADAPT-01**: A new package `computer-use-server/cli_adapters/` holds one adapter per CLI: `claude.py`, `codex.py`, `opencode.py`. Each exposes the same interface: `build_argv(task: str, system_prompt: str, model: str, max_turns: int, timeout_s: int) -> list[str]` and `parse_result(stdout: str, stderr: str, returncode: int) -> SubAgentResult`. Adapter dispatch lives in `cli_runtime.dispatch(...)`.
 - [ ] **ADAPT-02**: The Claude adapter is a lift-and-shift of the existing `claude --print --append-system-prompt …` invocation and JSON-parse logic from `mcp_tools.py` (current code). Goal: byte-identical output for `SUBAGENT_CLI=claude` (or unset) compared with v0.9.2.0 baseline — proven by a golden-snapshot test.
-- [ ] **ADAPT-03**: The Codex adapter invokes `codex exec --ephemeral --json --output-last-message <tmpfile> "<prompt>"` and reads the last-message file for the result text. System-prompt injection is via `AGENTS.md` written to `/tmp/codex-agents-<uuid>/AGENTS.md` and `--cd` set to that dir (Codex has no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None, raw_events=[…])`.
+- [x] **ADAPT-03**: The Codex adapter invokes `codex exec --ephemeral --json --output-last-message <tmpfile> "<prompt>"` and reads the last-message file for the result text. System-prompt injection is via `AGENTS.md` written to `/tmp/codex-agents-<uuid>/AGENTS.md` and `--cd` set to that dir (Codex has no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None, raw_events=[…])`.
 - [ ] **ADAPT-04**: The OpenCode adapter invokes `opencode run "<prompt>" --model <provider/model> --format json` and parses the documented JSON event schema. System-prompt injection is via `instructions[]` in the rendered config (no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None | usd_value)`.
 - [ ] **ADAPT-05**: `mcp_tools.sub_agent(...)` is rewritten as a thin orchestration layer that calls `cli_runtime.dispatch(...)`. The MCP tool signature is unchanged: `sub_agent(task: str, max_turns: int = 25, model: str = "sonnet")` — backwards-compatible for all existing skill callers.
 - [x] **ADAPT-06**: Model resolution is per-CLI: `resolve_subagent_model(alias, cli)` returns a Claude ID for `Cli.CLAUDE` (today's behaviour preserved), an OpenAI / OpenAI-compat ID for `Cli.CODEX` (`gpt-5-codex` default; honours `CODEX_MODEL` env), and a `provider/model` string for `Cli.OPENCODE` (`anthropic/claude-sonnet-4-6` default; honours `OPENCODE_MODEL` env). Aliases like `sonnet` resolve sensibly per CLI (e.g. for opencode: `anthropic/claude-sonnet-4-6`).
@@ -182,7 +182,7 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | CLI-03 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | ADAPT-01 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | ADAPT-02 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
-| ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
 | ADAPT-04 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-05 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-06 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
