@@ -428,15 +428,15 @@ if [ ! -f /tmp/.cli-runtime-initialised ]; then\n\
             cat > /tmp/opencode.json <<'"'"'OCEOF'"'"'\n\
 {\n\
   "$schema": "https://opencode.ai/config.json",\n\
-  "providers": {\n\
+  "provider": {\n\
     "openrouter": {\n\
-      "apiKey": "{env:OPENROUTER_API_KEY}"\n\
+      "options": { "apiKey": "{env:OPENROUTER_API_KEY}" }\n\
     },\n\
     "openai": {\n\
-      "apiKey": "{env:OPENAI_API_KEY}"\n\
+      "options": { "apiKey": "{env:OPENAI_API_KEY}" }\n\
     },\n\
     "anthropic": {\n\
-      "apiKey": "{env:ANTHROPIC_API_KEY}"\n\
+      "options": { "apiKey": "{env:ANTHROPIC_API_KEY}" }\n\
     }\n\
   },\n\
   "model": "anthropic/claude-sonnet-4-6"\n\
@@ -449,6 +449,8 @@ OCEOF\n\
             mkdir -p /home/assistant/.codex\n\
             if [ -n "${OPENAI_BASE_URL:-}" ]; then\n\
                 cat > /home/assistant/.codex/config.toml <<CXEOF\n\
+model_provider = "custom"\n\
+\n\
 [model_providers.custom]\n\
 name = "custom-gateway"\n\
 base_url = "${OPENAI_BASE_URL}"\n\

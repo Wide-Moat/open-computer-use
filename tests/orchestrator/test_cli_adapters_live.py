@@ -390,3 +390,128 @@ def test_opencode_live_against_mock(docker_env):
     assert "Hello from mock LLM" in result.text, (
         f"opencode: completion text not surfaced through parser: {result.text!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression guards for the Dockerfile-rendered configs (Phase 9.2 fixes)
+# ---------------------------------------------------------------------------
+#
+# The three tests above use TEST-SIDE hand-rolled configs, so they pass even
+# when the production Dockerfile heredoc is broken. The two tests below run
+# the actual `/home/assistant/.entrypoint.sh` and then assert the rendered
+# files are syntactically valid for the CLI version that ships in the image.
+#
+# These caught the two bugs Phase 9.2 fixed:
+#   - opencode 1.14.25 schema requires top-level "provider" (singular);
+#     the heredoc used to write "providers" -> CLI rejected on load.
+#   - codex never set top-level `model_provider = "custom"` -> the
+#     [model_providers.custom] block was dead config; OPENAI_BASE_URL
+#     traffic still went to api.openai.com.
+
+def test_opencode_entrypoint_renders_valid_config():
+    """Run the production entrypoint with SUBAGENT_CLI=opencode, then assert
+    `opencode --help` succeeds (which it doesn't if the config schema is
+    rejected — schema validation runs on every invocation)."""
+    if not _have("docker"):
+        pytest.skip("docker not installed")
+    if not _image_exists(WORKSPACE_IMAGE):
+        pytest.skip(f"workspace image '{WORKSPACE_IMAGE}' not present locally")
+
+    res = subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "--platform", "linux/amd64",
+            "-e", "SUBAGENT_CLI=opencode",
+            "-e", "OPENROUTER_API_KEY=sk-or-stub",
+            "-e", "OPENAI_API_KEY=sk-stub",
+            "-e", "ANTHROPIC_API_KEY=sk-stub",
+            "--entrypoint", "bash",
+            "--user", "assistant",
+            WORKSPACE_IMAGE,
+            "-lc",
+            # Run the real entrypoint to render /tmp/opencode.json. Note:
+            # the entrypoint marker-gate writes /tmp/opencode.json only
+            # when SUBAGENT_CLI=opencode AND the marker is absent (both
+            # true here). Then ask opencode to load+validate the config —
+            # `opencode --help` triggers config schema validation on every
+            # invocation, so an invalid rendered config will exit non-zero
+            # with "Configuration is invalid" / "Unrecognized key".
+            #
+            # CRITICAL: no pipes (would mask exit code) and no `head` (same).
+            # Capture combined stdout+stderr by redirecting 2>&1 inside the
+            # script so subprocess.run sees the real opencode rc.
+            "set -e; "
+            "/home/assistant/.entrypoint.sh true >/tmp/entrypoint.log 2>&1 || "
+            "  { echo 'ENTRYPOINT FAILED'; cat /tmp/entrypoint.log; exit 1; }; "
+            "export OPENCODE_CONFIG=/tmp/opencode.json; "
+            "echo '--- rendered config ---'; cat /tmp/opencode.json; "
+            "echo '--- opencode --help ---'; "
+            "opencode --help 2>&1; "
+            "echo \"--- opencode rc=$? ---\"",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    print(
+        f"[opencode-entrypoint] rc={res.returncode}\nOUT:\n{res.stdout}\n"
+        f"ERR:\n{res.stderr}",
+        file=sys.stderr,
+    )
+    assert res.returncode == 0, (
+        f"docker run failed (rc={res.returncode}); stderr:\n{res.stderr}"
+    )
+    assert "command not found" not in res.stdout, (
+        f"opencode binary not on PATH inside test shell:\n{res.stdout}"
+    )
+    assert "ENTRYPOINT FAILED" not in res.stdout, (
+        f"entrypoint script failed:\n{res.stdout}"
+    )
+    assert "Unrecognized key" not in res.stdout, (
+        f"opencode rejected the rendered config:\n{res.stdout}"
+    )
+    assert "Configuration is invalid" not in res.stdout, (
+        f"opencode reported invalid config:\n{res.stdout}"
+    )
+    # Positive assertion: --help only prints its banner if config loaded.
+    assert "opencode run" in res.stdout, (
+        f"opencode --help did not produce its usage banner:\n{res.stdout}"
+    )
+
+
+def test_codex_entrypoint_selects_custom_provider():
+    """Run the production entrypoint with OPENAI_BASE_URL set, then assert
+    the rendered config has top-level `model_provider = "custom"` so the
+    custom block is actually used (not dead config)."""
+    if not _have("docker"):
+        pytest.skip("docker not installed")
+    if not _image_exists(WORKSPACE_IMAGE):
+        pytest.skip(f"workspace image '{WORKSPACE_IMAGE}' not present locally")
+
+    res = subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "--platform", "linux/amd64",
+            "-e", "SUBAGENT_CLI=codex",
+            "-e", "OPENAI_API_KEY=sk-stub",
+            "-e", "OPENAI_BASE_URL=http://example.invalid/v1",
+            "--entrypoint", "bash",
+            WORKSPACE_IMAGE,
+            "-lc",
+            "/home/assistant/.entrypoint.sh true >/dev/null 2>&1; "
+            "cat /home/assistant/.codex/config.toml",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    print(f"[codex-entrypoint] rc={res.returncode}\nOUT:\n{res.stdout}", file=sys.stderr)
+    assert res.returncode == 0
+    assert 'model_provider = "custom"' in res.stdout, (
+        "Dockerfile heredoc must set top-level model_provider so the custom "
+        "block is actually selected. Without it, OPENAI_BASE_URL traffic still "
+        "goes to api.openai.com.\nRendered config:\n" + res.stdout
+    )
+    assert "[model_providers.custom]" in res.stdout, (
+        "Custom provider block missing from rendered config:\n" + res.stdout
+    )

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`opencode` runtime was non-functional in v0.9.2.1.** The Dockerfile entrypoint rendered `/tmp/opencode.json` with top-level key `"providers"` (plural) and a flat `"apiKey"` per provider. Current opencode (1.14.25) schema requires `"provider"` (singular) with credentials nested under `"options": { "apiKey": ... }`. Pre-fix containers exited with `Error: Configuration is invalid at /tmp/opencode.json ↳ Unrecognized key: "providers"` before reaching the model. Caught by Phase 9.1 real-CLI smoke (`tests/orchestrator/test_cli_adapters_live.py`).
+- **`codex` `OPENAI_BASE_URL` was silently ignored in v0.9.2.1.** The Dockerfile heredoc declared `[model_providers.custom]` when `OPENAI_BASE_URL` is set but never set the top-level `model_provider = "custom"` selector, so codex always fell through to the default `openai` provider (api.openai.com) regardless. Fixed by prepending the selector line. Operators pointing codex at a corporate gateway are unblocked.
+
+### Added
+
+- **Real-CLI smoke suite** — `tests/orchestrator/test_cli_adapters_live.py` (gated by `RUN_LIVE_CLI=1`) plus `tests/orchestrator/mock_llm_server.py`. Runs each adapter end-to-end against a hermetic stdlib HTTP server speaking three wire protocols (Anthropic Messages SSE, OpenAI Responses SSE, OpenAI Chat Completions SSE) inside a docker-network sidecar. Closes audit concern #1 from `.planning/milestones/v0.9.2.1-AUDIT.md`. Also includes two regression guards that load the entrypoint-rendered configs (not test-side configs) so future heredoc regressions trip immediately.
+
 ## v0.9.2.1 — Multi-CLI Sub-Agent Runtime (2026-04-26)
 
 Adds OpenAI Codex CLI (`@openai/codex@0.125.0`) and OpenCode (`opencode-ai@1.14.25`, sst fork) as drop-in alternatives to Claude Code across the entire sub-agent surface. A single `SUBAGENT_CLI=claude|codex|opencode` env switch routes every sub-agent invocation through the chosen CLI with identical operator UX. Default unset = `claude` (byte-identical backwards-compat with v0.9.2.0).
