@@ -1389,6 +1389,43 @@ async def skill_stats(x_internal_api_key: Optional[str] = Header(default=None)):
 
 
 # ============================================================================
+# Runtime introspection (Phase 9.5 — Preview SPA multi-CLI surface)
+# ============================================================================
+
+@app.get("/api/runtime/cli", tags=["System"])
+async def runtime_cli(response: Response):
+    """Return the active sub-agent CLI runtime.
+
+    Pure additive endpoint — no auth, no side effects, no breakage of the
+    existing MCP contract. Surfaces what `SUBAGENT_CLI` resolved to at
+    orchestrator boot (`docker_manager.SUBAGENT_CLI`) plus the per-CLI
+    default model so the Preview SPA can render an active-CLI badge.
+
+    Cache-Control: no-store — the value is fixed for the orchestrator
+    lifetime, but operators flipping `SUBAGENT_CLI` in `.env` and
+    restarting must see the new value immediately on next page load.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    from docker_manager import (
+        SUBAGENT_CLI,
+        SUB_AGENT_DEFAULT_MODEL,
+        CODEX_SUB_AGENT_DEFAULT_MODEL,
+        OPENCODE_SUB_AGENT_DEFAULT_MODEL,
+    )
+    if SUBAGENT_CLI == "codex":
+        default_model = CODEX_SUB_AGENT_DEFAULT_MODEL or "gpt-5-codex"
+    elif SUBAGENT_CLI == "opencode":
+        default_model = OPENCODE_SUB_AGENT_DEFAULT_MODEL or "anthropic/claude-sonnet-4-6"
+    else:
+        default_model = SUB_AGENT_DEFAULT_MODEL or "sonnet"
+    return {
+        "cli": SUBAGENT_CLI,
+        "default_model": default_model,
+        "supports_cost": SUBAGENT_CLI == "claude",
+    }
+
+
+# ============================================================================
 # MCP Endpoint Integration
 # ============================================================================
 
