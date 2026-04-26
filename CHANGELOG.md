@@ -10,6 +10,13 @@
 ### Added
 
 - **Real-CLI smoke suite** — `tests/orchestrator/test_cli_adapters_live.py` (gated by `RUN_LIVE_CLI=1`) plus `tests/orchestrator/mock_llm_server.py`. Runs each adapter end-to-end against a hermetic stdlib HTTP server speaking three wire protocols (Anthropic Messages SSE, OpenAI Responses SSE, OpenAI Chat Completions SSE) inside a docker-network sidecar. Closes audit concern #1 from `.planning/milestones/v0.9.2.1-AUDIT.md`. Also includes two regression guards that load the entrypoint-rendered configs (not test-side configs) so future heredoc regressions trip immediately.
+- **Preview SPA active-CLI surface** — new `GET /api/runtime/cli` orchestrator endpoint returning `{cli, default_model, supports_cost}`. The preview UI (`computer-use-server/static/preview.js`) now renders an `ActiveCliBadge` pill in the toolbar showing the resolved sub-agent CLI; for codex/opencode it adds a "cost n/a" indicator so operators understand `cost_usd: null` is not a `$0.00` rendering bug. Pure progressive enhancement — silently disappears against older orchestrators without the endpoint. Endpoint contract pinned by `tests/orchestrator/test_runtime_cli_endpoint.py`. Closes audit concern #3.
+- **CLI config templates companion** — `docs/cli-config-templates.md` with copy-paste recipes for codex+Azure, codex+approval/sandbox modes, codex+custom OpenAI-compat gateways, opencode+instructions, opencode+MCP federation, opencode+custom openai-compat providers, opencode+agent personas, plus a verification recipe. Backed by two new env hooks in the Dockerfile entrypoint: **`OPENCODE_CONFIG_EXTRA`** (replaces `/tmp/opencode.json` verbatim) and **`CODEX_CONFIG_EXTRA`** (appended to `~/.codex/config.toml` after the canonical block). Both backwards-compatible — unset = today's behaviour. Cross-linked from `docs/multi-cli.md` under `## Advanced configs`. Closes audit concern #2.
+
+### Docs
+
+- `docs/multi-cli.md` cross-links the new templates companion under the `## Advanced configs` section.
+- `.planning/REQUIREMENTS.md` `DOCS-MULTICLI-01..04` checkboxes flipped from `[ ]` → `[x]` (cosmetic-only sync; the docs themselves shipped in commit `245d1b6`).
 
 ## v0.9.2.1 — Multi-CLI Sub-Agent Runtime (2026-04-26)
 

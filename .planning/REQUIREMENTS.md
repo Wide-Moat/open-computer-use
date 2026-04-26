@@ -46,10 +46,10 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 ### Operator Docs (step-by-step copy-paste)
 
-- [ ] **DOCS-MULTICLI-01**: A new authoritative doc `docs/multi-cli.md` (English-only) walks the operator through: (a) what `SUBAGENT_CLI` does and why; (b) install per CLI (already in image — note this); (c) env vars per CLI in copy-paste blocks; (d) verification commands per CLI; (e) what changes when you flip the switch. Format follows the saved feedback memory: "do this, then this, verify" — not scattered.
-- [ ] **DOCS-MULTICLI-02**: `docs/multi-cli.md` includes a worked OpenCode + qwen3-coder + OpenRouter recipe: exact `.env` block (`SUBAGENT_CLI=opencode`, `OPENROUTER_API_KEY=…`, `OPENCODE_MODEL=openrouter/qwen/qwen-3-coder`), exact `docker compose up` command, sample sub-agent invocation, expected output shape. Reproducible end-to-end on a clean clone.
-- [ ] **DOCS-MULTICLI-03**: `README.md` and `docs/INSTALL.md` cross-link `docs/multi-cli.md` from the existing "Sub-agent" / "Open WebUI Integration" sections. `.env.example` grows a `# === Optional: Multi-CLI sub-agent runtime ===` block with `SUBAGENT_CLI=` (commented) and the three auth-env templates per CLI.
-- [ ] **DOCS-MULTICLI-04**: `CHANGELOG.md` v0.9.2.1 entry summarises the milestone, lists every CLI-/ADAPT-/AUTH-/TERM-/TEST-/DOCS- requirement IDs, and credits prior art (Codex docs, sst/opencode docs, OpenRouter qwen3-coder).
+- [x] **DOCS-MULTICLI-01**: A new authoritative doc `docs/multi-cli.md` (English-only) walks the operator through: (a) what `SUBAGENT_CLI` does and why; (b) install per CLI (already in image — note this); (c) env vars per CLI in copy-paste blocks; (d) verification commands per CLI; (e) what changes when you flip the switch. Format follows the saved feedback memory: "do this, then this, verify" — not scattered.
+- [x] **DOCS-MULTICLI-02**: `docs/multi-cli.md` includes a worked OpenCode + qwen3-coder + OpenRouter recipe: exact `.env` block (`SUBAGENT_CLI=opencode`, `OPENROUTER_API_KEY=…`, `OPENCODE_MODEL=openrouter/qwen/qwen-3-coder`), exact `docker compose up` command, sample sub-agent invocation, expected output shape. Reproducible end-to-end on a clean clone.
+- [x] **DOCS-MULTICLI-03**: `README.md` and `docs/INSTALL.md` cross-link `docs/multi-cli.md` from the existing "Sub-agent" / "Open WebUI Integration" sections. `.env.example` grows a `# === Optional: Multi-CLI sub-agent runtime ===` block with `SUBAGENT_CLI=` (commented) and the three auth-env templates per CLI.
+- [x] **DOCS-MULTICLI-04**: `CHANGELOG.md` v0.9.2.1 entry summarises the milestone, lists every CLI-/ADAPT-/AUTH-/TERM-/TEST-/DOCS- requirement IDs, and credits prior art (Codex docs, sst/opencode docs, OpenRouter qwen3-coder).
 
 ---
 
@@ -199,10 +199,10 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | TEST-04 | Phase 7 — Cost guardrail + ttyd UX (v0.9.2.1) | Complete |
 | TEST-05 | Phase 4 — Env switch + adapter scaffolding (v0.9.2.1) | Complete |
 | TEST-06 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
-| DOCS-MULTICLI-01 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
-| DOCS-MULTICLI-02 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
-| DOCS-MULTICLI-03 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
-| DOCS-MULTICLI-04 | Phase 8 — Operator docs (v0.9.2.1) | Pending |
+| DOCS-MULTICLI-01 | Phase 8 — Operator docs (v0.9.2.1) | Complete |
+| DOCS-MULTICLI-02 | Phase 8 — Operator docs (v0.9.2.1) | Complete |
+| DOCS-MULTICLI-03 | Phase 8 — Operator docs (v0.9.2.1) | Complete |
+| DOCS-MULTICLI-04 | Phase 8 — Operator docs (v0.9.2.1) | Complete |
 
 **Coverage:**
 - v0.8.12.7 requirements: 7 / 7 mapped ✓
