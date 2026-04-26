@@ -115,7 +115,13 @@
   4. **Per-CLI model resolution works.** `resolve_subagent_model("sonnet", Cli.CLAUDE)` returns today's Claude ID; `resolve_subagent_model("sonnet", Cli.OPENCODE)` returns `anthropic/claude-sonnet-4-6`; `resolve_subagent_model("sonnet", Cli.CODEX)` returns the codex default (`gpt-5-codex` unless `CODEX_MODEL` overrides). Direct provider/model strings pass through unchanged.
   5. **MCP signature unchanged.** `sub_agent(task, max_turns=25, model="sonnet")` works for every existing skill caller; no skill file is modified in this phase. `pytest tests/orchestrator/test_cli_adapters.py` is fully green with fixture-based per-CLI tests committed to `tests/fixtures/cli/`.
 
-**Plans:** TBD
+**Plans:** 6 plans
+- [ ] `05-01-PLAN.md` — Extend cli_runtime.py with resolve_subagent_model + per-CLI default model env constants in docker_manager.py (ADAPT-06)
+- [ ] `05-02-PLAN.md` — Implement CodexAdapter (build_argv per D1, parse_result per D2) replacing Phase 4 stubs (ADAPT-03)
+- [ ] `05-03-PLAN.md` — Implement OpenCodeAdapter (build_argv per D3, parse_result per D4) replacing Phase 4 stubs (ADAPT-04)
+- [ ] `05-04-PLAN.md` — Tests: test_cli_adapters.py + extend test_cli_runtime.py + synthetic JSONL fixtures under tests/fixtures/cli/ (TEST-03)
+- [ ] `05-05-PLAN.md` — Dispatch FLIP: _execute_bash_capture helper + cli_runtime.dispatch + mcp_tools.sub_agent rewrite to thin orchestration (ADAPT-02, ADAPT-05)
+- [ ] `05-06-PLAN.md` — Dispatch byte-compat regression test in test_subagent_claude_compat.py (ADAPT-02)
 
 ### Phase 6: Per-CLI auth + config rendering (v0.9.2.1)
 
@@ -165,11 +171,11 @@
 | 1. System Prompt Extraction (v0.8.12.7)         | 1/1 | ✅ Complete | 2026-04-12 |
 | 2. Preview Filter UX (v0.8.12.8)                | 1/1 | ✅ Complete | 2026-04-12 |
 | 3. Claude Code Gateway Compatibility (v0.8.12.9)| 3/3 | ✅ Shipped  | 2026-04-25 (v0.9.2.0) |
-| 4. Env switch + adapter scaffolding (v0.9.2.1)  | 0/5 | Planned     | - |
-| 5. Adapter layer (v0.9.2.1)                     | 0/? | Not started | - |
+| 4. Env switch + adapter scaffolding (v0.9.2.1)  | 5/5 | ✅ Complete | 2026-04-25 |
+| 5. Adapter layer (v0.9.2.1)                     | 0/6 | Planned     | - |
 | 6. Per-CLI auth + config rendering (v0.9.2.1)   | 0/? | Not started | - |
 | 7. Cost guardrail + ttyd UX (v0.9.2.1)          | 0/? | Not started | - |
 | 8. Operator docs (v0.9.2.1)                     | 0/? | Not started | - |
 
 ---
-*Updated 2026-04-26 — Phase 4 planned: 5 plans (env switch + cli_runtime, cli_adapters package, banner wiring, tests, doc amendments). Phase 4 line amended from "lenient-fallback" to "hard-fail-on-invalid" per CONTEXT.md D1 decision.*
+*Updated 2026-04-26 — Phase 5 planned: 6 plans across 4 waves (Wave 1 parallel: 05-01 resolver + 05-02 codex + 05-03 opencode; Wave 2: 05-04 tests + fixtures; Wave 3: 05-05 dispatch flip; Wave 4: 05-06 byte-compat regression test).*

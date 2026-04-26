@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9.2.1
 milestone_name: — Multi-CLI Sub-Agent Runtime
 status: executing
-stopped_at: Completed 04-04-PLAN.md (Phase 4 test trifecta TEST-02 + ADAPT-02 + TEST-05)
-last_updated: "2026-04-25T23:30:00.000Z"
-last_activity: 2026-04-25
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-04-26T00:49:13.759Z"
+last_activity: 2026-04-26
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 2
   total_plans: 10
-  completed_plans: 10
-  percent: 100
+  completed_plans: 6
+  percent: 60
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25)
 
 **Core value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
-**Current focus:** Phase 4 — env-switch-adapter-scaffolding
+**Current focus:** Phase 5 — adapter-layer
 
 ## Current Position
 
-Phase: 4 (env-switch-adapter-scaffolding) — COMPLETE
-Plan: 5 of 5 (all plans shipped)
-Status: Phase 4 complete; ready for Phase 5
-Last activity: 2026-04-25
+Phase: 5 (adapter-layer) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-04-26
 
 Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
 
@@ -58,6 +58,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
 | Phase 04 P05 | 3m | 3 tasks | 2 files |
 | Phase 04 P03 | 1m | 2 tasks | 2 files |
 | Phase 04 P04 | 3m 30s | 3 tasks | 4 files |
+| Phase 05-adapter-layer P01 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 04]: Picked D5 shape (a) — explicit single-line extra_env["SUBAGENT_CLI"]=SUBAGENT_CLI assignment over module-level tuple — Phase 6 per-CLI passthroughs use the existing if-guarded tuple pattern, no need for runtime-level tuple yet.
 - [Phase 04]: Standalone bash test for TEST-05 (init.sh sha256) instead of integration into test-project-structure.sh — matches existing one-test-per-script-file pattern; CI runs alongside other standalone scripts.
 - [Phase 04]: capfd (not capsys) for stderr capture in resolver tests — print(..., file=sys.stderr)+sys.exit(1) shape requires file-descriptor capture.
+- [Phase 05-adapter-layer]: Env vars read at call-time inside _resolve_* (not module-load) so tests monkeypatch.setenv without importlib.reload.
+- [Phase 05-adapter-layer]: _CLAUDE_ALIAS_MAP values are zero-arg lambdas to preserve v0.9.2.0 mcp_tools.py:909-924 fallback semantics.
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-25T23:30:00.000Z
-Stopped at: Completed 04-04-PLAN.md (Phase 4 test trifecta TEST-02 + ADAPT-02 + TEST-05) — Phase 4 done
+Last session: 2026-04-26T00:49:13.756Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None

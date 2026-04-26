@@ -20,7 +20,7 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 - [ ] **ADAPT-03**: The Codex adapter invokes `codex exec --ephemeral --json --output-last-message <tmpfile> "<prompt>"` and reads the last-message file for the result text. System-prompt injection is via `AGENTS.md` written to `/tmp/codex-agents-<uuid>/AGENTS.md` and `--cd` set to that dir (Codex has no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None, raw_events=[…])`.
 - [ ] **ADAPT-04**: The OpenCode adapter invokes `opencode run "<prompt>" --model <provider/model> --format json` and parses the documented JSON event schema. System-prompt injection is via `instructions[]` in the rendered config (no `--system` flag). Returns `SubAgentResult(text, tokens_in, tokens_out, cost_usd=None | usd_value)`.
 - [ ] **ADAPT-05**: `mcp_tools.sub_agent(...)` is rewritten as a thin orchestration layer that calls `cli_runtime.dispatch(...)`. The MCP tool signature is unchanged: `sub_agent(task: str, max_turns: int = 25, model: str = "sonnet")` — backwards-compatible for all existing skill callers.
-- [ ] **ADAPT-06**: Model resolution is per-CLI: `resolve_subagent_model(alias, cli)` returns a Claude ID for `Cli.CLAUDE` (today's behaviour preserved), an OpenAI / OpenAI-compat ID for `Cli.CODEX` (`gpt-5-codex` default; honours `CODEX_MODEL` env), and a `provider/model` string for `Cli.OPENCODE` (`anthropic/claude-sonnet-4-6` default; honours `OPENCODE_MODEL` env). Aliases like `sonnet` resolve sensibly per CLI (e.g. for opencode: `anthropic/claude-sonnet-4-6`).
+- [x] **ADAPT-06**: Model resolution is per-CLI: `resolve_subagent_model(alias, cli)` returns a Claude ID for `Cli.CLAUDE` (today's behaviour preserved), an OpenAI / OpenAI-compat ID for `Cli.CODEX` (`gpt-5-codex` default; honours `CODEX_MODEL` env), and a `provider/model` string for `Cli.OPENCODE` (`anthropic/claude-sonnet-4-6` default; honours `OPENCODE_MODEL` env). Aliases like `sonnet` resolve sensibly per CLI (e.g. for opencode: `anthropic/claude-sonnet-4-6`).
 
 ### Auth & Config (per-CLI passthrough)
 
@@ -185,7 +185,7 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | ADAPT-03 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-04 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
 | ADAPT-05 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
-| ADAPT-06 | Phase 5 — Adapter layer (v0.9.2.1) | Pending |
+| ADAPT-06 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
 | AUTH-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
 | AUTH-02 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
 | AUTH-03 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
