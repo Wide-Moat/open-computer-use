@@ -24,7 +24,7 @@ Requirements for the active milestone. Each maps to a roadmap phase below.
 
 ### Auth & Config (per-CLI passthrough)
 
-- [ ] **AUTH-01**: `docker_manager.py` defines three CLI-scoped passthrough tuples: `CLAUDE_CODE_PASSTHROUGH_ENVS` (existing, unchanged), `CODEX_PASSTHROUGH_ENVS` (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CODEX_MODEL`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`), and `OPENCODE_PASSTHROUGH_ENVS` (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_MODEL`). The active set is selected by `SUBAGENT_CLI`; only the active set is injected into the sandbox env. No auth bleed across CLIs.
+- [x] **AUTH-01**: `docker_manager.py` defines three CLI-scoped passthrough tuples: `CLAUDE_CODE_PASSTHROUGH_ENVS` (existing, unchanged), `CODEX_PASSTHROUGH_ENVS` (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CODEX_MODEL`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_VERSION`), and `OPENCODE_PASSTHROUGH_ENVS` (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_MODEL`). The active set is selected by `SUBAGENT_CLI`; only the active set is injected into the sandbox env. No auth bleed across CLIs.
 - [ ] **AUTH-02**: For `SUBAGENT_CLI=opencode`, the entrypoint heredoc in `Dockerfile` writes `~/.config/opencode/opencode.json` with `{env:OPENROUTER_API_KEY}` / `{env:OPENAI_API_KEY}` / `{env:ANTHROPIC_API_KEY}` substitution syntax (NOT plain values) so the file itself contains no secrets. File written to `/tmp/opencode.json` and `OPENCODE_CONFIG=/tmp/opencode.json` exported, NOT to the `/home/assistant` volume — prevents the OpenCode `auth.json` leak vector flagged in PITFALLS.
 - [ ] **AUTH-03**: For `SUBAGENT_CLI=codex`, the entrypoint renders `~/.codex/config.toml` with a `[model_providers.X]` block when `OPENAI_BASE_URL` is set (gateway path), or leaves it empty when only `OPENAI_API_KEY` is set (direct OpenAI path). Both paths verified by a real `codex --version` + smoke invocation.
 - [ ] **AUTH-04**: Marker-gated bootstrap — entrypoint writes `opencode.json` / `config.toml` only on first start (sentinel file `/tmp/.cli-runtime-initialised`), NOT on every container restart. Mirrors the existing `init.sh` marker pattern. `init.sh` itself is NOT modified.
@@ -186,7 +186,7 @@ Filled by the roadmap step — see ROADMAP.md once phases are defined.
 | ADAPT-04 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
 | ADAPT-05 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
 | ADAPT-06 | Phase 5 — Adapter layer (v0.9.2.1) | Complete |
-| AUTH-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
+| AUTH-01 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Complete |
 | AUTH-02 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
 | AUTH-03 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |
 | AUTH-04 | Phase 6 — Per-CLI auth + config rendering (v0.9.2.1) | Pending |

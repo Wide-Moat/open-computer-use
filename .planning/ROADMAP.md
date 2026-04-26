@@ -135,7 +135,12 @@
   4. **Marker-gated bootstrap.** Entrypoint writes the per-CLI config files only when sentinel `/tmp/.cli-runtime-initialised` is absent; on container restart the sentinel is present and the heredoc is skipped. `openwebui/init.sh` itself is NOT modified (verified by Phase 4's regression-grep test still passing).
   5. **All three CLIs installed and verified.** `tests/test-docker-image.sh` runs `claude --version`, `codex --version`, `opencode --version` — all return exit 0. The same script runs end-to-end with `SUBAGENT_CLI` set to each value, with stub auth env vars, and asserts (a) the container starts, (b) the chosen CLI is the autostart target (placeholder pre-Phase 7), (c) `--version` exit-code 0. No real LLM calls.
 
-**Plans:** TBD
+**Plans:** 5 plans
+- [ ] `06-01-PLAN.md` — Per-CLI passthrough tuples + _PASSTHROUGH_BY_CLI dispatch + auth.json scrub in docker_manager.py (AUTH-01)
+- [ ] `06-02-PLAN.md` — Dockerfile codex + opencode npm-global installs + ARG version pins (TEST-01)
+- [ ] `06-03-PLAN.md` — Dockerfile entrypoint marker-gated heredoc rendering /tmp/opencode.json + ~/.codex/config.toml (AUTH-02, AUTH-03, AUTH-04)
+- [ ] `06-04-PLAN.md` — Tests: new test_passthrough_isolation.py + extended tests/test-docker-image.sh per-CLI smoke (TEST-06)
+- [ ] `06-05-PLAN.md` — Image build + full test-suite verification gate (TEST-01, TEST-06 umbrella)
 
 ### Phase 7: Cost guardrail + ttyd UX (v0.9.2.1)
 

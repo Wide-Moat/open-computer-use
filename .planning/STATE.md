@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.9.2.1
 milestone_name: — Multi-CLI Sub-Agent Runtime
-status: verifying
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-04-26T01:16:55.074Z"
+status: executing
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-04-26T01:48:08.261Z"
 last_activity: 2026-04-26
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 11
-  percent: 100
+  total_plans: 15
+  completed_plans: 12
+  percent: 80
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25)
 
 **Core value:** A single user can pull one image, wire it into Open WebUI, and get real Computer Use working end-to-end without running a corporate stack.
-**Current focus:** Phase 5 — adapter-layer
+**Current focus:** Phase 6 — per-cli-auth-config
 
 ## Current Position
 
-Phase: 5 (adapter-layer) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
+Phase: 6 (per-cli-auth-config) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-04-26
 
 Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
@@ -63,6 +63,7 @@ Progress: [██░░░░░░░░] 20% (1/5 phases in current milestone)
 | Phase 05 P04 | 6m | 3 tasks | 5 files |
 | Phase 05 P05 | 25min | 4 tasks | 5 files |
 | Phase 05 P06 | 8min | 1 tasks | 1 files |
+| Phase 06 P01 | 10min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,8 @@ Recent decisions affecting current work:
 - [Phase 05]: BLOCKER 1 fix + xfail removal in same commit (Task 0) — strict-xfail XPASS would otherwise hard-fail CI
 - [Phase 05]: Codex --cd workdir created by dispatch (extracted from argv) rather than via separate adapter hook — keeps CliAdapter Protocol minimal
 - [Phase 05]: _format_sub_agent_result fully deleted (rendering inlined in sub_agent) rather than kept as thin wrapper — reduces indirection around rc-switch logic
+- [Phase 06]: Gate legacy Anthropic standalone block and ANTHROPIC_CUSTOM_HEADERS on SUBAGENT_CLI=='claude' to fully close Pitfall 1 across all auth injection paths
+- [Phase 06]: Pin OPENCODE_CONFIG=/tmp/opencode.json into container Env (not just entrypoint export) so docker exec subprocesses inherit it (Pitfall 7)
 
 ### Pending Todos
 
@@ -105,6 +108,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-26T01:16:55.071Z
-Stopped at: Completed 05-06-PLAN.md
+Last session: 2026-04-26T01:48:08.258Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
