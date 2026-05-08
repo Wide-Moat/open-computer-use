@@ -87,6 +87,8 @@ For all eight live scenarios with prompts you can copy-paste, see the **[Demo co
 
 ![Architecture](docs/architecture.svg)
 
+> Looking ahead: a Kubernetes-friendly architecture with object-storage-backed user data and squashfs-packaged skills is being designed in [docs/requirements/](docs/requirements/). Docker Compose remains the primary supported path.
+
 ## Ways to try it
 
 | Path | URL | What you need | Best for |
