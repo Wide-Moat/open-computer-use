@@ -3,7 +3,7 @@
 # AI Computer Use - Dockerfile
 # Based on Ubuntu 24.04 Noble Numbat
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 LABEL maintainer="OpenWebUI Implementation"
 LABEL description="AI Computer Use Environment"
