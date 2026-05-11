@@ -47,7 +47,11 @@ REPLACE_PATTERN_1 = """            if collection_name is None:
             _file_size = file.meta.get('size', 0)
             if not form_data.collection_name and not form_data.content and _file_size > 1_000_000:
                 log.info(f'skip_processing_chat_files: skipping extraction for large file {file.filename} ({_file_size} bytes)')
-                Files.update_file_data_by_id(file.id, {
+                # Files.update_file_data_by_id was sync in v0.8.x, async since v0.9.x.
+                # process_file() is async, so await is required — otherwise the coroutine
+                # is dropped, the DB status stays 'pending', and the frontend polls
+                # forever (see issue #96).
+                await Files.update_file_data_by_id(file.id, {
                     'status': 'completed',
                     'status_description': 'File is too large for automatic processing. Enable the AI Computer Use tool to work with this file.',
                 }, db=db)

@@ -109,6 +109,22 @@ class TestFixSkipEmbeddingChatFilesV092(unittest.TestCase):
         self.assertIn("ERROR:", r.stderr)
         self.assertIn(self.PATCH_NAME, r.stderr)
 
+    def test_patched_call_uses_await_v092(self):
+        # Regression guard for issue #96: Files.update_file_data_by_id was
+        # sync in v0.8.x, async since v0.9.x. process_file() is async, so the
+        # patched call must be awaited — otherwise the coroutine is dropped,
+        # the DB status stays 'pending', and the frontend spinner hangs.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+        self.assertIn("await Files.update_file_data_by_id(", content)
+        self.assertNotRegex(
+            content,
+            r"(?<!await )Files\.update_file_data_by_id\(",
+            "Found a non-awaited Files.update_file_data_by_id call; "
+            "this regresses issue #96.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
