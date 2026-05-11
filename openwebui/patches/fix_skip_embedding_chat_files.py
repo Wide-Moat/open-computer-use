@@ -92,7 +92,10 @@ REPLACE_PATTERN_2 = """                else:
                     _fb_content = file.data.get('content', '')
                     if not _fb_content and file.path:
                         log.info(f'KB fallback: extracting content from {file.filename} (was uploaded without extraction)')
-                        _fb_path = Storage.get_file(file.path)
+                        # Storage.get_file is sync I/O; offload to a thread so the
+                        # async process_file handler doesn't block the OWUI event
+                        # loop while the file is read from the storage backend.
+                        _fb_path = await asyncio.to_thread(Storage.get_file, file.path)
                         _fb_loader = Loader(
                             engine=request.app.state.config.CONTENT_EXTRACTION_ENGINE,
                             user=user,
@@ -126,7 +129,11 @@ REPLACE_PATTERN_2 = """                else:
                             MINERU_API_TIMEOUT=request.app.state.config.MINERU_API_TIMEOUT,
                             MINERU_PARAMS=request.app.state.config.MINERU_PARAMS,
                         )
-                        docs = _fb_loader.load(
+                        # Loader.load is sync and CPU/IO-bound (PyMuPDF, Unstructured,
+                        # Tika, etc.) — minutes for large files. aload() is the
+                        # upstream-provided async wrapper that offloads via
+                        # asyncio.to_thread, keeping the event loop responsive.
+                        docs = await _fb_loader.aload(
                             file.filename, file.meta.get('content_type'), _fb_path
                         )
                         docs = [
