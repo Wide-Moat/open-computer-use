@@ -109,6 +109,52 @@ class TestFixSkipEmbeddingChatFilesV092(unittest.TestCase):
         self.assertIn("ERROR:", r.stderr)
         self.assertIn(self.PATCH_NAME, r.stderr)
 
+    def test_patched_call_uses_await_v092(self):
+        # Regression guard for issue #96: Files.update_file_data_by_id was
+        # sync in v0.8.x, async since v0.9.x. process_file() is async, so the
+        # patched call must be awaited — otherwise the coroutine is dropped,
+        # the DB status stays 'pending', and the frontend spinner hangs.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+        self.assertIn("await Files.update_file_data_by_id(", content)
+        self.assertNotRegex(
+            content,
+            r"(?<!await )Files\.update_file_data_by_id\(",
+            "Found a non-awaited Files.update_file_data_by_id call; "
+            "this regresses issue #96.",
+        )
+
+    def test_patched_kb_fallback_does_not_block_event_loop_v092(self):
+        # Storage.get_file and Loader.load are sync; calling them directly in
+        # the async process_file handler would block the OWUI event loop for
+        # the entire read/parse (minutes for large PDFs). Upstream OWUI
+        # offloads via asyncio.to_thread / Loader.aload; the KB fallback
+        # injected by this patch must do the same.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+        # Locate the inserted KB fallback block by its marker comment.
+        marker = "KB fallback: extracting content from"
+        self.assertIn(marker, content)
+        block_start = content.index(marker)
+        # Bound the block to the next non-indented line to scope assertions.
+        block = content[block_start:block_start + 4000]
+        self.assertIn("await asyncio.to_thread(Storage.get_file", block)
+        self.assertIn("await _fb_loader.aload(", block)
+        self.assertNotRegex(
+            block,
+            r"(?<!to_thread\()Storage\.get_file\(",
+            "KB fallback calls Storage.get_file without asyncio.to_thread; "
+            "this blocks the OWUI event loop on storage I/O.",
+        )
+        self.assertNotRegex(
+            block,
+            r"(?<!await )_fb_loader\.load\(",
+            "KB fallback calls _fb_loader.load() synchronously; "
+            "use aload() to keep the event loop responsive.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
