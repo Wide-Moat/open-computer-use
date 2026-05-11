@@ -47,7 +47,11 @@ REPLACE_PATTERN_1 = """            if collection_name is None:
             _file_size = file.meta.get('size', 0)
             if not form_data.collection_name and not form_data.content and _file_size > 1_000_000:
                 log.info(f'skip_processing_chat_files: skipping extraction for large file {file.filename} ({_file_size} bytes)')
-                Files.update_file_data_by_id(file.id, {
+                # Files.update_file_data_by_id was sync in v0.8.x, async since v0.9.x.
+                # process_file() is async, so await is required — otherwise the coroutine
+                # is dropped, the DB status stays 'pending', and the frontend polls
+                # forever (see issue #96).
+                await Files.update_file_data_by_id(file.id, {
                     'status': 'completed',
                     'status_description': 'File is too large for automatic processing. Enable the AI Computer Use tool to work with this file.',
                 }, db=db)
@@ -88,7 +92,10 @@ REPLACE_PATTERN_2 = """                else:
                     _fb_content = file.data.get('content', '')
                     if not _fb_content and file.path:
                         log.info(f'KB fallback: extracting content from {file.filename} (was uploaded without extraction)')
-                        _fb_path = Storage.get_file(file.path)
+                        # Storage.get_file is sync I/O; offload to a thread so the
+                        # async process_file handler doesn't block the OWUI event
+                        # loop while the file is read from the storage backend.
+                        _fb_path = await asyncio.to_thread(Storage.get_file, file.path)
                         _fb_loader = Loader(
                             engine=request.app.state.config.CONTENT_EXTRACTION_ENGINE,
                             user=user,
@@ -122,7 +129,11 @@ REPLACE_PATTERN_2 = """                else:
                             MINERU_API_TIMEOUT=request.app.state.config.MINERU_API_TIMEOUT,
                             MINERU_PARAMS=request.app.state.config.MINERU_PARAMS,
                         )
-                        docs = _fb_loader.load(
+                        # Loader.load is sync and CPU/IO-bound (PyMuPDF, Unstructured,
+                        # Tika, etc.) — minutes for large files. aload() is the
+                        # upstream-provided async wrapper that offloads via
+                        # asyncio.to_thread, keeping the event loop responsive.
+                        docs = await _fb_loader.aload(
                             file.filename, file.meta.get('content_type'), _fb_path
                         )
                         docs = [
