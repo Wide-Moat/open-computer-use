@@ -2,7 +2,7 @@
 
 This is the Kubernetes analog of running `docker-compose.yml` + `docker-compose.webui.yml` together. You install two Helm charts side-by-side in the same namespace and wire them through a shared Secret.
 
-```
+```text
 ┌──────────────────────── namespace: open-computer-use ──────────────────────────┐
 │                                                                                 │
 │  Users ── Ingress ──► Service: open-webui :3000                                │
@@ -72,7 +72,7 @@ kubectl -n open-computer-use get pods
   - Open WebUI reads it the same way, then `openwebui/init.sh` (or your manual setup) seeds it into the Tool and Filter Valves on first boot. **The values must match** — that's the whole reason for sharing one Secret.
 
 - **`ORCHESTRATOR_URL`** is the **in-cluster** URL Open WebUI uses to call the MCP endpoint:
-  ```
+  ```text
   http://ocu-computer-use-server.open-computer-use.svc.cluster.local:8081
   ```
   Set as a plain env var on the Open WebUI container — `values-open-webui.yaml` shows the line. Browsers never see this URL.

@@ -163,8 +163,8 @@ persistence:
     enabled: true
     size: 20Gi
     storageClass: ""
+    # Only ReadWriteOnce / ReadWriteOncePod are supported — chart is single-replica.
     accessMode: ReadWriteOnce
-    # Use existingClaim to bring your own PVC (e.g. RWX from a cluster filer).
     existingClaim: ""
 
   # /data — orchestrator long-lived state (mounted from compose volume `computer-use-data`).

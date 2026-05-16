@@ -76,8 +76,10 @@ jobs:
           ! grep -q "runtimeClassName:" /tmp/render-runc.yaml
 
       - name: Install kubeconform and validate manifests against k8s schemas
+        env:
+          KUBECONFORM_VERSION: v0.6.7
         run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin kubeconform
           kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-default.yaml
           kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-runc.yaml
