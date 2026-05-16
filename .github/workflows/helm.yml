@@ -48,8 +48,10 @@ jobs:
             echo "BUG: helm lint should have failed with empty secrets" >&2
             exit 1
           fi
-          # Should pass with explicit override
-          helm lint helm/computer-use-server --set secrets.mcpApiKey=test
+          # Should pass with all required keys set
+          helm lint helm/computer-use-server \
+            --set secrets.mcpApiKey=test \
+            --set orchestrator.env.PUBLIC_BASE_URL=https://x.example.com
           # Examples must lint cleanly
           helm lint helm/computer-use-server -f examples/helm/standalone/values.yaml
           helm lint helm/computer-use-server -f examples/helm/with-open-webui/values-computer-use.yaml
