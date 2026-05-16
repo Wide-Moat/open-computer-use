@@ -25,7 +25,7 @@ spec:
         - port: 8081
           protocol: TCP
   egress:
-    # DNS
+    # DNS — both UDP and TCP, against any namespace's kube-dns pods.
     - to:
         - namespaceSelector: {}
       ports:
@@ -33,13 +33,18 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Public internet (LLM APIs, registry, workspace image pulls).
+    # In-cluster service traffic (e.g. external Postgres release, Open WebUI).
+    # Without this, an in-cluster DB or any Service the orchestrator depends
+    # on becomes unreachable when networkPolicy is enabled.
+    - to:
+        - namespaceSelector: {}
+    # Public internet — LLM APIs, registry pulls (workspace image), webhooks.
+    # Operators who need to block egress to private ranges (cloud metadata,
+    # intranet) should add explicit deny rules via networkPolicy.extraEgress.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-              - 169.254.0.0/16
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

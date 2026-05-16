@@ -219,6 +219,19 @@ networkPolicy:
   #         matchLabels:
   #           name: open-webui
 
+  # Extra egress rules appended to the chart's defaults (DNS + in-cluster + 0.0.0.0/0).
+  # Use this to add explicit allow rules — e.g. limit egress to a specific
+  # external host, or whitelist your cloud metadata service.
+  extraEgress: []
+  # Example:
+  #   extraEgress:
+  #     - to:
+  #         - ipBlock:
+  #             cidr: 169.254.169.254/32  # cloud metadata
+  #       ports:
+  #         - protocol: TCP
+  #           port: 80
+
 podDisruptionBudget:
   enabled: false
   minAvailable: 1

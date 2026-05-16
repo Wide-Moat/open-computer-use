@@ -62,29 +62,37 @@ spec:
         - name: var-lib-docker
           emptyDir:
             sizeLimit: {{ .Values.persistence.varLibDocker.sizeLimit }}
+        # PVCs follow the same enabled / existingClaim / emptyDir-fallback pattern
+        # so disabling any volume in values.yaml does not produce an unschedulable Pod.
         - name: user-data
           {{- if .Values.persistence.userData.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.userData.existingClaim }}
-          {{- else }}
+          {{- else if .Values.persistence.userData.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "computer-use-server.fullname" . }}-user-data
+          {{- else }}
+          emptyDir: {}
           {{- end }}
         - name: data
           {{- if .Values.persistence.data.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.data.existingClaim }}
-          {{- else }}
+          {{- else if .Values.persistence.data.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "computer-use-server.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
           {{- end }}
         - name: skills-cache
           {{- if .Values.persistence.skillsCache.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.skillsCache.existingClaim }}
-          {{- else }}
+          {{- else if .Values.persistence.skillsCache.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "computer-use-server.fullname" . }}-skills-cache
+          {{- else }}
+          emptyDir: {}
           {{- end }}
       containers:
         # ---------------------------------------------------------------------
