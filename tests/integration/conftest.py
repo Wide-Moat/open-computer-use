@@ -96,9 +96,23 @@ def _reap_workspace_containers(test_run_id: str) -> int:
     return len(ids)
 
 
+# Matches docker-compose.test.yml's ${TEST_RUN_ID:-default} fallback. When the
+# external-stack path is taken without TEST_RUN_ID set, both sides agree on
+# "default" so the finalizer can still find and reap the right containers.
+_COMPOSE_DEFAULT_RUN_ID = "default"
+
+
 @pytest.fixture(scope="session")
 def test_run_id() -> str:
-    return os.environ.get("TEST_RUN_ID") or f"pytest-{uuid.uuid4().hex[:8]}"
+    explicit = os.environ.get("TEST_RUN_ID")
+    if explicit:
+        return explicit
+    # External-stack mode without TEST_RUN_ID → align with compose default
+    # so the cleanup label query still matches what the orchestrator stamped.
+    if os.environ.get("OCU_TEST_BASE_URL"):
+        return _COMPOSE_DEFAULT_RUN_ID
+    # Owned-stack mode: random id is safe because we set it in compose's env.
+    return f"pytest-{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture(scope="session")
@@ -177,7 +191,17 @@ def parse_mcp_response(resp: httpx.Response) -> dict:
 
     ctype = resp.headers.get("content-type", "")
     body = resp.text
-    if "text/event-stream" in ctype or body.lstrip().startswith("event:") or "data:" in body:
+    # Detect SSE only by Content-Type or by an `event:`/`data:` line at the
+    # *start* of a line. The original substring-anywhere check was too loose:
+    # a perfectly valid JSON-RPC payload like {"result":{"data":"x"}} contains
+    # the literal `"data:` and would be misrouted to the SSE branch.
+    is_sse = (
+        "text/event-stream" in ctype
+        or body.lstrip().startswith("event:")
+        or any(line.startswith("data:") for line in body.splitlines())
+    )
+    if is_sse and "text/event-stream" in ctype:
+        # Trust Content-Type when present — only then walk SSE frames.
         for line in body.splitlines():
             if line.startswith("data:"):
                 return json.loads(line[len("data:"):].strip())

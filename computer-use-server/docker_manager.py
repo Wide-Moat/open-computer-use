@@ -676,11 +676,15 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
                 skill_manager.get_user_skills_sync(current_user_email.get())
             ),
         },
+        # EXTRA_LABELS goes FIRST so the core orchestrator-owned keys
+        # (managed-by, chat-id, tool) cannot be silently overridden — e.g. an
+        # operator setting WORKSPACE_EXTRA_LABELS=chat-id=foo would otherwise
+        # break the cleanup cron's per-chat filter.
         "labels": {
+            **WORKSPACE_EXTRA_LABELS,
             "managed-by": "mcp-computer-use-orchestrator",
             "chat-id": chat_id,
             "tool": "computer-use-mcp",
-            **WORKSPACE_EXTRA_LABELS,
         },
         "security_opt": ["no-new-privileges:true"],
     }

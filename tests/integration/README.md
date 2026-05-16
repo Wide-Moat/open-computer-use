@@ -39,11 +39,18 @@ docker compose -f docker-compose.test.yml down -v --remove-orphans
 
 ## Cleanup
 
-Every workspace container spawned during a test session is tagged with a unique `test-run-id` label (via `WORKSPACE_EXTRA_LABELS` env in the orchestrator). The session fixture reaps them in `finally:` so a `SIGINT` mid-suite or a failing test does not leak containers on the host. Worst-case manual cleanup:
+Every workspace container spawned during a test session is tagged with a unique `test-run-id` label (via `WORKSPACE_EXTRA_LABELS` env in the orchestrator). The session fixture reaps them in `finally:` so a `SIGINT` mid-suite or a failing test does not leak containers on the host. Worst-case manual cleanup, scoped to a specific run so you don't nuke unrelated workspaces a developer is actively using on the same host:
 
 ```bash
-docker ps -a --filter label=managed-by=mcp-computer-use-orchestrator -q | xargs -r docker rm -f
+# Reap only this run's containers (TEST_RUN_ID matches what the harness set):
+docker ps -a --filter "label=test-run-id=${TEST_RUN_ID:-default}" -q | xargs -r docker rm -f
+
+# Reap everything labeled by this test path across all sessions (still safe —
+# only matches containers spawned via WORKSPACE_EXTRA_LABELS):
+docker ps -a --filter 'label=test-run-id' -q | xargs -r docker rm -f
 ```
+
+Do **not** filter only by `managed-by=mcp-computer-use-orchestrator` — that would also remove the developer's actively-running prod workspace containers on the same machine.
 
 ## CI
 

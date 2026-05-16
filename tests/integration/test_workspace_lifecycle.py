@@ -91,7 +91,10 @@ def test_workspace_has_user_data_mounts(client, chat_id):
     }, req_id=2)
 
     containers = _list_containers_for_chat(chat_id)
-    assert containers, "no workspace container was spawned"
+    assert len(containers) == 1, (
+        f"expected exactly 1 workspace for chat-id={chat_id}, got {len(containers)}: "
+        f"{[c.get('Names') for c in containers]}"
+    )
 
     mounts = _inspect(containers[0]["ID"])["Mounts"]
     dests = {m["Destination"]: m for m in mounts}
