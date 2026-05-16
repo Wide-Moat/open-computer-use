@@ -2,7 +2,7 @@
 
 The Computer Use Server exposes a standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) endpoint that works with any MCP-compatible client.
 
-This server is published in the [MCP Registry](https://github.com/modelcontextprotocol/registry) as `io.github.yambr/open-computer-use`.
+This server is published in the [MCP Registry](https://github.com/modelcontextprotocol/registry) as `io.github.Wide-Moat/open-computer-use`.
 
 ## Hosted endpoint (managed)
 
@@ -23,7 +23,7 @@ The rest of this document covers **self-hosting** the same MCP server.
 This is a **self-hosted** MCP server. You must deploy it before connecting:
 
 ```bash
-git clone https://github.com/yambr/open-computer-use.git
+git clone https://github.com/Wide-Moat/open-computer-use.git
 cd open-computer-use
 docker build --platform linux/amd64 -t open-computer-use:latest .
 docker compose up -d
