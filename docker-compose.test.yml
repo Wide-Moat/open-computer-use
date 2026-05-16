@@ -12,7 +12,7 @@
 #
 # Cleanup of orphan workspace containers spawned by the orchestrator during
 # tests is handled by the pytest session finalizer in conftest.py (matches
-# label `test-run-id`).
+# the `owui-chat-itest-*` container-name prefix that the test fixtures use).
 
 services:
   computer-use-server-test:
@@ -38,10 +38,6 @@ services:
       - PUBLIC_BASE_URL=http://ocu-test-server:8081
       - COMMAND_TIMEOUT=60
       - CONTAINER_IDLE_TIMEOUT=120
-      # Tag every spawned workspace container so the pytest finalizer can
-      # find and reap orphans without touching unrelated containers on the
-      # host (including the developer's own prod stack).
-      - WORKSPACE_EXTRA_LABELS=test-run-id=${TEST_RUN_ID:-default}
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 5s

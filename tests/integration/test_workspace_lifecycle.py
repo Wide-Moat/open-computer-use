@@ -40,9 +40,10 @@ def _inspect(container_id: str) -> dict:
 
 @pytest.mark.integration
 @pytest.mark.timeout(180)
-def test_first_tool_call_spawns_labeled_workspace(client, chat_id, orchestrator):
+def test_first_tool_call_spawns_labeled_workspace(client, chat_id):
     """After one tools/call, the chat must own exactly one workspace container
-    with the prod label set and the test-run-id we asked compose to inject."""
+    with the prod labels (managed-by, chat-id, tool) all set. Drift here
+    breaks the cleanup cron's filter in prod."""
     call_mcp(client, chat_id, "initialize", {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
@@ -67,11 +68,6 @@ def test_first_tool_call_spawns_labeled_workspace(client, chat_id, orchestrator)
     )
     assert labels.get("chat-id") == chat_id
     assert labels.get("tool") == "computer-use-mcp"
-    # The test-run-id label proves the WORKSPACE_EXTRA_LABELS pipeline works
-    # — without it, the session finalizer can't reap orphans.
-    assert labels.get("test-run-id") == orchestrator["test_run_id"], (
-        f"WORKSPACE_EXTRA_LABELS did not propagate. Labels: {labels}"
-    )
 
 
 @pytest.mark.integration
