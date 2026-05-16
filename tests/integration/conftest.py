@@ -82,8 +82,11 @@ def _reap_workspace_containers(test_run_id: str) -> int:
 
     Belt-and-braces cleanup: tests usually end their own chat sessions, but a
     crashed test or a SIGINT mid-suite would otherwise leak containers on the
-    runner. Returns count of reaped containers for visibility.
+    runner. Returns count of containers actually removed (not just matched) so
+    the caller's log message doesn't lie about the result.
     """
+    import sys
+
     label = f"test-run-id={test_run_id}"
     listing = subprocess.run(
         ["docker", "ps", "-aq", "--filter", f"label={label}"],
@@ -92,7 +95,23 @@ def _reap_workspace_containers(test_run_id: str) -> int:
     ids = [i for i in listing.stdout.strip().splitlines() if i]
     if not ids:
         return 0
-    subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    rm = subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, text=True)
+    if rm.returncode != 0:
+        # Surface the failure but don't raise — this runs in a finalizer and
+        # an exception here would mask the actual test failure that led to
+        # the leak. Operator can still see the count mismatch + reason.
+        print(
+            f"[conftest] WARN: docker rm -f failed (rc={rm.returncode}): "
+            f"{rm.stderr.strip()[:300]}",
+            file=sys.stderr,
+        )
+        # Count what actually disappeared by re-querying.
+        recheck = subprocess.run(
+            ["docker", "ps", "-aq", "--filter", f"label={label}"],
+            capture_output=True, text=True,
+        )
+        remaining = len([i for i in recheck.stdout.strip().splitlines() if i])
+        return len(ids) - remaining
     return len(ids)
 
 
