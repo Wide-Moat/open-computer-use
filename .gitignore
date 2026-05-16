@@ -92,3 +92,7 @@ POST.md
 # are operational noise for external contributors. History was rewritten to
 # remove .planning/ — do not commit it back here.
 .planning/
+
+# Helm — fetched dependencies live in charts/*.tgz and are reproducible from
+# Chart.lock via `helm dependency update`.
+helm/*/charts/*.tgz
