@@ -30,8 +30,9 @@
         "replicas": { "type": "integer", "const": 1, "$comment": "Multi-replica is unsupported — orchestrator owns the inner dockerd and RWO PVCs." },
         "env": {
           "type": "object",
+          "required": ["PUBLIC_BASE_URL"],
           "properties": {
-            "PUBLIC_BASE_URL": { "type": "string" }
+            "PUBLIC_BASE_URL": { "type": "string", "minLength": 1, "$comment": "Browser-reachable URL of the orchestrator. Empty value breaks file preview links." }
           }
         }
       }
@@ -115,7 +116,7 @@
         "enabled": { "type": "boolean" },
         "size": { "type": "string" },
         "storageClass": { "type": "string" },
-        "accessMode": { "type": "string", "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadOnlyMany", "ReadWriteOncePod"] },
+        "accessMode": { "type": "string", "enum": ["ReadWriteOnce", "ReadWriteOncePod"], "$comment": "Chart is single-replica by design (replicas: 1, owns inner dockerd). RWX/ROX would imply multi-replica which is unsupported." },
         "existingClaim": { "type": "string" }
       }
     }

@@ -38,7 +38,7 @@ The chart README at [`helm/computer-use-server/README.md`](../helm/computer-use-
 
 The orchestrator pod has three containers:
 
-```
+```text
 ┌───────────────────────────────── Pod (runtimeClassName: sysbox-runc) ──────────┐
 │                                                                                 │
 │  ┌─────────────────┐   ┌─────────────────┐   ┌──────────────────────────────┐  │

@@ -5,8 +5,8 @@ name: computer-use-server
 description: |
   Orchestrator for open-computer-use. Spawns disposable workspace
   containers via an inner Docker daemon (Sysbox DinD). Includes an
-  optional cleanup sidecar and an optional bundled Postgres for
-  Open WebUI deployments.
+  optional cleanup sidecar. Postgres is installed as a separate release
+  when needed; see examples/helm/with-open-webui/.
 type: application
 version: 0.1.0
 appVersion: "0.9.2.4"
