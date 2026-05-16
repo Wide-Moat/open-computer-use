@@ -144,7 +144,7 @@ Two checks, in order:
    editing `.env`. `docker compose up -d` does not pick up `.env` changes
    on already-running services without `--force-recreate` or `down`/`up`.
 2. Confirm you are on a version with the Phase 3 `context_vars.py` fix
-   (<https://github.com/Yambr/open-computer-use/issues/40>). Earlier
+   (<https://github.com/Wide-Moat/open-computer-use/issues/40>). Earlier
    versions had a ContextVar default of `"https://api.anthropic.com/"`
    that short-circuited the `or os.environ["ANTHROPIC_BASE_URL"]` fallback
    in `docker_manager`. Symptom: the sandbox received

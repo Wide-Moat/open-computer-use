@@ -11,7 +11,7 @@ This guide is for **self-hosting**. For the managed version (GitHub/Google sign-
 ## Quick Start
 
 ```bash
-git clone https://github.com/Yambr/open-computer-use.git
+git clone https://github.com/Wide-Moat/open-computer-use.git
 cd open-computer-use
 cp .env.example .env
 # Edit .env — see the REQUIRED section at the top of .env.example.
