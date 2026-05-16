@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Values for helm/computer-use-server when deployed alongside Open WebUI.
+# See examples/helm/with-open-webui/README.md for install order and Secret setup.
+
+secrets:
+  # GitOps-friendly: chart reads MCP_API_KEY + tokens from the existing Secret.
+  create: false
+  existingSecret: ocu-shared
+
+orchestrator:
+  env:
+    # Must match the host users hit in their browser — same as the Ingress below.
+    PUBLIC_BASE_URL: "https://orchestrator.example.com"
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: orchestrator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - orchestrator.example.com
+      secretName: orchestrator-tls
+
+# Postgres lives in a separate release — see README.md, "Install steps", step 2.

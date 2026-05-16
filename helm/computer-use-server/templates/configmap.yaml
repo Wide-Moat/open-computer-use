@@ -1,0 +1,17 @@
+{{/* SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+data:
+  DOCKER_IMAGE: {{ include "computer-use-server.workspaceImage" . | quote }}
+  {{- range $k, $v := .Values.orchestrator.env }}
+  {{- if ne $v "" }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+  {{- end }}
+  CLEANUP_CONTAINER_MAX_AGE_HOURS: {{ .Values.cleanup.containerMaxAgeHours | quote }}
+  CLEANUP_DATA_MAX_AGE_DAYS: {{ .Values.cleanup.dataMaxAgeDays | quote }}

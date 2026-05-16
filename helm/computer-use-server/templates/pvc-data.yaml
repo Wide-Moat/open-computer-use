@@ -1,0 +1,19 @@
+{{/* SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors */}}
+{{- if and .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+  {{- if .Values.persistence.data.storageClass }}
+  storageClassName: {{ .Values.persistence.data.storageClass | quote }}
+  {{- end }}
+{{- end }}
