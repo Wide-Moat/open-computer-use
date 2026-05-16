@@ -121,7 +121,7 @@ Build proof: `open-computer-use:0.9.2-test` built from the full production `open
 
 ### Features — Claude Code gateway compatibility rollup (Phase 3, GATEWAY-01..12)
 
-Phase 3 code shipped on `main` on 2026-04-12 (commit `38347fd`) but never had its own release — it is cut here. Fixes issue [#40](https://github.com/Yambr/open-computer-use/issues/40); inspired by PR [#41](https://github.com/Yambr/open-computer-use/pull/41), rewritten with tests and without deploy-specific churn. Full operator guide in [docs/claude-code-gateway.md](docs/claude-code-gateway.md).
+Phase 3 code shipped on `main` on 2026-04-12 (commit `38347fd`) but never had its own release — it is cut here. Fixes issue [#40](https://github.com/Wide-Moat/open-computer-use/issues/40); inspired by PR [#41](https://github.com/Wide-Moat/open-computer-use/pull/41), rewritten with tests and without deploy-specific churn. Full operator guide in [docs/claude-code-gateway.md](docs/claude-code-gateway.md).
 
 - **GATEWAY-01** — Root-cause bug fix. `computer-use-server/context_vars.py:14` `current_anthropic_base_url` default changed from `"https://api.anthropic.com/"` to `None`, restoring the `or ANTHROPIC_BASE_URL` env fallback at `docker_manager.py:359`. Previously the truthy default blocked every env override silently.
 - **GATEWAY-02** — Ten module-level env constants added to `docker_manager.py` (captured at import time via `os.getenv(NAME, "")`): `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `DISABLE_PROMPT_CACHING{,_SONNET,_OPUS,_HAIKU}`. Organised into model-IDs and compat-flags sub-groups.
@@ -268,7 +268,7 @@ production *or* in the upgrade story:
 ### Privacy / packaging
 - `.planning/` gitignored on the public GitHub remote; pre-push hook enforces the rule.
 - Internal-fork references scrubbed; `tests/test-no-corporate.sh` extended to catch regressions.
-- MCP Registry: added project logo, fixed `server.json` schema, simplified manifest for publication as `io.github.yambr/open-computer-use`.
+- MCP Registry: added project logo, fixed `server.json` schema, simplified manifest for publication as `io.github.Wide-Moat/open-computer-use`.
 
 ### Code removed
 - Filter's hardcoded ~460-line prompt f-string.
@@ -282,7 +282,7 @@ production *or* in the upgrade story:
   - Not set (default): lenient — uses shared container + warning in tool response and server logs
   - `true`: single-user — one container, no headers needed (recommended for Claude Desktop)
   - `false`: strict multi-user — `X-Chat-Id` required, error if missing
-- **MCP Registry manifest** (`server.json`): published as `io.github.yambr/open-computer-use`
+- **MCP Registry manifest** (`server.json`): published as `io.github.Wide-Moat/open-computer-use`
 - **Dynamic config endpoints**: documented `/system-prompt`, `/skill-list`, `/mcp-info` in docs/MCP.md
 - **System prompt reference**: new `docs/system-prompt.md` with prompt structure documentation
 

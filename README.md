@@ -1,13 +1,13 @@
 # Open Computer Use
 
-[![Build](https://github.com/Yambr/open-computer-use/actions/workflows/build.yml/badge.svg)](https://github.com/Yambr/open-computer-use/actions/workflows/build.yml)
-[![CodeQL](https://github.com/Yambr/open-computer-use/actions/workflows/codeql.yml/badge.svg)](https://github.com/Yambr/open-computer-use/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/Yambr/open-computer-use)](https://github.com/Yambr/open-computer-use/releases)
+[![Build](https://github.com/Wide-Moat/open-computer-use/actions/workflows/build.yml/badge.svg)](https://github.com/Wide-Moat/open-computer-use/actions/workflows/build.yml)
+[![CodeQL](https://github.com/Wide-Moat/open-computer-use/actions/workflows/codeql.yml/badge.svg)](https://github.com/Wide-Moat/open-computer-use/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/releases)
 [![License](https://img.shields.io/badge/license-BSL%201.1-blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Yambr/open-computer-use)](https://github.com/Yambr/open-computer-use/stargazers)
-[![Issues](https://img.shields.io/github/issues/Yambr/open-computer-use)](https://github.com/Yambr/open-computer-use/issues)
+[![Stars](https://img.shields.io/github/stars/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/stargazers)
+[![Issues](https://img.shields.io/github/issues/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Yambr/open-computer-use?utm_source=oss&utm_medium=github&utm_campaign=Yambr%2Fopen-computer-use&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Wide-Moat/open-computer-use?utm_source=oss&utm_medium=github&utm_campaign=Wide-Moat%2Fopen-computer-use&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 MCP server that gives any LLM its own computer — managed Docker workspaces with live browser, terminal, code execution, document skills, and autonomous sub-agents. Self-hosted, open-source, pluggable into any model.
 
@@ -100,7 +100,7 @@ OAuth only — no email/password, no SMS. On `chat.yambr.com` models are bundled
 ## Quick Start
 
 ```bash
-git clone https://github.com/Yambr/open-computer-use.git
+git clone https://github.com/Wide-Moat/open-computer-use.git
 cd open-computer-use
 cp .env.example .env
 # Edit .env — set OPENAI_API_KEY (or any OpenAI-compatible provider)
@@ -207,7 +207,7 @@ All settings via `.env`:
 
 By default, all 13 built-in skills are available to everyone. For per-user skill access and custom skills, deploy the **Settings Wrapper** — see [settings-wrapper/README.md](settings-wrapper/README.md).
 
-**Personal Access Tokens (PATs):** The settings wrapper can also store encrypted per-user PATs for external services (GitLab, Confluence, Jira, etc.). The server fetches them by user email and injects into the sandbox — so each user's AI has access to their repos/docs without sharing credentials. The server-side code for token injection is implemented (`docker_manager.py`), but the Open WebUI tool doesn't pass the required headers yet. This is on the roadmap — if you need PAT management, [open an issue](https://github.com/Yambr/open-computer-use/issues).
+**Personal Access Tokens (PATs):** The settings wrapper can also store encrypted per-user PATs for external services (GitLab, Confluence, Jira, etc.). The server fetches them by user email and injects into the sandbox — so each user's AI has access to their repos/docs without sharing credentials. The server-side code for token injection is implemented (`docker_manager.py`), but the Open WebUI tool doesn't pass the required headers yet. This is on the roadmap — if you need PAT management, [open an issue](https://github.com/Wide-Moat/open-computer-use/issues).
 
 ## MCP Client Integrations
 
@@ -474,7 +474,7 @@ We plan to address these in future releases:
 - [ ] **Secret management** — move credentials from headers to encrypted server-side storage
 - [ ] **gVisor (runsc) runtime** — optional container sandboxing for stronger isolation (like Claude.ai)
 
-Ideas? Open a [GitHub Issue](https://github.com/Yambr/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or reach out on Telegram [@yambrcom](https://t.me/yambrcom).
+Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or reach out on Telegram [@yambrcom](https://t.me/yambrcom).
 
 ## Development
 
@@ -498,7 +498,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 ## Community
 
 - **Managed hosting**: [yambr.com](https://yambr.com) — cloud version by the maintainers ([chat.yambr.com](https://chat.yambr.com) for the free demo, [app.yambr.com](https://app.yambr.com) for API keys, [docs.yambr.com](https://docs.yambr.com) for the cloud docs)
-- **Issues & Ideas**: [GitHub Issues](https://github.com/Yambr/open-computer-use/issues)
+- **Issues & Ideas**: [GitHub Issues](https://github.com/Wide-Moat/open-computer-use/issues)
 - **Telegram**: [@yambrcom](https://t.me/yambrcom)
 
 ## License

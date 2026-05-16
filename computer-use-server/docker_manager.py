@@ -199,7 +199,7 @@ def warn_if_public_base_url_is_default() -> bool:
             "reachable from inside the compose network — the Open WebUI preview "
             "panel will never appear until you set it to a browser-reachable URL.\n"
             "  Fix: in .env, set PUBLIC_BASE_URL=http://<browser-reachable-host>:8081.\n"
-            "  Docs: https://github.com/Yambr/open-computer-use/blob/main/docs/openwebui-filter.md"
+            "  Docs: https://github.com/Wide-Moat/open-computer-use/blob/main/docs/openwebui-filter.md"
         )
         return True
     return False
