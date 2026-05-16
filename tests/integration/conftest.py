@@ -167,10 +167,20 @@ def orchestrator(test_run_id: str) -> Iterator[dict]:
         _wait_for_health(DEFAULT_BASE_URL, HEALTH_TIMEOUT_S)
         yield {"url": DEFAULT_BASE_URL, "api_key": api_key, "test_run_id": test_run_id}
     finally:
+        import sys
         reaped = _reap_workspace_containers(test_run_id)
         if reaped:
             print(f"[conftest] reaped {reaped} orphan workspace containers")
-        _compose(["down", "-v", "--remove-orphans"], env=env)
+        down = _compose(["down", "-v", "--remove-orphans"], env=env)
+        if down.returncode != 0:
+            # Don't raise — we're in a finalizer and an exception here would
+            # mask the actual test failure. But do surface the daemon error so
+            # leftover networks/volumes on the runner are diagnosable.
+            print(
+                f"[conftest] WARN: docker compose down failed (rc={down.returncode}): "
+                f"{down.stderr.strip()[:300]}",
+                file=sys.stderr,
+            )
 
 
 @pytest.fixture()
