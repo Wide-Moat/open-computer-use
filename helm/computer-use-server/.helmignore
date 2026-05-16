@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Patterns to ignore when packaging the chart.
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.hg/
+.hgignore
+.svn/
+*.swp
+*.tmp
+*.orig
+*.bak
+.idea/
+.vscode/
+*.tgz

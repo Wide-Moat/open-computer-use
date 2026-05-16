@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2025 Open Computer Use Contributors
+apiVersion: v2
+name: computer-use-server
+description: |
+  Orchestrator for open-computer-use. Spawns disposable workspace
+  containers via an inner Docker daemon (Sysbox DinD). Includes an
+  optional cleanup sidecar and an optional bundled Postgres for
+  Open WebUI deployments.
+type: application
+version: 0.1.0
+appVersion: "0.9.2.4"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/Wide-Moat/open-computer-use
+sources:
+  - https://github.com/Wide-Moat/open-computer-use
+keywords:
+  - computer-use
+  - mcp
+  - open-webui
+  - sandbox
+  - dind
+  - sysbox
+maintainers:
+  - name: Open Computer Use Contributors
+    url: https://github.com/Wide-Moat/open-computer-use
+annotations:
+  category: AI
+# Note: PostgreSQL is intentionally NOT a chart dependency. The orchestrator
+# itself does not need a database; only Open WebUI does. Install Postgres
+# separately (managed RDS, CloudNativePG, or `helm install pg bitnami/postgresql`)
+# and point Open WebUI at it via DATABASE_URL. See examples/helm/with-open-webui/.

@@ -1,0 +1,40 @@
+{{/* SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors */}}
+computer-use-server {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+In-cluster URL:
+  http://{{ include "computer-use-server.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+Health check:
+  kubectl -n {{ .Release.Namespace }} run curl-test --rm -it --image=curlimages/curl --restart=Never -- \
+    curl -fsS http://{{ include "computer-use-server.fullname" . }}:{{ .Values.service.port }}/health
+
+{{- if .Values.ingress.enabled }}
+
+Ingress:
+  {{- range .Values.ingress.hosts }}
+  - {{ .host }}
+  {{- end }}
+  Remember: orchestrator.env.PUBLIC_BASE_URL must match the browser-reachable URL,
+  otherwise file preview links will 404.
+{{- end }}
+
+{{- if eq (default "" .Values.orchestrator.runtimeClassName) "" }}
+
+###############################################################################
+# WARNING: orchestrator.runtimeClassName is empty.                            #
+# The inner Docker daemon is running with privileged=true on stock runc.      #
+# This is UNSUPPORTED and a container-escape risk.                            #
+#                                                                             #
+# Install Sysbox: https://github.com/nestybox/sysbox                          #
+# Then set: --set orchestrator.runtimeClassName=sysbox-runc                   #
+###############################################################################
+{{- end }}
+
+{{- if eq (default "" .Values.orchestrator.env.PUBLIC_BASE_URL) "" }}
+
+NOTE: orchestrator.env.PUBLIC_BASE_URL is unset. File-preview links in chat
+will fall back to the in-cluster URL and won't work from a browser. Set it to
+the public URL the user's browser will see, e.g. https://orchestrator.example.com.
+{{- end }}
+
+Run `helm test {{ .Release.Name }} -n {{ .Release.Namespace }}` to verify /health.

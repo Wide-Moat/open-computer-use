@@ -1,0 +1,19 @@
+{{/* SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors */}}
+{{- if and .Values.persistence.skillsCache.enabled (not .Values.persistence.skillsCache.existingClaim) -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}-skills-cache
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.skillsCache.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.skillsCache.size }}
+  {{- if .Values.persistence.skillsCache.storageClass }}
+  storageClassName: {{ .Values.persistence.skillsCache.storageClass | quote }}
+  {{- end }}
+{{- end }}
