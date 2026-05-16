@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2025 Open Computer Use Contributors
+{{ if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "computer-use-server.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 8081
+          protocol: TCP
+  egress:
+    # DNS — both UDP and TCP, against any namespace's kube-dns pods.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # In-cluster service traffic (e.g. external Postgres release, Open WebUI).
+    # Without this, an in-cluster DB or any Service the orchestrator depends
+    # on becomes unreachable when networkPolicy is enabled.
+    - to:
+        - namespaceSelector: {}
+    # Public internet — LLM APIs, registry pulls (workspace image), webhooks.
+    # Operators who need to block egress to private ranges (cloud metadata,
+    # intranet) should add explicit deny rules via networkPolicy.extraEgress.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

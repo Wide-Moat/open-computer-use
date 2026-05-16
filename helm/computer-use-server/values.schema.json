@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors",
+  "title": "computer-use-server Helm values",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["image", "orchestrator", "dind", "secrets", "persistence", "service"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "workspaceImage": {
+      "type": "object",
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" }
+      }
+    },
+    "orchestrator": {
+      "type": "object",
+      "required": ["replicas", "env"],
+      "properties": {
+        "runtimeClassName": { "type": "string" },
+        "replicas": { "type": "integer", "const": 1, "$comment": "Multi-replica is unsupported — orchestrator owns the inner dockerd and RWO PVCs." },
+        "env": {
+          "type": "object",
+          "required": ["PUBLIC_BASE_URL"],
+          "properties": {
+            "PUBLIC_BASE_URL": { "type": "string", "minLength": 1, "$comment": "Browser-reachable URL of the orchestrator. Empty value breaks file preview links." }
+          }
+        }
+      }
+    },
+    "dind": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": { "type": "string" },
+            "tag": { "type": "string" }
+          }
+        },
+        "storageDriver": { "type": "string" }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "containerMaxAgeHours": { "type": "integer", "minimum": 1 },
+        "dataMaxAgeDays": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "$comment": "Either secrets.create=true with mcpApiKey, or secrets.existingSecret must be set.",
+      "oneOf": [
+        {
+          "properties": {
+            "create": { "const": true },
+            "mcpApiKey": { "type": "string", "minLength": 1 }
+          },
+          "required": ["create", "mcpApiKey"]
+        },
+        {
+          "properties": {
+            "existingSecret": { "type": "string", "minLength": 1 }
+          },
+          "required": ["existingSecret"]
+        }
+      ]
+    },
+    "persistence": {
+      "type": "object",
+      "required": ["userData", "data", "skillsCache", "varLibDocker"],
+      "properties": {
+        "userData": { "$ref": "#/$defs/pvcSpec" },
+        "data": { "$ref": "#/$defs/pvcSpec" },
+        "skillsCache": { "$ref": "#/$defs/pvcSpec" },
+        "varLibDocker": {
+          "type": "object",
+          "required": ["sizeLimit"],
+          "properties": { "sizeLimit": { "type": "string" } }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": ["type", "port"],
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "postgresql": false
+  },
+  "$defs": {
+    "pvcSpec": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessMode": { "type": "string", "enum": ["ReadWriteOnce", "ReadWriteOncePod"], "$comment": "Chart is single-replica by design (replicas: 1, owns inner dockerd). RWX/ROX would imply multi-replica which is unsupported." },
+        "existingClaim": { "type": "string" }
+      }
+    }
+  }
+}
