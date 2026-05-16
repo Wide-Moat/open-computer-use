@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.9.2.4 — fix xlsx upload hang on Open WebUI 0.9.x (2026-05-11)
+
+Patch release on top of v0.9.2.3 (Open WebUI base unchanged). Fixes a regression from the OWUI v0.8 → v0.9 base bump: the `fix_skip_embedding_chat_files` patch was written against the v0.8 sync database/storage signatures and quietly broke when OWUI made `Files.update_file_data_by_id`, `Storage.get_file`, and `Loader.load` async.
+
+### Fixed
+
+- **Open WebUI frontend spinner stuck forever after uploading an xlsx > 1 MB into a chat** (issue #96). `Files.update_file_data_by_id` went from `def` to `async def` between OWUI v0.8.x and v0.9.x; the skip-embedding patch was still calling it without `await`, so the coroutine was dropped without ever writing the `completed` status to the database. The HTTP response returned 200 immediately but the file row stayed in `pending`, and the OWUI frontend polled forever. Zip and other archive uploads were unaffected because they take a different code path that already used `await`. Fix is a one-line `await` on the patched call, plus a regression-guard test that asserts every patched `Files.update_file_data_by_id` call site is awaited.
+- **KB-fallback path could freeze the OWUI backend for minutes during knowledge-base ingestion.** Patch 2 of `fix_skip_embedding_chat_files` called `Storage.get_file()` and `Loader.load()` directly inside the async `process_file` handler. Both are sync and CPU/IO-bound (PyMuPDF, Unstructured, Tika, etc.) and would block the OWUI event loop for the entire read/parse — no other request could be served until extraction finished. Upstream OWUI explicitly switched to `await asyncio.to_thread(Storage.get_file, ...)` and `await loader.aload(...)` at v0.9.1 for exactly this reason. The patch now does the same. New regression-guard test rejects any non-offloaded `Storage.get_file(` / `_fb_loader.load(` call site.
+
+### Internal
+
+- Audited every patch in `openwebui/patches/` against the OWUI v0.8 → v0.9 sync→async migration. Only `fix_skip_embedding_chat_files` regressed; the others either do not touch async-ified APIs (`fix_artifacts_auto_show`, `fix_attached_files_position`, `fix_large_tool_args`, `fix_large_tool_results`, `fix_preview_url_detection`, `fix_skip_rag_files_native_fc`) or were already updated for the migration in earlier releases (`fix_tool_loop_errors`, which has an inline `v0.9.1: async-ified` note).
+
+
 ## v0.9.2.3 — extract-text + bundled GSD/Superpowers skills (2026-05-03)
 
 Patch release on top of v0.9.2.2 (Open WebUI base unchanged). Adds Anthropic's `extract-text` CLI for unified plain-text extraction across document formats, the `file-reading` and `pdf-reading` skills built on top of it, and bundled GSD + Superpowers skill packs auto-wired for Claude Code subagents. PyMuPDF and xlrd added to support the new skills (third-party licensing tracked in `THIRD-PARTY-LICENSES.md`). Hardened `settings.json` permissions — agent can no longer overwrite its own hook scripts.
