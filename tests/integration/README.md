@@ -10,7 +10,7 @@ End-to-end tests against a real `computer-use-server` container that spawns real
 | `tools/list` matches expected name set | `test_mcp_tools.py` | A typo (`bash_tool` → `bash_too1`) ships green today; this pins the surface. |
 | `tools/call bash_tool` end-to-end echo | `test_mcp_tools.py` | Catches workspace image misconfig, Docker socket missing, response wrapping regressions, sub-agent dispatch breakage. |
 | `/health` is unauthenticated and returns `healthy` | `test_mcp_tools.py` | k8s probes break if either changes. |
-| Workspace container labels propagate | `test_workspace_lifecycle.py` | `WORKSPACE_EXTRA_LABELS` plumbing — the only mechanism the test harness has to reap orphans. |
+| Workspace container has the prod labels (managed-by, chat-id, tool) | `test_workspace_lifecycle.py` | Drift in any of these labels breaks the cleanup cron's filter in prod. |
 | `/mnt/user-data/{uploads,outputs}` bind mounts | `test_workspace_lifecycle.py` | Compose USER_DATA_BASE_PATH must round-trip into the spawned container. |
 
 ## How to run
@@ -39,15 +39,14 @@ docker compose -f docker-compose.test.yml down -v --remove-orphans
 
 ## Cleanup
 
-Every workspace container spawned during a test session is tagged with a unique `test-run-id` label (via `WORKSPACE_EXTRA_LABELS` env in the orchestrator). The session fixture reaps them in `finally:` so a `SIGINT` mid-suite or a failing test does not leak containers on the host. Worst-case manual cleanup, scoped to a specific run so you don't nuke unrelated workspaces a developer is actively using on the same host:
+Every integration test uses a `chat_id` that starts with the `itest-` prefix (see the `chat_id` fixture). The orchestrator names spawned workspace containers `owui-chat-<chat_id>`, so the session finalizer reaps orphans by container-name filter (`owui-chat-itest-*`) plus the prod label `managed-by=mcp-computer-use-orchestrator`. This deliberately avoids a production-side env knob just for cleanup — production code does not know tests exist.
+
+Worst-case manual cleanup, scoped to integration-test containers only:
 
 ```bash
-# Reap only this run's containers (TEST_RUN_ID matches what the harness set):
-docker ps -a --filter "label=test-run-id=${TEST_RUN_ID:-default}" -q | xargs -r docker rm -f
-
-# Reap everything labeled by this test path across all sessions (still safe —
-# only matches containers spawned via WORKSPACE_EXTRA_LABELS):
-docker ps -a --filter 'label=test-run-id' -q | xargs -r docker rm -f
+docker ps -a --filter 'name=owui-chat-itest-' \
+            --filter 'label=managed-by=mcp-computer-use-orchestrator' -q \
+  | xargs -r docker rm -f
 ```
 
 Do **not** filter only by `managed-by=mcp-computer-use-orchestrator` — that would also remove the developer's actively-running prod workspace containers on the same machine.

@@ -20,9 +20,11 @@ Two ways to drive the stack:
      Stack is assumed to be already up; pytest only runs assertions and
      cleanup. Keeps build/test concerns separate in the CI matrix.
 
-In both modes the session finalizer reaps every workspace container labeled
-with this run's TEST_RUN_ID so a failing test does not leave orphans on the
-host between runs.
+In both modes the session finalizer reaps every workspace container whose
+name starts with `owui-chat-itest-` (the prefix every chat_id fixture uses)
+so a failing test does not leave orphans on the host between runs. No
+production-side env knob is needed — the prefix alone uniquely identifies
+test containers.
 """
 from __future__ import annotations
 
@@ -77,19 +79,31 @@ def _compose(cmd: list[str], env: dict | None = None) -> subprocess.CompletedPro
     return subprocess.run(full, capture_output=True, text=True, env={**os.environ, **(env or {})})
 
 
-def _reap_workspace_containers(test_run_id: str) -> int:
-    """Force-remove every workspace container tagged with this run.
+# Every integration test uses a chat_id that starts with this prefix (see the
+# `chat_id` fixture). The orchestrator's container naming convention is
+# `owui-chat-<chat_id>`, so prefixing the chat_id lets us reap orphans by
+# container-name filter — no production-side code change needed.
+TEST_CHAT_ID_PREFIX = "itest-"
+TEST_CONTAINER_NAME_PREFIX = f"owui-chat-{TEST_CHAT_ID_PREFIX}"
 
-    Belt-and-braces cleanup: tests usually end their own chat sessions, but a
-    crashed test or a SIGINT mid-suite would otherwise leak containers on the
-    runner. Returns count of containers actually removed (not just matched) so
-    the caller's log message doesn't lie about the result.
+
+def _reap_test_workspace_containers() -> int:
+    """Force-remove workspace containers spawned by this test session.
+
+    Identified by container-name prefix (`owui-chat-itest-`), which only ever
+    appears when tests run — no prod chat-id starts with `itest-`. This avoids
+    a production-side env knob just for test cleanup.
+
+    Belt-and-braces: tests usually end their own chat sessions, but a crashed
+    test or a SIGINT mid-suite would otherwise leak containers on the runner.
+    Returns count of containers actually removed.
     """
     import sys
 
-    label = f"test-run-id={test_run_id}"
     listing = subprocess.run(
-        ["docker", "ps", "-aq", "--filter", f"label={label}"],
+        ["docker", "ps", "-aq",
+         "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
+         "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
         capture_output=True, text=True,
     )
     ids = [i for i in listing.stdout.strip().splitlines() if i]
@@ -97,17 +111,16 @@ def _reap_workspace_containers(test_run_id: str) -> int:
         return 0
     rm = subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, text=True)
     if rm.returncode != 0:
-        # Surface the failure but don't raise — this runs in a finalizer and
-        # an exception here would mask the actual test failure that led to
-        # the leak. Operator can still see the count mismatch + reason.
+        # Don't raise — finalizer must not mask the underlying test failure.
         print(
             f"[conftest] WARN: docker rm -f failed (rc={rm.returncode}): "
             f"{rm.stderr.strip()[:300]}",
             file=sys.stderr,
         )
-        # Count what actually disappeared by re-querying.
         recheck = subprocess.run(
-            ["docker", "ps", "-aq", "--filter", f"label={label}"],
+            ["docker", "ps", "-aq",
+             "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
+             "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
             capture_output=True, text=True,
         )
         remaining = len([i for i in recheck.stdout.strip().splitlines() if i])
@@ -115,28 +128,9 @@ def _reap_workspace_containers(test_run_id: str) -> int:
     return len(ids)
 
 
-# Matches docker-compose.test.yml's ${TEST_RUN_ID:-default} fallback. When the
-# external-stack path is taken without TEST_RUN_ID set, both sides agree on
-# "default" so the finalizer can still find and reap the right containers.
-_COMPOSE_DEFAULT_RUN_ID = "default"
-
-
 @pytest.fixture(scope="session")
-def test_run_id() -> str:
-    explicit = os.environ.get("TEST_RUN_ID")
-    if explicit:
-        return explicit
-    # External-stack mode without TEST_RUN_ID → align with compose default
-    # so the cleanup label query still matches what the orchestrator stamped.
-    if os.environ.get("OCU_TEST_BASE_URL"):
-        return _COMPOSE_DEFAULT_RUN_ID
-    # Owned-stack mode: random id is safe because we set it in compose's env.
-    return f"pytest-{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture(scope="session")
-def orchestrator(test_run_id: str) -> Iterator[dict]:
-    """Yield {url, api_key, test_run_id} after ensuring the stack is healthy.
+def orchestrator() -> Iterator[dict]:
+    """Yield {url, api_key} after ensuring the stack is healthy.
 
     Skips the entire suite if Docker is unavailable — these tests are real
     integration, not unit tests, and pretending otherwise hides regressions.
@@ -150,28 +144,28 @@ def orchestrator(test_run_id: str) -> Iterator[dict]:
     if external:
         # CI / dev opted to manage the stack themselves. Just wait + yield.
         _wait_for_health(external, HEALTH_TIMEOUT_S)
-        yield {"url": external, "api_key": api_key, "test_run_id": test_run_id}
-        # No teardown — caller owns the stack.
-        reaped = _reap_workspace_containers(test_run_id)
-        if reaped:
-            print(f"[conftest] reaped {reaped} orphan workspace containers")
+        try:
+            yield {"url": external, "api_key": api_key}
+        finally:
+            reaped = _reap_test_workspace_containers()
+            if reaped:
+                print(f"[conftest] reaped {reaped} orphan workspace containers")
         return
 
     # Owned-stack mode. Build + up + wait. Always teardown.
-    env = {"TEST_RUN_ID": test_run_id}
-    up = _compose(["up", "-d", "--build"], env=env)
+    up = _compose(["up", "-d", "--build"])
     if up.returncode != 0:
         pytest.fail(f"docker compose up failed:\nSTDOUT:\n{up.stdout}\nSTDERR:\n{up.stderr}")
 
     try:
         _wait_for_health(DEFAULT_BASE_URL, HEALTH_TIMEOUT_S)
-        yield {"url": DEFAULT_BASE_URL, "api_key": api_key, "test_run_id": test_run_id}
+        yield {"url": DEFAULT_BASE_URL, "api_key": api_key}
     finally:
         import sys
-        reaped = _reap_workspace_containers(test_run_id)
+        reaped = _reap_test_workspace_containers()
         if reaped:
             print(f"[conftest] reaped {reaped} orphan workspace containers")
-        down = _compose(["down", "-v", "--remove-orphans"], env=env)
+        down = _compose(["down", "-v", "--remove-orphans"])
         if down.returncode != 0:
             # Don't raise — we're in a finalizer and an exception here would
             # mask the actual test failure. But do surface the daemon error so
@@ -197,8 +191,13 @@ def client(orchestrator) -> Iterator[httpx.Client]:
 
 @pytest.fixture()
 def chat_id() -> str:
-    """A fresh chat-id per test — each gets its own workspace container."""
-    return f"itest-{uuid.uuid4().hex[:12]}"
+    """A fresh chat-id per test — each gets its own workspace container.
+
+    The `itest-` prefix is load-bearing: the session finalizer uses it (via
+    `owui-chat-itest-*` container-name match) to find and reap orphans
+    without touching prod containers a developer may have running locally.
+    """
+    return f"{TEST_CHAT_ID_PREFIX}{uuid.uuid4().hex[:12]}"
 
 
 def mcp_request(method: str, params: dict | None = None, req_id: int = 1) -> dict:

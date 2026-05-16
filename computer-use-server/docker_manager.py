@@ -64,28 +64,6 @@ DEBUG_LOGGING = os.getenv("DEBUG_LOGGING", "false").lower() == "true"
 ORCHESTRATOR_CONTAINER_NAME = os.getenv("ORCHESTRATOR_CONTAINER_NAME", "computer-use-server")
 BASE_DATA_DIR = Path(os.getenv("BASE_DATA_DIR", "/data"))
 
-
-def _parse_extra_labels(raw: str) -> dict:
-    """Parse k1=v1,k2=v2 into a dict. Silently drops malformed pairs.
-
-    Used by integration tests (docker-compose.test.yml) to label spawned
-    workspace containers with a test-run-id so the pytest finalizer can reap
-    orphans without touching unrelated containers on the host. Empty in prod.
-    """
-    out = {}
-    for chunk in (raw or "").split(","):
-        chunk = chunk.strip()
-        if not chunk or "=" not in chunk:
-            continue
-        k, _, v = chunk.partition("=")
-        k, v = k.strip(), v.strip()
-        if k:
-            out[k] = v
-    return out
-
-
-WORKSPACE_EXTRA_LABELS = _parse_extra_labels(os.getenv("WORKSPACE_EXTRA_LABELS", ""))
-
 # MCP Tokens Wrapper for GitLab token fetching
 MCP_TOKENS_URL = os.getenv("MCP_TOKENS_URL", "")
 MCP_TOKENS_API_KEY = os.getenv("MCP_TOKENS_API_KEY", "")
@@ -676,12 +654,7 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
                 skill_manager.get_user_skills_sync(current_user_email.get())
             ),
         },
-        # EXTRA_LABELS goes FIRST so the core orchestrator-owned keys
-        # (managed-by, chat-id, tool) cannot be silently overridden — e.g. an
-        # operator setting WORKSPACE_EXTRA_LABELS=chat-id=foo would otherwise
-        # break the cleanup cron's per-chat filter.
         "labels": {
-            **WORKSPACE_EXTRA_LABELS,
             "managed-by": "mcp-computer-use-orchestrator",
             "chat-id": chat_id,
             "tool": "computer-use-mcp",
