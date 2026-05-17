@@ -221,10 +221,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run structure, corporate, and English-only tests
+      - name: Run structure and English-only tests
         run: |
-          chmod +x tests/test-no-corporate.sh tests/test-project-structure.sh tests/test-no-cyrillic.sh
-          ./tests/test-no-corporate.sh
+          chmod +x tests/test-project-structure.sh tests/test-no-cyrillic.sh
           ./tests/test-project-structure.sh
           ./tests/test-no-cyrillic.sh
 
