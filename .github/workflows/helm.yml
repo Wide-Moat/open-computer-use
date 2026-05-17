@@ -90,8 +90,11 @@ jobs:
     name: Publish chart to gh-pages
     needs: lint
     runs-on: ubuntu-latest
-    # Only on release tags pushed to the repo (vX.Y.Z.W).
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Only on stable release tags. SemVer pre-release suffixes (`-rc.N`,
+    # `-alpha.N`, `-beta.N`) are routed to OCI publish via release-chart.yml
+    # — they must NOT land on gh-pages, otherwise stable users running
+    # `helm repo update && helm install` would resolve them.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     permissions:
       contents: write
       pages: write
