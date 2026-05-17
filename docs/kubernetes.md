@@ -58,7 +58,7 @@ The orchestrator pod has three containers:
 ```
 
 **Why DinD-on-Sysbox instead of native k8s Pods?**
-The existing orchestrator code talks to a Docker socket. Lifting it onto Kubernetes via Sysbox keeps the app code unchanged. A future `K8sBackend` rewrite (drafted in [`docs/requirements/k8s-architecture.md`](requirements/k8s-architecture.md)) will spawn native Pods, at which point the inner dockerd disappears — but that's a separate workstream.
+The existing orchestrator code talks to a Docker socket. Lifting it onto Kubernetes via Sysbox keeps the app code unchanged. A future `K8sBackend` rewrite (drafted in [`docs/future-architecture/`](future-architecture/)) will spawn native Pods, at which point the inner dockerd disappears — but that's a separate workstream.
 
 **Why is the orchestrator single-replica?**
 It owns the inner Docker daemon and three RWO PVCs. There is no shared state between replicas and no leader-election. The chart hard-pins `replicas: 1` in `values.schema.json`.
@@ -74,5 +74,5 @@ It owns the inner Docker daemon and three RWO PVCs. There is no shared state bet
 ## See also
 
 - [`helm/computer-use-server/README.md`](../helm/computer-use-server/README.md) — chart reference and troubleshooting
-- [`docs/requirements/k8s-architecture.md`](requirements/k8s-architecture.md) — draft of the future native-Pod backend (not implemented)
+- [`docs/future-architecture/`](future-architecture/) — draft of the future native-Pod backend (not implemented)
 - [Sysbox docs](https://github.com/nestybox/sysbox/blob/master/docs/quickstart/install-k8s.md) — install Sysbox on a k8s cluster
