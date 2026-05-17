@@ -30,25 +30,54 @@ jobs:
           echo "$CHANGES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Detect pre-release tag
+        id: prerelease
+        run: |
+          # Strip leading v; if what's left contains a SemVer pre-release suffix
+          # (`-rc.1`, `-alpha.2`, `-beta.0`, `-dev.X`), mark the GitHub Release
+          # as a pre-release so the "Latest release" badge keeps pointing at
+          # the most recent stable version.
+          v="${GITHUB_REF_NAME#v}"
+          if echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
           body: |
             ## Docker Images
 
             ```bash
-            # Sandbox (AI workspace)
             docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-
-            # Computer Use Server (MCP orchestrator)
             docker pull ghcr.io/${{ github.repository }}-server:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}-cleanup:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}-webui:${{ github.ref_name }}
             ```
 
-            ## Quick Start
+            ## Helm chart (Kubernetes)
+
+            ```bash
+            VERSION="${{ github.ref_name }}"; VERSION="${VERSION#v}"
+            helm install ocu oci://ghcr.io/${{ github.repository_owner }}/charts/computer-use-server \
+              --version "$VERSION" \
+              -f my-values.yaml \
+              --set image.tag="$VERSION" \
+              --set workspaceImage.tag="$VERSION" \
+              --set cleanup.image.tag="$VERSION"
+            ```
+
+            See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/helm/computer-use-server/README.md) for prerequisites (Sysbox) and full values reference.
+
+            ## Quick Start (Docker Compose)
 
             ```bash
             git clone https://github.com/${{ github.repository }}.git
             cd open-computer-use
+            git checkout ${{ github.ref_name }}
             cp .env.example .env
             # Edit .env with your API key
             docker compose up

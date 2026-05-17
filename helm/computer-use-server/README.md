@@ -29,6 +29,23 @@ helm install ocu open-computer-use/computer-use-server \
   -f my-values.yaml
 ```
 
+### From the OCI registry (any `v*` tag, including release candidates)
+
+Every `v*` git tag — stable and pre-release — pushes the chart to `oci://ghcr.io/wide-moat/charts/computer-use-server`. Use this path to install an `-rc.N` build for testing without contaminating users on the stable `helm repo`:
+
+```bash
+VERSION=0.9.2.5-rc.1
+helm install ocu-rc oci://ghcr.io/wide-moat/charts/computer-use-server \
+  --version "$VERSION" \
+  --namespace open-computer-use --create-namespace \
+  -f my-values.yaml \
+  --set image.tag="$VERSION" \
+  --set workspaceImage.tag="$VERSION" \
+  --set cleanup.image.tag="$VERSION"
+```
+
+Stable users running `helm repo add open-computer-use https://wide-moat.github.io/...` are unaffected — Helm excludes SemVer pre-releases from `helm install` resolution unless `--devel` or an explicit `--version X.Y.Z-rc.N` is passed.
+
 ### From a git checkout (development / unreleased changes)
 
 ```bash
