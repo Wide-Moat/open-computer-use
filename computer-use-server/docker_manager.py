@@ -657,7 +657,7 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
         "labels": {
             "managed-by": "mcp-computer-use-orchestrator",
             "chat-id": chat_id,
-            "tool": "computer-use-mcp",
+            "tool": "computer-use-mcp"
         },
         "security_opt": ["no-new-privileges:true"],
     }
