@@ -20,21 +20,27 @@ from conftest import call_mcp
 
 def _list_containers_for_chat(chat_id: str) -> list[dict]:
     import json
-    r = subprocess.run(
-        ["docker", "ps", "-a",
-         "--filter", f"label=chat-id={chat_id}",
-         "--format", "{{json .}}"],
-        capture_output=True, text=True, check=True,
-    )
+    try:
+        r = subprocess.run(
+            ["docker", "ps", "-a",
+             "--filter", f"label=chat-id={chat_id}",
+             "--format", "{{json .}}"],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"docker ps timed out (>30s) for chat_id={chat_id}")
     return [json.loads(line) for line in r.stdout.splitlines() if line.strip()]
 
 
 def _inspect(container_id: str) -> dict:
     import json
-    r = subprocess.run(
-        ["docker", "inspect", container_id],
-        capture_output=True, text=True, check=True,
-    )
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", container_id],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"docker inspect timed out (>30s) for container={container_id}")
     return json.loads(r.stdout)[0]
 
 

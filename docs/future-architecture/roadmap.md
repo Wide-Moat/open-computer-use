@@ -202,7 +202,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - `KubernetesProvider` shipped; passes integration suite against `kind` cluster in CI.
 - Helm chart: NetworkPolicy default-deny per tenant namespace, `ResourceQuota` + `LimitRange`, empty-RBAC `ServiceAccount`.
 - DinD sidecar removed from chart.
-- `tests/integration/test_mcp_*.py` pass on **both** kind/k3d cluster (with `KubernetesProvider`) **and** local Compose (with `DockerComposeProvider`). CI runs both paths and fails the PR if either regresses.
+- `tests/integration/test_mcp_*.py` pass on **both** kind/k3d cluster (with `KubernetesProvider`) **and** local Compose (with `DockerSocketProvider`). CI runs both paths and fails the PR if either regresses.
 
 **Reversibility.** Old Helm values preserved as `values-legacy-dind.yaml` for one release.
 
