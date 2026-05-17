@@ -221,11 +221,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run structure and corporate tests
+      - name: Run structure, corporate, and English-only tests
         run: |
-          chmod +x tests/test-no-corporate.sh tests/test-project-structure.sh
+          chmod +x tests/test-no-corporate.sh tests/test-project-structure.sh tests/test-no-cyrillic.sh
           ./tests/test-no-corporate.sh
           ./tests/test-project-structure.sh
+          ./tests/test-no-cyrillic.sh
 
   pytest-orchestrator:
     name: Pytest — orchestrator

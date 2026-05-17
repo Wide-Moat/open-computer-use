@@ -7,7 +7,7 @@
 
 The roadmap targets multiple deployment shapes: Docker Compose (PoC), RKE2 on-prem, AWS EKS, and other k8s flavors. We need to commit to an order so each phase has a clear target.
 
-User direction: *"Сначала Docker PoC → потом любой k8s"*.
+User direction: *Docker PoC first, any k8s flavor second.*
 
 ## Decision
 

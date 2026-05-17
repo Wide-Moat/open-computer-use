@@ -5,7 +5,7 @@
 
 ## Why templates are first-class
 
-User requirement: "сам контейнер конфигурируемым по шаблонам". The template object decouples *what tenants get* from *how providers implement it*.
+User requirement: *the container itself must be configurable via templates.* The template object decouples *what tenants get* from *how providers implement it*.
 
 ## Schema (target)
 
