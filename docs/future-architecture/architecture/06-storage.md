@@ -47,10 +47,11 @@ Benefits:
 
 - Three logical buckets per tenant: `uploads/` (user → sandbox), `outputs/` (sandbox → user), `tool-results/` (intermediate artifacts surfaced in UI).
 - **Backend:** S3-compatible. Production: AWS S3 / GCS / R2 / Ceph RGW. Local PoC: MinIO in `docker-compose.yml`.
-- **Mounted via FUSE sidecar** in the sandbox pod (k8s) or as a service container (Compose). Decision deferred to Phase 3:
-  - `rclone mount` — most flexible, supports many backends
-  - `mountpoint-s3` — AWS-native, fastest, **sequential-write-only** (incompatible with atomic-file write patterns)
-  - `geesefs` — better random-write than mountpoint-s3
+- **Mounted via FUSE sidecar** in the sandbox pod (k8s) or as a service container (Compose). **Baseline backend: `rclone mount` with VFS full cache** — production-validated in Anthropic's sandbox (see [`research/16-anthropic-production-sandbox-observed.md`](../research/16-anthropic-production-sandbox-observed.md)). Final decision locked at Phase 3 research; alternatives kept in scope for that pass:
+  - `rclone mount` — **baseline.** Most flexible, supports 70+ backends, VFS cache gives ~POSIX semantics (SQLite, random write, append, fsync all work). Known limits: hardlinks, symlinks, chmod silent-fail.
+  - `mountpoint-s3` — AWS-native, fastest, **sequential-write-only** (incompatible with atomic-file write patterns). Rejected as primary for AI-agent workloads.
+  - `geesefs` — better random-write than mountpoint-s3 but smaller backend set than rclone.
+  - `csi-rclone` / `juicefs-csi` — for k8s production once Phase 5 ships.
 - **Credentials:** short-lived STS tokens minted by the L4 secret broker per session ([07-security.md](./07-security.md)). Not static AWS keys.
 - **Lifecycle policy** at the S3 layer replaces the current `find /tmp -mtime` cleanup cron.
 
