@@ -117,12 +117,18 @@ Compose, and replace the standalone cleanup cron.
 
 - Implement the warm-pool manager described in
   [`k8s-architecture.md`](k8s-architecture.md#workspace-lifecycle-and-warm-pool).
+- Expose a monotonic `worker_epoch` on the `Workspace` identity
+  returned by `RuntimeBackend.ensure_workspace`. Clients reconnecting
+  after a pool recycle compare epoch values; a mismatch signals
+  "different underlying workspace, re-initialize per-chat state".
+  Without this, a tool-call arriving on a recycled Pod can land
+  against stale orchestrator-side assumptions.
 - Move the reaper loop from `cron/` into the orchestrator as an
   asyncio background task. It calls
   `RuntimeBackend.list_workspaces()` so the same code drives both
   backends.
 - Surface metrics (`prometheus_client`): pool size, claim latency
-  histogram, workspace lifetime, reap counts.
+  histogram, workspace lifetime, reap counts, epoch increments.
 
 **Exit criteria:** Pool hit gives sub-second time-to-ready in a real
 cluster. Compose users get cleanup-via-orchestrator and can remove

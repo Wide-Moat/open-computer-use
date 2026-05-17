@@ -215,6 +215,18 @@ or pick a managed offering that includes it.
   `Secret` objects via `envFrom`, created per chat or shared per
   namespace depending on tenancy model.
 
+  For high-value tokens (e.g. an Anthropic API key on multi-tenant
+  deployments), prefer mounting the `Secret` as a file via a
+  read-only `projected` volume and passing an open file descriptor
+  to the workspace process at `exec` time. The agent reads the token
+  once (`os.fdopen(int(os.environ["ANTHROPIC_AUTH_TOKEN_FD"]))`) and
+  closes the FD. With this layout the environment contains only the
+  FD number, so the token does not leak into `/proc/<pid>/environ`,
+  child-process environments, crash dumps, or third-party
+  error-reporting libraries that auto-capture `os.environ`. The
+  pattern is standard in long-lived daemons (systemd socket
+  activation, sshd) and production AI-agent runtimes.
+
 ## Cleanup
 
 The current `cron/` reaper container moves into the orchestrator process
@@ -244,7 +256,12 @@ These decisions are deferred until prototypes provide evidence:
 - **Squashfs mount mechanism on `runc`**: kernel `mount -t squashfs`
   needs `CAP_SYS_ADMIN`, while `squashfuse` works in user space at the
   cost of needing FUSE in the Pod. Validate which is preferred for
-  Phase 1 once we have a measurement.
+  Phase 1 once we have a measurement. Under `kata-fc` (Phase 6) this
+  trade-off goes away: each blob can be attached as its own
+  virtio-blk device to the workspace microVM and mounted with the
+  kernel driver inside the guest, so neither host capabilities nor
+  FUSE are in the data path. The host can back the virtio-blk device
+  with a shared squashfs file across guests, reusing page cache.
 - **FUSE sidecar choice for user data**: `rclone mount`, `mountpoint-s3`,
   and `geesefs` have different write semantics. `mountpoint-s3` only
   supports sequential writes which suits `outputs/` but may break some
