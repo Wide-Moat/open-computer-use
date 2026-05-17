@@ -115,16 +115,27 @@ def _reap_test_workspace_containers() -> int:
     """
     import sys
 
-    listing = subprocess.run(
-        ["docker", "ps", "-aq",
-         "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
-         "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
-        capture_output=True, text=True,
-    )
+    try:
+        listing = subprocess.run(
+            ["docker", "ps", "-aq",
+             "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
+             "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        print("[conftest] WARN: docker ps timed out during reap", file=sys.stderr)
+        return 0
     ids = [i for i in listing.stdout.strip().splitlines() if i]
     if not ids:
         return 0
-    rm = subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, text=True)
+    try:
+        rm = subprocess.run(
+            ["docker", "rm", "-f", *ids],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        print("[conftest] WARN: docker rm -f timed out during reap", file=sys.stderr)
+        return 0
     if rm.returncode != 0:
         # Don't raise — finalizer must not mask the underlying test failure.
         print(
@@ -132,12 +143,16 @@ def _reap_test_workspace_containers() -> int:
             f"{rm.stderr.strip()[:300]}",
             file=sys.stderr,
         )
-        recheck = subprocess.run(
-            ["docker", "ps", "-aq",
-             "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
-             "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
-            capture_output=True, text=True,
-        )
+        try:
+            recheck = subprocess.run(
+                ["docker", "ps", "-aq",
+                 "--filter", f"name={TEST_CONTAINER_NAME_PREFIX}",
+                 "--filter", "label=managed-by=mcp-computer-use-orchestrator"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            print("[conftest] WARN: docker ps recheck timed out", file=sys.stderr)
+            return 0
         remaining = len([i for i in recheck.stdout.strip().splitlines() if i])
         return len(ids) - remaining
     return len(ids)

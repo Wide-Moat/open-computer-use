@@ -20,23 +20,54 @@ echo ""
 # Use Python for portable Unicode regex (BSD grep on macOS has no PCRE,
 # and CI runs on Ubuntu — keep one impl).
 python3 - <<'PY'
-import os, re, sys
+import os, re, subprocess, sys
 
 CYR = re.compile(r'[Ѐ-ӿ]')
 
-EXTS = {'.py', '.js', '.ts', '.tsx', '.jsx', '.go', '.rs', '.sh',
-        '.yml', '.yaml', '.toml', '.md', '.json', '.html', '.css',
-        '.proto', '.mk'}
-SPECIAL_NAMES = {'Dockerfile', 'Makefile'}
-
+# Denylist approach: scan EVERY tracked text file. The previous extensions
+# allowlist let Cyrillic slip in via unlisted extensions (e.g. `.txt`,
+# `.cfg`, `.env.example`). Skip only known-binary extensions, vendored
+# trees, and the explicit self-reference below.
 SKIP_DIR_PREFIXES = (
-    './.git/', './.venv/', './.venv-itest/', './.venv-review/',
-    './node_modules/', './__pycache__/', './.claude/', './.planning/',
-    './references/', './sandboxd/', './dist/', './build/',
+    '.git/', '.venv/', '.venv-itest/', '.venv-review/',
+    'node_modules/', '__pycache__/', '.claude/', '.planning/',
+    'references/', 'sandboxd/', 'dist/', 'build/',
 )
 SKIP_FILES = {
-    './tests/test-no-cyrillic.sh',
+    'tests/test-no-cyrillic.sh',
 }
+# Binary / generated extensions. Avoid scanning these for both performance
+# and to prevent false positives on encoded payloads.
+BINARY_EXTS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
+    '.pdf', '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z',
+    '.woff', '.woff2', '.ttf', '.otf', '.eot',
+    '.mp3', '.mp4', '.mov', '.avi', '.webm', '.ogg', '.wav',
+    '.so', '.dylib', '.dll', '.exe', '.bin', '.o', '.a',
+    '.pyc', '.pyo', '.class', '.jar',
+    '.lock', '.min.js', '.min.css',
+}
+SKIP_BASENAMES = {'locale.js'}
+
+def listed_files():
+    """All files tracked by git, excluding deletions. Falls back to a
+    plain os.walk if git is unavailable (e.g. tarball checkout)."""
+    try:
+        out = subprocess.check_output(
+            ['git', 'ls-files', '-z'], stderr=subprocess.DEVNULL,
+        )
+        return [p for p in out.decode('utf-8', errors='replace').split('\0') if p]
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        files = []
+        for dirpath, dirnames, filenames in os.walk('.'):
+            rel = dirpath[2:] + '/' if dirpath.startswith('./') else dirpath + '/'
+            dirnames[:] = [
+                d for d in dirnames
+                if not any((rel + d + '/').startswith(p) for p in SKIP_DIR_PREFIXES)
+            ]
+            for name in filenames:
+                files.append(os.path.normpath(os.path.join(dirpath, name)))
+        return files
 
 def included(path):
     if path in SKIP_FILES:
@@ -44,29 +75,45 @@ def included(path):
     if any(path.startswith(p) for p in SKIP_DIR_PREFIXES):
         return False
     name = os.path.basename(path)
-    if name == 'locale.js' or name.endswith('.min.js'):
+    if name in SKIP_BASENAMES:
         return False
-    if any(name.startswith(p) for p in SPECIAL_NAMES):
-        return True
-    _, ext = os.path.splitext(name)
-    return ext in EXTS
+    lower = name.lower()
+    for ext in BINARY_EXTS:
+        if lower.endswith(ext):
+            return False
+    return True
+
+def is_text(path, sniff_bytes=8192):
+    """A file is text if it has no NUL byte and decodes cleanly as UTF-8.
+    Cheap heuristic, good enough for source-tree scanning."""
+    try:
+        with open(path, 'rb') as f:
+            chunk = f.read(sniff_bytes)
+    except OSError:
+        return False
+    if b'\x00' in chunk:
+        return False
+    try:
+        chunk.decode('utf-8')
+    except UnicodeDecodeError:
+        return False
+    return True
 
 bad = []
-for dirpath, dirnames, filenames in os.walk('.'):
-    dirnames[:] = [d for d in dirnames if not any(
-        (dirpath + '/' + d + '/').startswith(p) for p in SKIP_DIR_PREFIXES
-    )]
-    for name in filenames:
-        path = os.path.join(dirpath, name)
-        if not included(path):
-            continue
-        try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as f:
-                for lineno, line in enumerate(f, 1):
-                    if CYR.search(line):
-                        bad.append((path, lineno, line.rstrip()))
-        except (OSError, UnicodeDecodeError):
-            continue
+for path in listed_files():
+    if not os.path.isfile(path):
+        continue
+    if not included(path):
+        continue
+    if not is_text(path):
+        continue
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            for lineno, line in enumerate(f, 1):
+                if CYR.search(line):
+                    bad.append((path, lineno, line.rstrip()))
+    except OSError:
+        continue
 
 if not bad:
     print("  PASS: no Cyrillic found")

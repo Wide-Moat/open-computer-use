@@ -116,7 +116,7 @@
 | 5 | Antspace NDJSON deploy protocol | Antspace | 6 (informational) |
 | 6 | JWT at L1 as defense-in-depth | `process_api` | 6+7 reconsider |
 | 7 | Go monorepo by **domain** | env-runner | 6 |
-| 8 | Block-device swap for session tooling | `process_api` + Baku | 8 |
+| 8 | Block-device swap for session tooling | `process_api` + Baku | 9 |
 | 9 | Graceful shutdown `POST /shutdown` | `process_api` | 7 |
 | 10 | Post-restore hardening (CRNG, init_on_free, cap drop) | Firecracker + kernel | 10 |
 

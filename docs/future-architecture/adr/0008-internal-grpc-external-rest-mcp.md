@@ -45,7 +45,7 @@ Consequence: MCP semantics live **only** in L4 gateway. We can:
 
 ## CDP and ttyd are the exception
 
-Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** decode CDP messages — It consistent-hashes the session ID to a sandbox pod and shovels frames in both directions. Reasons:
+Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** decode CDP messages — it consistently hashes the session ID to a sandbox pod and shovels frames in both directions. Reasons:
 
 - CDP messages are large (screencast binary frames) — parsing adds latency and zero value.
 - Schema is upstream-owned (Chrome team) — keeping us out of it = no version-lock.

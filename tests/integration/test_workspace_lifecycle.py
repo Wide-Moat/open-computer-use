@@ -44,16 +44,22 @@ def test_first_tool_call_spawns_labeled_workspace(client, chat_id):
     """After one tools/call, the chat must own exactly one workspace container
     with the prod labels (managed-by, chat-id, tool) all set. Drift here
     breaks the cleanup cron's filter in prod."""
-    call_mcp(client, chat_id, "initialize", {
+    init = call_mcp(client, chat_id, "initialize", {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
         "clientInfo": {"name": "integration-test", "version": "0.0.0"},
     })
+    assert init["status"] == 200, f"initialize failed: {init['body'][:300]}"
     r = call_mcp(client, chat_id, "tools/call", {
         "name": "bash_tool",
         "arguments": {"command": "true", "description": "spawn"},
     }, req_id=2)
     assert r["status"] == 200, f"tools/call failed: {r['body'][:300]}"
+    env = r.get("envelope") or {}
+    assert "result" in env, f"tools/call returned JSON-RPC error: {env}"
+    assert not env["result"].get("isError"), (
+        f"bash_tool reported isError=True: {env['result']}"
+    )
 
     containers = _list_containers_for_chat(chat_id)
     assert len(containers) == 1, (
@@ -76,16 +82,22 @@ def test_workspace_has_user_data_mounts(client, chat_id):
     """Bind mounts under /mnt/user-data must exist on the spawned container.
     Docker-compose's USER_DATA_BASE_PATH must round-trip into the workspace.
     """
-    call_mcp(client, chat_id, "initialize", {
+    init = call_mcp(client, chat_id, "initialize", {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
         "clientInfo": {"name": "integration-test", "version": "0.0.0"},
     })
+    assert init["status"] == 200, f"initialize failed: {init['body'][:300]}"
     r = call_mcp(client, chat_id, "tools/call", {
         "name": "bash_tool",
         "arguments": {"command": "true", "description": "spawn"},
     }, req_id=2)
     assert r["status"] == 200, f"tools/call failed: {r['body'][:300]}"
+    env = r.get("envelope") or {}
+    assert "result" in env, f"tools/call returned JSON-RPC error: {env}"
+    assert not env["result"].get("isError"), (
+        f"bash_tool reported isError=True: {env['result']}"
+    )
 
     containers = _list_containers_for_chat(chat_id)
     assert len(containers) == 1, (

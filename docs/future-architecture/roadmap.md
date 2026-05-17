@@ -3,7 +3,7 @@
 
 # Roadmap — Future Architecture Migration
 
-> **Eleven phases** (0, 0.5, 1–10), ordered to strip one blocker at a time.
+> **12 phases** (Phase 0, 0.5, and 1–10), ordered to strip one blocker at a time.
 > Every phase requires **explicit user sign-off** before code starts (see [README.md](./README.md) — research-then-sign-off cadence).
 > Every phase carries a **research checklist** linking to repos under `/references/` (git-ignored) and to the matching digest in [`research/`](./research/).
 

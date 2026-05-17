@@ -37,7 +37,7 @@ The same `.proto` is consumed by L4 (client) and L3 (server). Phase 7 the L1 age
 
 ## Concrete providers
 
-### DockerComposeProvider (PoC, current path)
+### DockerSocketProvider (PoC, current path)
 
 - **Phase:** in-process today (via `docker_manager.py`); extracted behind the interface in Phase 1; talks HTTP to a pool-manager sidecar from Phase 2.
 - **Backend:** Docker socket — but only this provider knows that. L4 never sees it.
@@ -86,7 +86,7 @@ Phase 2 ships the skeleton (`minSize=0` default = no behavior change). Phase 5 m
 
 ## Tenancy & isolation
 
-- Per `tenant_id`: dedicated k8s namespace (`KubernetesProvider`) or dedicated network (`DockerComposeProvider`).
+- Per `tenant_id`: dedicated k8s namespace (`KubernetesProvider`) or dedicated network (`DockerSocketProvider`).
 - `NetworkPolicy`: deny workspace→workspace, deny workspace→control-plane (except via the egress proxy and the L4-managed exec path).
 - `ResourceQuota` + `LimitRange` per namespace (k8s only) — blast-radius containment.
 - Per-sandbox `ServiceAccount` with **empty** RBAC (no cluster enumeration possible).
@@ -102,7 +102,7 @@ Transport: same channel as L4 ↔ L3 (HTTP stream or gRPC server-side stream).
 
 | Phase | What changes |
 |---|---|
-| 1 | Interface extracted; `DockerComposeProvider` is the only impl; still in-process |
+| 1 | Interface extracted; `DockerSocketProvider` is the only impl; still in-process |
 | 2 | HTTP transport; pool-manager sidecar owns Docker socket; warm pool skeleton |
 | 3 | Storage (S3) plumbed via provider (mount specs in template) |
 | 4 | Secret broker integration — provider receives short-lived creds in `configure` |

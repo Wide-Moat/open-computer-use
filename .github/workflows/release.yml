@@ -37,8 +37,12 @@ jobs:
           # (`-rc.1`, `-alpha.2`, `-beta.0`, `-dev.X`), mark the GitHub Release
           # as a pre-release so the "Latest release" badge keeps pointing at
           # the most recent stable version.
+          # Accept both 3-segment SemVer (`1.2.3-rc.1`) and the project's
+          # 4-segment app-version scheme (`0.8.12.3-rc.1`). Any pre-release
+          # suffix flips the release to "pre-release" in GitHub so the
+          # "Latest" badge keeps tracking stable.
           v="${GITHUB_REF_NAME#v}"
-          if echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-'; then
+          if echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-[A-Za-z0-9.]+$'; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
@@ -61,9 +65,13 @@ jobs:
             ## Helm chart (Kubernetes)
 
             ```bash
+            # Image tags follow the 4-segment app version (e.g. 0.8.12.3);
+            # Helm chart versions are 3-segment SemVer, so strip the 4th
+            # segment (and any pre-release suffix) for --version.
             VERSION="${{ github.ref_name }}"; VERSION="${VERSION#v}"
+            CHART_VERSION="$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?(-.*)?$/\1\3/')"
             helm install ocu oci://ghcr.io/${{ github.repository_owner }}/charts/computer-use-server \
-              --version "$VERSION" \
+              --version "$CHART_VERSION" \
               -f my-values.yaml \
               --set image.tag="$VERSION" \
               --set workspaceImage.tag="$VERSION" \
