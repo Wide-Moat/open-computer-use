@@ -101,3 +101,5 @@ helm/*/charts/*.tgz
 .venv-itest/
 tests/integration/_tmp/
 .pytest_cache/
+sandboxd/
+references/
