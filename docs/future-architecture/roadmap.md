@@ -18,7 +18,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 5. **Reversible by switch, not by rewrite.** Rollback = flip the flag back / pin the previous image digest. Never "revert N commits across N+1, N+2".
 6. **Reads first, writes second.** If a phase introduces a new data store / mount / API, ship the read path before the write path. Write path stays gated until the read path is observed clean.
 7. **Latent coupling banned.** If phase N depends on phase M (M < N) for production-readiness — even subtly — the `Depends on` line must say so explicitly. Reviewers reject anything implicit.
-8. **Antipattern review mandatory.** Before any phase starts, scan the matching row in [`antipatterns.md`](./antipatterns.md) phase index. Each listed antipattern is a PR-review checkpoint with our locked choice. New antipatterns discovered mid-phase go into doc 16 in the same shape.
+8. **Antipattern review mandatory.** Before any phase starts, scan the matching row in the [`antipatterns.md`](./antipatterns.md) phase index. Each listed antipattern is a PR-review checkpoint with our locked choice. New antipatterns discovered mid-phase are appended to [`antipatterns.md`](./antipatterns.md) — it is both the single definitive document and the index — using the same heading shape (`### A<NN> — <title>` with Status / Phase / Our choice / Rationale).
 
 ## Phase grid
 
