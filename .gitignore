@@ -96,3 +96,10 @@ POST.md
 # Helm — fetched dependencies live in charts/*.tgz and are reproducible from
 # Chart.lock via `helm dependency update`.
 helm/*/charts/*.tgz
+
+# Integration test scratch — owned by the test harness, never commit
+.venv-itest/
+tests/integration/_tmp/
+.pytest_cache/
+sandboxd/
+references/

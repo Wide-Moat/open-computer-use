@@ -221,11 +221,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Run structure and corporate tests
+      - name: Run structure and English-only tests
         run: |
-          chmod +x tests/test-no-corporate.sh tests/test-project-structure.sh
-          ./tests/test-no-corporate.sh
+          chmod +x tests/test-project-structure.sh tests/test-no-cyrillic.sh
           ./tests/test-project-structure.sh
+          ./tests/test-no-cyrillic.sh
 
   pytest-orchestrator:
     name: Pytest — orchestrator
@@ -300,3 +300,105 @@ jobs:
       - name: Dump server logs on failure
         if: failure()
         run: docker logs cu-server || true
+
+  integration:
+    name: Integration — real MCP + Docker
+    runs-on: ubuntu-latest
+    # Catches what unit tests don't: auth wiring, tools/call dispatch, real
+    # container spawn, and label/mount plumbing. Production parity: we use
+    # the runner's host /var/run/docker.sock — identical to compose & helm.
+    needs: [build-sandbox, build-server]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # The job depends on locally-tagged workspace + server images (the
+    # docker-compose.test.yml hard-codes :test tags). Building both inline
+    # keeps the job hermetic — it doesn't pull from ghcr and doesn't race
+    # the publish step.
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Free disk space for the workspace image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build workspace image (linux/amd64, local tag)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: open-computer-use:test
+          cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox-integration
+
+      - name: Build server image (local tag)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./computer-use-server
+          push: false
+          load: true
+          tags: open-computer-use-server:test
+          cache-from: type=gha,scope=server-smoke
+          cache-to: type=gha,mode=max,scope=server-integration
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install test deps
+        run: pip install httpx pytest pytest-timeout
+
+      - name: Bring up the integration stack
+        run: |
+          mkdir -p tests/integration/_tmp/user-data
+          docker compose -f docker-compose.test.yml up -d
+          # pytest's session fixture also waits for /health, but doing it
+          # here too means a startup crash surfaces in this step's log
+          # instead of being attributed to the first test.
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:18081/health >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Orchestrator never became healthy"
+          docker compose -f docker-compose.test.yml logs
+          exit 1
+
+      - name: Run integration suite
+        env:
+          OCU_TEST_BASE_URL: http://localhost:18081
+          OCU_TEST_MCP_API_KEY: test-token-do-not-use-in-prod
+        run: pytest tests/integration/ -v
+
+      - name: Orchestrator logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
+
+      - name: Spawned workspace logs on failure (best-effort)
+        if: failure()
+        run: |
+          # Only the test-side workspaces (owui-chat-itest-*) — never touch
+          # other managed-by-orchestrator containers a developer may have.
+          for c in $(docker ps -aq --filter 'name=owui-chat-itest-' \
+                                   --filter 'label=managed-by=mcp-computer-use-orchestrator'); do
+            echo "::group::workspace $c"
+            docker logs "$c" 2>&1 | tail -100 || true
+            echo "::endgroup::"
+          done
+
+      - name: Always tear down — stack + test workspaces
+        if: always()
+        run: |
+          # Reap any orphan test workspaces from a crashed test before compose
+          # down, in case the pytest session fixture didn't get to clean up.
+          # Scoped to the test container-name prefix so we never nuke prod.
+          docker ps -aq --filter 'name=owui-chat-itest-' \
+                        --filter 'label=managed-by=mcp-computer-use-orchestrator' \
+            | xargs -r docker rm -f || true
+          docker compose -f docker-compose.test.yml down -v --remove-orphans || true

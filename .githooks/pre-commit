@@ -1,0 +1,68 @@
+#!/bin/bash
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2025 Open Computer Use Contributors
+# Block commits containing Cyrillic characters.
+#
+# Repo policy (CLAUDE.md): English-only. No exceptions.
+#
+# Activation (one-time per clone):
+#   git config core.hooksPath .githooks
+#
+# To bypass for a specific commit (e.g. importing fixtures): git commit --no-verify
+# Do NOT use --no-verify casually.
+
+set -euo pipefail
+
+# Skip vendored / minified / generated paths and the test scripts that
+# intentionally contain non-ASCII patterns.
+SKIP_PATTERN='^(references/|sandboxd/|\.planning/|.*\.min\.js$|.*/locale\.js$|tests/test-no-cyrillic\.sh$)'
+
+# Collect staged files (added / copied / modified / renamed).
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$STAGED" ] && exit 0
+
+# Filter out skipped files + binaries.
+TO_CHECK=()
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ -f "$f" ] || continue
+    if echo "$f" | grep -qE "$SKIP_PATTERN"; then
+        continue
+    fi
+    if file --mime "$f" 2>/dev/null | grep -q 'charset=binary'; then
+        continue
+    fi
+    TO_CHECK+=("$f")
+done <<< "$STAGED"
+
+[ ${#TO_CHECK[@]} -eq 0 ] && exit 0
+
+# Scan staged content via Python (BSD grep on macOS has no PCRE).
+python3 - "${TO_CHECK[@]}" <<'PY' || exit 1
+import re, subprocess, sys
+
+CYR = re.compile(r'[\u0400-\u04FF]')
+bad = []
+
+for path in sys.argv[1:]:
+    try:
+        blob = subprocess.check_output(['git', 'show', f':{path}'], stderr=subprocess.DEVNULL)
+        text = blob.decode('utf-8', errors='replace')
+    except Exception:
+        continue
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if CYR.search(line):
+            bad.append((path, lineno, line.rstrip()))
+
+if not bad:
+    sys.exit(0)
+
+print("ERROR: Cyrillic characters in staged content. Repo is English-only (CLAUDE.md).\n")
+for path, lineno, line in bad[:30]:
+    print(f"  {path}:{lineno}: {line}")
+if len(bad) > 30:
+    print(f"  ... and {len(bad) - 30} more")
+print("\nRewrite the affected lines in English, then re-stage and re-commit.")
+print("Bypass (only if you have a reason): git commit --no-verify")
+sys.exit(1)
+PY
