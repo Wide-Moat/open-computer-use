@@ -33,16 +33,25 @@ helm install ocu open-computer-use/computer-use-server \
 
 Every `v*` git tag — stable and pre-release — pushes the chart to `oci://ghcr.io/wide-moat/charts/computer-use-server`. Use this path to install an `-rc.N` build for testing without contaminating users on the stable `helm repo`:
 
+The chart and the Docker images use different version strings:
+
+- **`APP_VERSION`** (Docker image tags + chart `appVersion`): full 4-segment app version, e.g. `0.9.2.5-rc.1`. Comes directly from the git tag.
+- **`CHART_VERSION`** (Helm chart `version`, what `helm install --version` resolves): strict 3-segment SemVer, e.g. `0.9.2-rc.1`. The 4th segment of the app version is dropped because Helm's chart version validator rejects it.
+
 ```bash
-VERSION=0.9.2.5-rc.1
+APP_VERSION=0.9.2.5-rc.1     # Docker image tag
+CHART_VERSION=0.9.2-rc.1     # Helm chart version (4th segment dropped)
+
 helm install ocu-rc oci://ghcr.io/wide-moat/charts/computer-use-server \
-  --version "$VERSION" \
+  --version "$CHART_VERSION" \
   --namespace open-computer-use --create-namespace \
   -f my-values.yaml \
-  --set image.tag="$VERSION" \
-  --set workspaceImage.tag="$VERSION" \
-  --set cleanup.image.tag="$VERSION"
+  --set image.tag="$APP_VERSION" \
+  --set workspaceImage.tag="$APP_VERSION" \
+  --set cleanup.image.tag="$APP_VERSION"
 ```
+
+The `release-chart.yml` workflow prints both values in the Actions Job Summary on every tag push, so you don't have to derive them yourself.
 
 Stable users running `helm repo add open-computer-use https://wide-moat.github.io/...` are unaffected — Helm excludes SemVer pre-releases from `helm install` resolution unless `--devel` or an explicit `--version X.Y.Z-rc.N` is passed.
 

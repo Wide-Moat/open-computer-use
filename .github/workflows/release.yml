@@ -30,44 +30,70 @@ jobs:
           echo "$CHANGES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Detect pre-release tag
-        id: prerelease
+      - name: Derive versions and detect pre-release tag
+        id: vers
         run: |
-          # Strip leading v; if what's left contains a SemVer pre-release suffix
-          # (`-rc.1`, `-alpha.2`, `-beta.0`, `-dev.X`), mark the GitHub Release
-          # as a pre-release so the "Latest release" badge keeps pointing at
-          # the most recent stable version.
-          v="${GITHUB_REF_NAME#v}"
-          if echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-'; then
-            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          # The tag carries the app version with our 4-segment scheme
+          # (e.g. v0.9.2.5-rc.1). Helm chart version must be strict 3-segment
+          # SemVer, so we drop the 4th segment for chart_version but keep the
+          # full thing for app_version and Docker image tags. See
+          # release-chart.yml for the same mapping — duplicated here because
+          # this job runs before/in parallel with the OCI publish.
+          app_version="${GITHUB_REF_NAME#v}"          # 0.9.2.5-rc.1
+
+          base="${app_version%%-*}"                    # 0.9.2.5
+          suffix=""
+          case "$app_version" in *-*) suffix="-${app_version#*-}" ;; esac
+
+          # 3-segment SemVer requires major.minor.patch — drop the 4th if present.
+          segs=$(echo -n "$base" | tr -cd '.' | wc -c | tr -d ' ')
+          if [ "$segs" = "3" ]; then
+            chart_base=$(echo "$base" | cut -d. -f1-3)
           else
-            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+            chart_base="$base"
           fi
+          chart_version="${chart_base}${suffix}"
+
+          # Pre-release detection: presence of a `-` after the base digits.
+          # The earlier regex only matched 3-segment bases, so 4-segment
+          # pre-release tags (`0.9.2.5-rc.1`) were misclassified as stable.
+          if [ -n "$suffix" ]; then
+            is_pre=true
+          else
+            is_pre=false
+          fi
+
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "chart_version=$chart_version" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$is_pre" >> "$GITHUB_OUTPUT"
+          echo "Resolved: app=$app_version chart=$chart_version prerelease=$is_pre"
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
+          prerelease: ${{ steps.vers.outputs.is_prerelease == 'true' }}
           body: |
             ## Docker Images
 
             ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-server:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-cleanup:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-webui:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.vers.outputs.app_version }}
+            docker pull ghcr.io/${{ github.repository }}-server:${{ steps.vers.outputs.app_version }}
+            docker pull ghcr.io/${{ github.repository }}-cleanup:${{ steps.vers.outputs.app_version }}
+            docker pull ghcr.io/${{ github.repository }}-webui:${{ steps.vers.outputs.app_version }}
             ```
 
             ## Helm chart (Kubernetes)
 
+            The chart version differs from the app version because Helm requires
+            strict 3-segment SemVer. The chart drops the 4th segment.
+
             ```bash
-            VERSION="${{ github.ref_name }}"; VERSION="${VERSION#v}"
             helm install ocu oci://ghcr.io/${{ github.repository_owner }}/charts/computer-use-server \
-              --version "$VERSION" \
+              --version ${{ steps.vers.outputs.chart_version }} \
               -f my-values.yaml \
-              --set image.tag="$VERSION" \
-              --set workspaceImage.tag="$VERSION" \
-              --set cleanup.image.tag="$VERSION"
+              --set image.tag=${{ steps.vers.outputs.app_version }} \
+              --set workspaceImage.tag=${{ steps.vers.outputs.app_version }} \
+              --set cleanup.image.tag=${{ steps.vers.outputs.app_version }}
             ```
 
             See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/helm/computer-use-server/README.md) for prerequisites (Sysbox) and full values reference.
