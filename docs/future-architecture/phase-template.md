@@ -1,6 +1,9 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # Phase-N template
 
-> Copy this file twice per phase: once as `phase-N-research.md` (Step 3 of the cadence), once as `phase-N-plan.md` (Step 5). Leave this template untouched.
+> Copy this file twice per phase: once as `phase-N-research.md` (Step 1: Research), once as `phase-N-plan.md` (Step 3: Plan). Leave this template untouched.
 
 ## `phase-N-research.md` skeleton
 

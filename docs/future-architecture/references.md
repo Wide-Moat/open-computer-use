@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # External References
 
 > Catalog of open-source projects we either build on, learn from, or explicitly reject.
@@ -67,7 +70,7 @@
 - **License:** Apache 2.0
 - **Language:** Go
 - **Role:** Userspace kernel. Good for short-lived CPU-only scripts.
-- **Caveat:** **Not suitable for Chromium / Computer Use** — current `docs/requirements/k8s-architecture.md` explicitly rejected gVisor for our browser workloads (compat envelope too narrow). Use for non-browser tiers only.
+- **Caveat:** **Not suitable for Chromium / Computer Use** — `docs/future-architecture/architecture/04-layer2-runtimes.md` explicitly rejects gVisor for our browser workloads (compat envelope too narrow). Use for non-browser tiers only.
 - **To research:** Phase 7 (validate as experimental tier for code-execution sandboxes).
 
 ### nestybox/sysbox

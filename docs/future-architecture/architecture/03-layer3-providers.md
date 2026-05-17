@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 03 — Layer 3: Orchestrator / Providers
 
 > Pluggable layer between the control plane (L4) and the sandbox runtime (L2).
@@ -105,7 +108,7 @@ Transport: same channel as L4 ↔ L3 (HTTP stream or gRPC server-side stream).
 | 4 | Secret broker integration — provider receives short-lived creds in `configure` |
 | 5 | `KubernetesProvider` ships; Helm chart real per-pod sandboxes |
 | 7 | Provider learns to pass new Go-agent endpoints (vsock-ready spec) |
-| 8 | `DirectCHProvider` ships; templates gain `runtimeClass` selection |
+| 9 | `DirectCHProvider` ships; templates gain `runtimeClass` selection |
 | 10 | Snapshot / restore + multi-region session routing |
 
 ## Source

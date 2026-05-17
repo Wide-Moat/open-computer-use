@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # ADR-0004 — Pluggable runtime via Kubernetes RuntimeClass (and per-template selection)
 
 - **Status:** Accepted

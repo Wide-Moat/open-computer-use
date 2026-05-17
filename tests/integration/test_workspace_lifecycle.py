@@ -81,10 +81,11 @@ def test_workspace_has_user_data_mounts(client, chat_id):
         "capabilities": {},
         "clientInfo": {"name": "integration-test", "version": "0.0.0"},
     })
-    call_mcp(client, chat_id, "tools/call", {
+    r = call_mcp(client, chat_id, "tools/call", {
         "name": "bash_tool",
         "arguments": {"command": "true", "description": "spawn"},
     }, req_id=2)
+    assert r["status"] == 200, f"tools/call failed: {r['body'][:300]}"
 
     containers = _list_containers_for_chat(chat_id)
     assert len(containers) == 1, (

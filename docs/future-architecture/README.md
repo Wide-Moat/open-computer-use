@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # Future Architecture
 
 This directory is the **single source of truth for the target architecture and migration roadmap** of Open Computer Use. It supersedes the previous `docs/requirements/` (renamed to here on 2026-05-17; see [ADR-0007](./adr/0007-superseded-by-future-architecture.md)).
@@ -16,7 +19,7 @@ The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4
 
 **Live spec (read every phase):**
 
-```
+```text
 docs/future-architecture/
 ├── README.md                       ← you are here
 ├── roadmap.md                      11 phases (0, 0.5, 1–10), invariants, failure modes, rollback
@@ -47,7 +50,7 @@ docs/future-architecture/
 
 **Research archive (read at start of relevant phase only):**
 
-```
+```text
 └── research/                       Per-repo digests; reference-only, decay OK
     ├── 01-kata-containers.md          (Phase 7, 9)
     ├── 02-e2b-infra.md                (Phase 2, 3, 6, 7, 8)
@@ -70,7 +73,7 @@ docs/future-architecture/
 
 Cloned shallowly into `/references/` (added to `.gitignore`):
 
-```
+```text
 agent-sandbox  agentbox    chromedp        cloud-hypervisor
 coder          desktop     docker-socket-proxy
 firecracker    firecracker-containerd      infra (e2b-dev)

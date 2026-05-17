@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 09 — Michaelliv/agentbox (egress proxy reference)
 
 > Source: [`references/agentbox/`](../../../references/agentbox/). Python asyncio reference for JWT-allowlist egress proxy. Companion blog: https://michaellivs.com/blog/sandboxed-execution-environment/.
@@ -7,7 +10,7 @@
 
 - **Where.** `agentbox/sandbox_manager.py:133-165`.
 - **Shape.**
-  ```
+  ```text
   Header:  {"typ":"JWT","alg":"HS256"}
   Payload: {
     "iss":"sandbox-egress-control",
@@ -51,7 +54,7 @@
 
 - **Where.** `agentbox/egress_proxy.py:91-113`.
 - **Container wire-up.**
-  ```
+  ```bash
   HTTP_PROXY=http://sandbox:jwt_<token>@proxy_host:15004
   HTTPS_PROXY=http://sandbox:jwt_<token>@proxy_host:15004
   ```
@@ -69,7 +72,7 @@
 
 - **Where.** `agentbox/egress_proxy.py:173, 256`.
 - **Today.**
-  ```
+  ```python
   logger.info(f"Proxying CONNECT to {host}:{port}")
   logger.info(f"Proxying {request.method} to {url}")
   logger.warning(f"Blocked CONNECT to {host}:{port}")

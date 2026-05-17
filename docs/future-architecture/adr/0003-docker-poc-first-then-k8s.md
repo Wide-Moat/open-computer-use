@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # ADR-0003 — Deployment ordering: Docker PoC first, then any k8s
 
 - **Status:** Accepted

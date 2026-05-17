@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 06 — Storage
 
 > Four-tier model (carried over from the old `docs/requirements/k8s-architecture.md` and elevated to a layer-agnostic spec).
@@ -55,7 +58,7 @@ Benefits:
 
 The `SandboxTemplate` declares its mounts; the provider (L3) materializes them. Example shape:
 
-```
+```yaml
 mounts:
   - type: image                       # Tier 1 — implicit
   - type: skill

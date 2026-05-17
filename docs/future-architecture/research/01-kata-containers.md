@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 01 — Kata Containers (Rust agent + kata-deploy)
 
 > Source: [`references/kata-containers/`](../../../references/kata-containers/) (Rust PID 1 agent + k8s DaemonSet for installing Kata on nodes).

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 02 — Layer 4: Control Plane
 
 > Status: **design** (locked target). Implementation lands in roadmap Phase 6.
@@ -73,7 +76,7 @@ MCP semantics live **only** in the gateway layer of L4. It translates MCP `tools
 ## Migration from today's FastAPI
 
 - **Phase 1–5:** stay in Python; refactor L3 calls behind a provider interface but `app.py` remains the entrypoint.
-- **Phase 6 (cutover):** new Go service stood up alongside; reverse proxy splits traffic by route; Python service decomissioned once parity is reached and admin UI is migrated.
+- **Phase 6 (cutover):** new Go service stood up alongside; reverse proxy splits traffic by route; Python service decommissioned once parity is reached and admin UI is migrated.
 - **Compatibility:** Go service MUST accept the exact existing MCP request shape on day 1 — verified by reusing `tests/integration/test_mcp_auth.py` and `test_mcp_tools.py` against the new endpoint.
 
 ## Open questions (deferred to Phase 6 research)

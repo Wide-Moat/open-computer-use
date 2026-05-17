@@ -46,6 +46,7 @@ DEFAULT_API_KEY = "test-token-do-not-use-in-prod"
 DEFAULT_BASE_URL = "http://localhost:18081"
 HEALTH_TIMEOUT_S = 60
 HEALTH_POLL_INTERVAL_S = 1.0
+COMPOSE_TIMEOUT_S = int(os.environ.get("OCU_TEST_COMPOSE_TIMEOUT_S", "900"))
 
 
 def _have_docker() -> bool:
@@ -76,7 +77,21 @@ def _wait_for_health(url: str, timeout: float) -> None:
 
 def _compose(cmd: list[str], env: dict | None = None) -> subprocess.CompletedProcess:
     full = ["docker", "compose", "-f", str(COMPOSE_FILE), *cmd]
-    return subprocess.run(full, capture_output=True, text=True, env={**os.environ, **(env or {})})
+    try:
+        return subprocess.run(
+            full,
+            capture_output=True,
+            text=True,
+            timeout=COMPOSE_TIMEOUT_S,
+            env={**os.environ, **(env or {})},
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            args=full,
+            returncode=124,
+            stdout=(exc.stdout or ""),
+            stderr=f"docker compose timed out after {COMPOSE_TIMEOUT_S}s",
+        )
 
 
 # Every integration test uses a chat_id that starts with this prefix (see the

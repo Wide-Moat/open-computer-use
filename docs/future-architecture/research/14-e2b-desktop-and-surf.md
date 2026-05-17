@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 14 — e2b/desktop + e2b/surf (full-desktop vs CDP-direct)
 
 > Source: [`references/desktop/`](../../../references/desktop/) and [`references/surf/`](../../../references/surf/).

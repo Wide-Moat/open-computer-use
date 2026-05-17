@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 15 — Claude Code Web reverse-engineering (Anthropic-specific extras)
 
 > Source: [`references/reverse-engineering-claude-code-antspace/`](../../../references/reverse-engineering-claude-code-antspace/). AprilNEA's binary analysis; companion to [`sandboxd/docs/comparison.md`](../../../sandboxd/docs/comparison.md).

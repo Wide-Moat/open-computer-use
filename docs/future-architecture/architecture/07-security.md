@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 07 — Security
 
 > Threat model, secret-rotation strategy, egress controls, image signing, audit.

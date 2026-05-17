@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 05 — Layer 1: Guest Agent
 
 > The PID 1 process inside every sandbox. Today: Python entrypoint + in-image MCP server. Future: small Go static binary (Phase 7).

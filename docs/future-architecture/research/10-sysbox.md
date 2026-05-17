@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 10 — sysbox (default L2 for internal/trusted tier)
 
 > Source: [`references/sysbox/`](../../../references/sysbox/). User-namespace + procfs/sysfs emulation.
@@ -54,12 +57,14 @@
 
 - **Where.** `security-cve.md:1-169`.
 - **Critical four.**
+
   | CVE | Affects | Fix |
   |---|---|---|
   | CVE-2022-0185 (user-ns escape) | Kernel < 5.16 | Kernel ≥ 5.16 |
   | CVE-2022-0847 (Dirty Pipe) | Kernel < 5.16.11 / 5.15.25 / 5.10.102 | Patched kernel |
   | CVE-2022-0811 (CRI-O sysctl) | `sysbox-deploy-k8s` < v0.5.1 | DaemonSet ≥ v0.5.1 |
   | CVE-2024-21626 (runc fd leak) | **NOT affected** — sysbox has user-ns fallback | — |
+
 - **For us.** Phase 5 — gate sysbox templates on `kernel-version: >=5.16` node label. Annual CVE audit.
 - **Why this is acceptable.** sysbox is OS-virtualization, not VM-isolation. We accept the trade-off for **internal trusted** tier; eliminate it via kata-ch for **untrusted** (Phase 9).
 

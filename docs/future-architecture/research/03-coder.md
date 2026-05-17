@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 03 — Coder (production Go control plane)
 
 > Source: [`references/coder/`](../../../references/coder/). Self-hosted workspace platform — auth, sessions, lifecycle, templates, audit, RBAC, telemetry. Closest production analog for our Phase 6 L4 rewrite.

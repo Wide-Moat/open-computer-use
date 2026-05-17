@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # ADR-0008 — Internal transport: connect-go (gRPC). External: MCP + REST. CDP/ttyd: WebSocket passthrough.
 
 - **Status:** Accepted
@@ -42,7 +45,7 @@ Consequence: MCP semantics live **only** in L4 gateway. We can:
 
 ## CDP and ttyd are the exception
 
-Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** decode CDP messages — it consistent-hashes the session ID to a sandbox pod and shovels frames in both directions. Reasons:
+Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** decode CDP messages — It consistent-hashes the session ID to a sandbox pod and shovels frames in both directions. Reasons:
 
 - CDP messages are large (screencast binary frames) — parsing adds latency and zero value.
 - Schema is upstream-owned (Chrome team) — keeping us out of it = no version-lock.

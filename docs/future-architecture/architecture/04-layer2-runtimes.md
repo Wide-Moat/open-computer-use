@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 04 — Layer 2: Sandbox Runtimes
 
 > The actual isolation primitive that wraps Layer 1 (the agent + workload).

@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # ADR-0002 — Guest agent language: Go (with Rust documented)
 
 - **Status:** Accepted (with explicit re-evaluation gate in Phase 7)

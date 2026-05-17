@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 06 — kubernetes-sigs/agent-sandbox (CRD base for `KubernetesProvider`)
 
 > Source: [`references/agent-sandbox/`](../../../references/agent-sandbox/). Google-backed, SIG Apps, v1alpha1.

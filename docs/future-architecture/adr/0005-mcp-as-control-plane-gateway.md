@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # ADR-0005 — MCP stays the user-facing protocol; admin UI uses a separate API
 
 - **Status:** Accepted

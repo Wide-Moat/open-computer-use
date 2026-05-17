@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 01 — The 4-Layer Model
 
 > Target architecture, adapted from [sandboxd](../../../sandboxd/docs/architecture.md).
@@ -5,7 +8,7 @@
 
 ## Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │  LAYER 4 — Control Plane                          (Go service)      │
 │  • User-facing API: MCP gateway + REST/GraphQL for admin UI         │

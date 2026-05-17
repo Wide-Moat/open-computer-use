@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 08 — Networking
 
 > Network policy, egress proxy, CDP/ttyd routing, ingress.
@@ -12,7 +15,7 @@
 
 ## Topology (k8s target, Phase 5+)
 
-```
+```text
                   Internet
                      │
             ┌────────▼────────┐

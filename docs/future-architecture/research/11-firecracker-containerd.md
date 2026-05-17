@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 11 — firecracker-containerd (FC via containerd + COW snapshotter)
 
 > Source: [`references/firecracker-containerd/`](../../../references/firecracker-containerd/). AWS's containerd integration for Firecracker.

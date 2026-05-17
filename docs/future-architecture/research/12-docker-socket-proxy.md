@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 12 — Tecnativa/docker-socket-proxy (privileged-API filter pattern)
 
 > Source: [`references/docker-socket-proxy/`](../../../references/docker-socket-proxy/). HAProxy-based filter for the Docker API.
@@ -6,7 +9,7 @@
 ## 1. Endpoint allowlist via regex + env-gated rules
 
 - **Where.** `haproxy.cfg:46-79` (frontend rules). Example `:60`:
-  ```
+  ```haproxy
   http-request allow if { path,url_dec -m reg -i ^(/v[\d\.]+)?/containers } { env(CONTAINERS) -m bool }
   ```
 - **What.** Each API category (CONTAINERS, NETWORKS, VOLUMES, …) has a regex path matcher + an env-var boolean gate. `0 = deny`, `1 = allow`.

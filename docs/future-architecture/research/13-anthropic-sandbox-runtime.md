@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 13 — anthropic-experimental/sandbox-runtime (local Claude Code sandbox)
 
 > Source: [`references/sandbox-runtime/`](../../../references/sandbox-runtime/). **Not** `process_api` (which is closed and uses Firecracker). This is the local-machine sandbox: bubblewrap on Linux, seatbelt on macOS, seccomp BPF.
@@ -79,7 +82,6 @@
 ## 7. Design philosophy (Anthropic quotes)
 
 > "Secure-by-default philosophy tailored for common developer use cases: processes start with minimal access, and you explicitly poke only the holes you need." (README:41)
-
 > "Both filesystem and network isolation are required for effective sandboxing." (README:112-127)
 
 **Key takeaways.**

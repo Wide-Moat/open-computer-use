@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 05 — Firecracker (kata-fc backend, fastest-cold-start tier)
 
 > Source: [`references/firecracker/`](../../../references/firecracker/). AWS Lambda/Fargate microVM.

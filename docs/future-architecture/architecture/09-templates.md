@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 09 — Sandbox Templates
 
 > The configurable, version-pinned recipe that produces a sandbox.
@@ -72,7 +75,7 @@ spec:
 
 L4 resolves at session creation:
 
-```
+```python
 template = TemplateResolver.resolve(
     tenant_tier,          # e.g. "internal-employee", "paid-customer", "trial"
     workload_kind,        # e.g. "computer-use", "code-exec"

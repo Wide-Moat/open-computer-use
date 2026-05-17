@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 04 — Cloud Hypervisor (lead untrusted-tier microVM)
 
 > Source: [`references/cloud-hypervisor/`](../../../references/cloud-hypervisor/). Rust microVM hypervisor, Intel-led.

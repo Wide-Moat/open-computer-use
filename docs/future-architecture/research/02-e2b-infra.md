@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 02 — E2B Infrastructure (e2b-dev/infra)
 
 > Source: [`references/infra/`](../../../references/infra/). Production E2B infra in Go.

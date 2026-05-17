@@ -1,6 +1,9 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # Roadmap — Future Architecture Migration
 
-> **Eleven phases**, ordered to strip one blocker at a time.
+> **Eleven phases** (0, 0.5, 1–10), ordered to strip one blocker at a time.
 > Every phase requires **explicit user sign-off** before code starts (see [README.md](./README.md) — research-then-sign-off cadence).
 > Every phase carries a **research checklist** linking to repos under `/references/` (git-ignored) and to the matching digest in [`research/`](./research/).
 
@@ -44,7 +47,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 
 **Deliverables.**
 - This `docs/future-architecture/` tree merged to `main`.
-- 7 ADRs accepted.
+- 8 ADRs accepted (ADR-0001 through ADR-0008).
 - All reference repos cloned under `/references/` (git-ignored).
 
 **Research checklist.** N/A (this phase *is* the research synthesis).

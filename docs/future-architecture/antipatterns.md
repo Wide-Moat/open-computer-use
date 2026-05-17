@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 # 16 — Antipatterns by phase (operational decision log)
 
 > Source: [`sandboxd/docs/antipatterns.md`](../../../sandboxd/docs/antipatterns.md) + footgun sections in `research/01-15` + production-gap notes.
@@ -138,7 +141,7 @@ Ordered by phase where they FIRST become possible.
 - **Failure.** Disk bloat; compliance liability (GDPR/HIPAA — old PII on disk); compromised sandbox reads prior tenant's data.
 - **Our choice — ephemeral by default, persistence opt-in.**
   - Computer Use sessions are hours, not days.
-  - If Phase 3+ adds "continue yesterday's session" → opt-in PVC with per-session encryption ([A22](#a22--no-per-session-encryption-for-persistent-data)) and explicit cleanup policy.
+  - If Phase 3+ adds "continue yesterday's session" → opt-in PVC with per-session encryption ([A34](#a34--no-per-session-encryption-for-persistent-data)) and explicit cleanup policy.
   - No default PVC in any template.
 - **Phase.** 3 (storage MVP) + ongoing.
 - **Detection.** Helm chart's default `SandboxTemplate.persistence: ephemeral`. Validate at admission.
