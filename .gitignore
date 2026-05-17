@@ -96,3 +96,4 @@ POST.md
 # Helm — fetched dependencies live in charts/*.tgz and are reproducible from
 # Chart.lock via `helm dependency update`.
 helm/*/charts/*.tgz
+sandboxd/
