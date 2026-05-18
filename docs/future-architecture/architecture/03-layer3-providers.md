@@ -66,18 +66,74 @@ The same `.proto` is consumed by L4 (client) and L3 (server). Phase 7 the L1 age
 
 ## Warm pool semantics
 
-Three knobs per template:
+Five knobs per template:
 - `minSize` — sandboxes always idle and ready.
 - `targetSize` — provider tries to maintain (refills as sessions consume from pool).
 - `maxSize` — hard cap regardless of demand.
+- `refillRate` — max sandboxes the refiller may start per second (smooths bursty refill load; without it, a flood of session-ends triggers a thundering-herd spawn).
+- `maxAge` — TTL at which an idle pool sandbox is destroyed and replaced regardless of demand. Prevents long-lived "warm" sandboxes from accumulating per-template image drift, leaked file handles, or stale skill blobs.
 
 Lifecycle:
-1. Provider pre-starts `minSize` sandboxes per template, runs `/v1/configure` with placeholder context.
-2. On `spawn(template, ctx)` request, pop one from pool, re-configure with real `ctx` (injects session id, env, egress JWT).
-3. Background refill task brings pool back to `targetSize`.
-4. Sessions ending → sandbox is destroyed (not returned to pool — tenancy hygiene; see [07-security.md](./07-security.md)).
+1. Provider pre-starts `minSize` sandboxes per template, runs `Configure` with placeholder context.
+2. On `Spawn(template, ctx)` request, pop one from pool, re-`Configure` with real `ctx` (injects session id, env, egress JWT).
+3. Background refill task brings pool back to `targetSize` at no more than `refillRate` per second.
+4. Idle sandbox older than `maxAge` → destroyed, refiller spawns a replacement.
+5. Sessions ending → sandbox is destroyed (not returned to pool — tenancy hygiene; see [07-security.md](./07-security.md)).
 
-Phase 2 ships the skeleton (`minSize=0` default = no behavior change). Phase 5 makes it real. Phase 10 adds snapshot/restore so the "warm" state can persist sessions.
+Phase 2 ships the skeleton (`minSize=0` default = no behavior change). Phase 5 makes it real. Phase 10 swaps the "warm sandboxes pool" for a **frozen-snapshot pool** with block-device hot-swap on resume — same knobs, different mechanics. See [`research/20-snapstart-hot-swap.md`](../research/20-snapstart-hot-swap.md).
+
+## SandboxClaim CRD semantics (KubernetesProvider)
+
+For the `KubernetesProvider`, the wire between L4 and L3 is **typed Kubernetes objects**, not opaque RPC payloads. The CRD shape comes from [`kubernetes-sigs/agent-sandbox`](https://github.com/kubernetes-sigs/agent-sandbox) — we adopt rather than reinvent.
+
+```yaml
+apiVersion: sandbox.kubernetes.io/v1alpha1
+kind: SandboxClaim
+metadata:
+  name: claim-<session-id>
+  namespace: tenant-<tenant-id>
+spec:
+  templateRef:
+    name: customer-cu-kata-ch-v3   # SandboxTemplate to allocate from
+  envtype: anthropic-hosted         # provider-side dispatch (see below)
+  lease:
+    ttlSeconds: 7200                # auto-release if the session never returns
+    renewDeadlineSeconds: 60        # heartbeat budget
+  context:                          # injected via Agent.Configure
+    sessionId: <id>
+    tenantId:  <id>
+    egressJwtSecretRef:
+      name: egress-token-<session-id>
+status:
+  phase:           Bound | Pending | Released | Failed
+  sandboxRef:      { name, uid }    # opaque to L4; cluster-internal handle
+  boundAt:         <timestamp>
+  observedRuntime: kata-ch          # actual L2 runtime that landed
+  conditions:     [...]
+```
+
+L4's `Spawn` becomes "create a `SandboxClaim`, watch `.status.phase`." `Stop` is `delete claim`. Health is the same watch. The CRD is what gives the provider a place to store **lease state** without L4 caring about Kubernetes specifics.
+
+Two operational properties we get for free:
+- **TTL-driven cleanup.** Claims past their lease are released by the controller, not by L4. L4 crashing does not strand sandboxes.
+- **kubectl-debuggable.** Operators can `kubectl get sandboxclaims -A` to see pool state without going through L4's admin API.
+
+The `DockerSocketProvider` and `DirectCHProvider` implement the same lifecycle in-process; the CRD shape is the k8s realization of a provider-internal concept.
+
+## Environment-type dispatch (Baku pattern)
+
+Templates carry an `envtype` field consumed by the provider to pick the backend mechanism. The pattern is lifted from Anthropic's Baku/`environment-runner` split ([`research/21`](../research/21-environment-runner-go.md), inspiration-only) and applied narrowly here:
+
+| `envtype` | Provider behaviour | Use case |
+|---|---|---|
+| `dev` | runc on Docker Compose; no isolation; no egress proxy | Local PoC, integration tests |
+| `internal` | sysbox on k8s; egress proxy in monitor mode | Trusted employees |
+| `customer-shared` | sysbox or gVisor (per-template) on k8s; egress proxy enforcing | Customer code-only sandboxes |
+| `customer-cu` | Kata (CH or FC) on bare-metal node pool; egress proxy enforcing | Customer Computer Use sessions |
+| `anthropic-hosted` | Reserved label for our own SaaS deployment; same as `customer-cu` today but pinned to a tier | Anthropic-equivalent deployment shape |
+| `byoc` | Customer-supplied cluster; provider holds a lease on a customer namespace | Reserved, not Phase-1 |
+
+`envtype` is **not** the same as `runtimeClass`. `runtimeClass` is the L2 isolation primitive; `envtype` is the L3 dispatch key. One `envtype` can map to multiple `runtimeClass`-es depending on template (e.g. `customer-shared` resolves to sysbox for code, gVisor for browserless code-exec).
 
 ## Reaper / cleanup
 

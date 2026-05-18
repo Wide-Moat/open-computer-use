@@ -100,6 +100,48 @@ Target (Phase 6+):
 | 8 | Egress proxy + JWT signing in L4 + audit sink (prereq for untrusted tier in Phase 9) |
 | 10 | Multi-AZ session routing — snapshot-based recovery on pod failure (not in-memory affinity); multi-region foundations only — see `sandboxd` §"Other catalog additions" |
 
+## Multi-region workspace proxies (Phase 10 substrate)
+
+Long-lived CDP / ttyd WebSockets penalize latency hard — a 200 ms RTT makes a Chromium screencast feel underwater. Once the deployment spans more than one region, L4 cannot terminate every user's WebSocket centrally without paying the cross-region tax on every keystroke.
+
+The pattern, lifted from Coder ([`research/03`](../research/03-coder.md)) and from the Anthropic production deployment's Coder lineage ([`research/16`](../research/16-anthropic-production-sandbox-observed.md) §6):
+
+```text
+                User UI
+                   │
+                   ▼
+        ┌──────────────────────┐
+        │ Region-local         │
+        │ Workspace Proxy      │   one per region; terminates user-side TLS
+        │ (CDP/ttyd terminator)│   consistent-hashes by session_id
+        └──────────┬───────────┘
+                   │ mTLS, region-local
+                   ▼
+        ┌──────────────────────┐
+        │ L4 (global, multi-AZ)│
+        │ + KV session router  │
+        └──────────┬───────────┘
+                   │
+                   ▼
+        ┌──────────────────────┐
+        │ L3 + sandboxes        │
+        │ in the user's region  │
+        └──────────────────────┘
+```
+
+Properties:
+- **User-perceived latency is region-local.** RTT to the sandbox stays under the regional ceiling.
+- **L4 stays single-pane-of-glass.** Auth, session router, secret broker remain global; the proxies are dumb shovels.
+- **Failure isolation.** A region's proxy can lose its L4 link without dropping in-flight CDP frames (proxy buffers; reconnects when L4 returns).
+- **Consistent-hash by `session_id`.** Within a region, the same session always lands on the same proxy replica. Avoids the `sessionAffinity: ClientIP` anti-pattern called out in [`02-layer4-control-plane.md`](./02-layer4-control-plane.md).
+
+What this implies for earlier phases:
+- The CDP/ttyd transport must already be transparent passthrough (L4 does not parse frames — [ADR-0008](../adr/0008-internal-grpc-external-rest-mcp.md)). Anything that requires L4 to understand the wire breaks here.
+- Session router state must be **externally addressable** (KV, not in-process) so a region-local proxy can resolve `session_id → region`.
+- mTLS between proxy and L4 must be operational — Phase 6 deliverable.
+
+Phase 10 ships one proxy per region; before that, the proxy is just L4 itself (one region). The architecture is forward-compatible: a Phase 6 deployment with no proxies looks like the Phase 10 deployment minus the geographic shard.
+
 ## Source
 
 - [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md)

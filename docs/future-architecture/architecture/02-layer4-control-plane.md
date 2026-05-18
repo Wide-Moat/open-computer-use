@@ -71,7 +71,40 @@ MCP semantics live **only** in the gateway layer of L4. It translates MCP `tools
 |---|---|---|
 | Single binary alongside Compose | PoC, dev (Phase 6 development) | Replaces today's `computer-use-server` container 1:1 |
 | `Deployment` in k8s, HPA on RPS | Production single-region (Phase 6 prod) | Stateless; KV holds session state |
-| Multi-AZ + multi-region | Phase 10 | KV replicated cross-AZ; sticky session affinity via consistent hashing |
+| Multi-AZ + multi-region | Phase 10 | KV replicated cross-AZ; sticky routing via consistent hashing in L4 (see anti-pattern note below) |
+
+> **Anti-pattern — never use `Service.spec.sessionAffinity: ClientIP`.** It pins on source IP, which in our deployments is the ingress controller's IP (every client looks the same). The result is a single replica receiving 100% of CDP/ttyd WebSocket traffic. Stickiness for long-lived sessions belongs in L4's session router (consistent-hash by `session_id`), not in the Service. Document this in the Helm chart values; refuse the field in any operator template.
+
+## HA upgrade strategy
+
+L4 is stateless at the request level (KV holds session state), but **CDP / ttyd WebSockets are long-lived** and a rolling rollout that kills the replica owning a session terminates that session's UI. The upgrade procedure:
+
+1. **Scale-to-1, migrate, scale-up** is the safe baseline for single-region:
+   - Scale the new revision in.
+   - Drain the old revision: stop accepting new sessions; existing sessions remain bound until they end naturally or until the drain timeout (default 30 min, capped at the longest active CDP session).
+   - Migrate the session router KV (no-op when KV is external; explicit hand-off when KV is co-located).
+   - Scale the old revision to zero.
+2. **Blue-green** (preferred for production):
+   - Stand up the new revision behind a sibling Service.
+   - Switch the L4-fronting ingress route atomically.
+   - Old revision keeps existing sessions; new sessions go to the new revision.
+   - Old revision drains and is deleted after the drain window.
+3. **Never** roll L4 with a vanilla Kubernetes `RollingUpdate` against the same Service while WebSocket sessions are bound. The default kills sessions mid-stream.
+
+Phase 6 ships the scale-to-1 procedure as a Helm `pre-upgrade` hook. Phase 10 adds the blue-green topology once multi-region session affinity is in place.
+
+## Prompt-caching position (Anthropic API gateway role)
+
+L4 sits between LLM clients and the Anthropic API in deployments that route through us. Prompt caching is part of the Anthropic API contract; **L4 must forward the relevant headers and request blocks transparently, not strip or rewrite them**. Specifically:
+
+- The `anthropic-beta: prompt-caching-*` header is set **only** when the client requested it. L4 does not opportunistically add it.
+- `cache_control` blocks inside the request body pass through unchanged.
+- Response headers reporting cache hit/miss metrics pass back unchanged.
+- L4 never inserts or removes `cache_control` markers — that is the client's call. We are a router, not a prompt optimizer.
+
+This matters because Open WebUI and other clients increasingly use caching to amortize long system prompts. A naive proxy that rewrites the body breaks the cache and inflates token bills silently. The L4 implementation has integration tests asserting byte-identical round-trip for cached request shapes.
+
+Phase 6 research locks the exact list of headers and request fields treated as opaque; Phase 6 implementation enforces it.
 
 ## Migration from today's FastAPI
 

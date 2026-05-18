@@ -84,6 +84,62 @@ L2 carries the load for untrusted workloads. See the runtime matrix in [04-layer
 
 See [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md) for CVE history references.
 
+## Mandatory deny paths inside the workspace
+
+Even with full L2 isolation, the agent itself must refuse to write a small set of paths that are vectors for persistent shell takeover or self-exfiltration. The list is **always-on, regardless of template configuration** — modelled on Anthropic's local sandbox-runtime ([`research/13`](../research/13-anthropic-sandbox-runtime.md) §2):
+
+| Path / glob | Why blocked |
+|---|---|
+| `.bashrc`, `.bash_profile`, `.zshrc`, `.zprofile`, `.profile` | Persistent shell hijack — survives session, exfils on next user shell |
+| `.gitconfig`, `.gitmodules` | Persistent git hooks via `[core] hooksPath`; submodule URL injection |
+| `.git/hooks/*` | Hook execution on every git operation |
+| `.mcp.json` | Sub-agent MCP server hijack |
+| `.claude/`, `.claude-code/`, `.codex/`, `.opencode/` | Sub-agent CLI config / credential hijack |
+| `.vscode/`, `.idea/` | IDE-driven code execution on user re-open |
+| `.ssh/`, `.aws/`, `.gcp/`, `.kube/` | Credential exfil targets |
+| `$PATH` directories owned by the user (`~/.local/bin/*`, `bin/*`) | Shadow-binary injection |
+
+Enforcement: a Rust-side path-canonicalization check on every write in the L1 agent's file-ops handlers. Symlink targets are resolved before the check (see symlink-attack defenses in [`research/13`](../research/13-anthropic-sandbox-runtime.md) §6). Phase 7 implements; the antipattern reference is A1 / C-series.
+
+## Graceful-shutdown protocol
+
+When L3 needs to stop a sandbox — drain for upgrade, end-of-session, idle TTL — the protocol is **four steps, in order**. Skipping steps causes data loss (atomic-rename caught mid-flight) or audit-log gaps:
+
+1. **Drop the page cache** inside the sandbox (echo 3 → drop_caches via the L1 control endpoint). Forces dirty data to disk; pending writebacks complete or fail visibly.
+2. **`SIGTERM` to the workload process group.** Give it a grace period (default 10 s, template-tunable).
+3. **Wait** for child reaper to confirm exit, or timeout.
+4. **`SIGKILL`** to anything still running. Container teardown follows.
+
+The L1 agent exposes this as `POST /shutdown` on the control plane ([05-layer1-guest-agent.md](./05-layer1-guest-agent.md)) and as a connect-side `Shutdown` RPC on the data plane. The two paths share the same state machine; whichever fires first wins.
+
+## Defense-in-depth: `memfd_create` for the agent binary (Phase 9+)
+
+Optional hardening for the microVM tiers: the L1 agent binary is loaded into a `memfd` at boot and the on-disk copy is unlinked. An attacker who lands code execution inside the sandbox cannot read the agent binary from disk to study it — `/proc/self/exe` resolves to a memory-only file descriptor.
+
+This is purely defense-in-depth (the binary's source-equivalent is public). Cheap to implement once the agent is a static Rust binary; **Phase 9 nice-to-have, not Phase 7 must.**
+
+## Snapstart-restore hardening (Phase 10)
+
+When a sandbox resumes from a frozen Firecracker snapshot, the guest is **stale by design** — the kernel knows it forked but userspace does not. Without explicit re-initialization, userspace RNGs reseed from snapshotted state (worst-case identical seeds across restores), wall-clock is wrong by minutes-to-days, and any cached page references point into a rootfs that was just swapped underneath.
+
+Mandatory on every restore (lifted from [`research/20`](../research/20-snapstart-hot-swap.md) §4):
+
+| Action | Why |
+|---|---|
+| `drop_caches` after device hot-swap | Page cache references the frozen rootfs |
+| Devtmpfs remount | Device-node mapping changed |
+| `pivot_root` onto fresh rootfs | The frozen rootfs is stale |
+| `clock_settime()` to current host time | Wall-clock was frozen |
+| **CRNG reseed** (`getrandom`-style force) | Userspace RNGs (OpenSSL, glibc arc4random) don't notice the fork — without reseed, two sandboxes restored from the same snapshot can generate identical "random" values |
+| Drop `CAP_SYS_RESOURCE` | Held only for init |
+| Re-run env-var scrub | Template env may have changed since the template was frozen |
+
+Template-build-time hardening:
+- `init_on_free=1` kernel cmdline — zeroes freed pages before reuse so a fresh resume can't read template-VM secrets out of recycled memory.
+- Template image built with **no `CAP_SYS_RESOURCE` retention** logic — the cap is held only during init.
+
+Until Phase 10 ships, the L1 agent's `/mount_root` endpoint is **not exposed**. Adding it pre-Phase-10 is a footgun (untested resume path on a sandbox that was never frozen).
+
 ## Sandbox hygiene
 
 - **No reuse between tenants.** When a session ends, sandbox is destroyed. Never returned to the pool of another tenant.
@@ -126,7 +182,7 @@ Retention: **≥ 90 days**. Append-only sink. See [10-observability.md](./10-obs
 | 4 | **Secret broker** + per-session STS + key rotation |
 | 5 | NetworkPolicy default-deny + ResourceQuota + empty-RBAC SA in Helm chart |
 | 6 | mTLS L4 ↔ L3; OIDC for admin UI |
-| 7 | Go agent shrinks attack surface; signed image enforcement |
+| 7 | Rust agent shrinks attack surface; signed image enforcement |
 | 8 | Egress proxy + audit-log pipeline + 90 d retention **(prereq for any untrusted tier)** |
 | 9 | `kata-ch` / `kata-fc` raise the isolation ceiling — untrusted tier opens, gated on Phase 8 |
 | 10 | Snapshot/restore + post-restore hardening (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop); KMS-backed per-session encryption keys for persistent storage |

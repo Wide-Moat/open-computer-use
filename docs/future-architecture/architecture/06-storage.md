@@ -88,6 +88,34 @@ mounts:
 | 5 | K8s provider uses PVCs (RWO) for Tier 3 opt-in persistence; FUSE pattern carried to pods |
 | 8 | virtio-fs replaces FUSE on kata-ch (faster, kernel-level) |
 
+## Block-device tooling swap (microVM templates, Phase 10)
+
+Once the snapstart pattern lands ([`research/20-snapstart-hot-swap.md`](../research/20-snapstart-hot-swap.md)), Tier-1 and Tier-2 content stops being "OCI layers pulled at spawn" and becomes **block devices the host swaps at resume**. The L1 agent's job is to remount them when the host signals readiness via `POST /mount_root` on its control server.
+
+Layout per session (Firecracker / Cloud Hypervisor microVM):
+
+| Device | Content | Mode | Lifetime |
+|---|---|---|---|
+| `vda` | per-tenant root overlay on a shared template base (ext4) | RW | per session |
+| `vdb` | Tier 2 skills (squashfs of `/opt/skills`) | RO | per release |
+| `vdc` | Tier 1 runtime/payload (squashfs of `/opt/<runner>`) | RO | per release |
+| Tier-4 mounts | rclone-FUSE-in-VM as today | RW (where applicable) | per tenant |
+
+Per-resume sequence on the L1 side (the host does the device swap first, then calls `/mount_root`):
+
+1. `drop_caches` — page cache references files from the frozen rootfs that no longer exist.
+2. Remount devtmpfs.
+3. Mount `/dev/vda` as ext4, `pivot_root` into it.
+4. Mount `/dev/vdb`, `/dev/vdc` squashfs overlays.
+5. `clock_settime()` (the wall-clock was frozen).
+6. Trigger CRNG reseed (see [07-security.md](./07-security.md) snapstart-restore hardening).
+7. Drop `CAP_SYS_RESOURCE`.
+8. Start accepting WS connections.
+
+The pattern lifts directly from `process_api` / Baku ([`research/19`](../research/19-anthropic-process-api.md) §5, §9; [`research/20`](../research/20-snapstart-hot-swap.md) §2). Tier-2 stays as squashfs in both the OCI-layer world and the block-device world — the format is the same, only the delivery channel changes. **Skills built before Phase 10 are forward-compatible.**
+
+Implication for the release pipeline (Phase 10): tooling produces both an OCI image *and* a paired set of `vdb` / `vdc` squashfs blobs from the same source. Both are signed; both are referenced by content hash from templates. Phase 9 templates use only OCI; Phase 10 templates may use either, gated on `snapstart_compatible` ([09-templates.md](./09-templates.md)).
+
 ## Explicit non-goals
 
 - **No RWX (ReadWriteMany).** Single-writer patterns only. Avoids EFS/Filestore complexity and consistency surprises.

@@ -28,6 +28,8 @@ spec:
     signature: required           # cosign verified by admission
 
   runtime_class: kata-ch          # see 04-layer2-runtimes.md
+  envtype: customer-cu            # L3 dispatch key — see 03-layer3-providers.md
+  snapstart_compatible: false     # Phase 10 only; set true when template ships paired squashfs blobs (see 06-storage.md)
 
   resources:
     cpu:   "2"
@@ -96,6 +98,11 @@ The mapping is policy held in L4 config (DB-backed in Phase 6+). Admin UI edits 
 - **Validated** at admission: image signature, mount sanity, resource within cluster quotas.
 - **Versioned**: name carries `vN`. Old version stays until its referenced sessions drain. No mutation in place.
 - **Deprecated** via label; new sessions get the latest non-deprecated.
+
+## Two new fields, briefly
+
+- **`envtype`** — the L3 dispatch key. Picks the backend mechanism (Docker Compose vs k8s vs DirectCH, plus the egress-proxy enforcement mode). Values: `dev`, `internal`, `customer-shared`, `customer-cu`, `anthropic-hosted`, `byoc`. Full matrix in [`03-layer3-providers.md`](./03-layer3-providers.md) "Environment-type dispatch (Baku pattern)". Distinct from `runtime_class` — `envtype` says *where it runs*, `runtime_class` says *what isolates it*.
+- **`snapstart_compatible`** — Phase-10-only flag. When `true`, the template's release pipeline produced paired Tier-2 squashfs blobs (`vdb`, `vdc`) alongside the OCI image, and the template is wired for block-device hot-swap on resume ([`06-storage.md`](./06-storage.md) block-device tooling swap). Phase 9 templates are always `false`. Templates without paired blobs are rejected by admission when this flag is `true`.
 
 ## Per-phase progression
 

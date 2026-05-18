@@ -50,8 +50,9 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │  LAYER 1 — Guest Agent                                              │
 │  Today:  Python entrypoint + MCP server inside image  (transition)  │
-│  Future: small Go static binary as PID 1            (Phase 7)       │
-│  Surface: HTTP + WebSocket (+ vsock when on microVM)                │
+│  Future: small Rust static binary as PID 1          (Phase 7)       │
+│  Surface: data-plane WS (vsock on microVM, TCP elsewhere)           │
+│         + control-plane HTTP (health/shutdown, fs_freeze Phase 10)  │
 │  Duties: exec, file ops, port-forward, CDP proxy, ttyd, MCP tools   │
 │  Does NOT: authenticate (L4 does), persist state (L3 does)          │
 └─────────────────────────────────────────────────────────────────────┘
@@ -70,7 +71,7 @@
 | `computer-use-server/app.py` (FastAPI, MCP, uploads, auth) | repo root | **L4** Control Plane (will be Go) | Phase 6 cutover |
 | `computer-use-server/docker_manager.py` (Docker socket, lifecycle, cleanup) | repo root | **L3** Provider (`DockerComposeProvider`) | Phase 1 extract behind interface |
 | `computer-use-server/mcp_tools.py` (bash/python/file tools) | repo root | **L4** (gateway) + **L1** (exec target) | Phase 7 split |
-| `Dockerfile` entrypoint, in-image MCP server | sandbox image | **L1** Guest Agent (Python → Go) | Phase 7 |
+| `Dockerfile` entrypoint, in-image MCP server | sandbox image | **L1** Guest Agent (Python → Rust per [ADR-0002](../adr/0002-guest-agent-language-go.md)) | Phase 7 |
 | Docker (`runc`) as runtime | host | **L2** Runtime (`runc` tier) | Phase 9 adds Kata tiers |
 | `helm/computer-use-server/` (single Deployment + DinD sidecar) | repo | **L3** + **L4** k8s manifests, split | Phases 5, 6 |
 | `/tmp/computer-use-data` + Docker volumes | host fs | **Storage** ([06-storage.md](./06-storage.md)) — moves to S3 | Phase 3 |
@@ -87,6 +88,14 @@
 - **Skills** (the AI capability bundles under `skills/`) — packaging, not architecture. They mount into L1 sandboxes. See [06-storage.md](./06-storage.md).
 - **Open WebUI** — a downstream consumer of L4's MCP gateway. Not part of this stack.
 - **Sub-agent CLIs** (claude, codex, opencode) — executed *inside* L1. Tooling, not architecture.
+
+## Reference architectures we draw from
+
+- **Anthropic `process_api`** ([`research/19`](../research/19-anthropic-process-api.md), source under [`sandboxd/anthropic/process_api_re/`](../../../sandboxd/anthropic/process_api_re/)) — the closest precedent for our Rust L1. Three-transport WebSocket, dual-port API, capabilities negotiation, Ed25519 JWT bound to `container_name`. Drives [ADR-0002](../adr/0002-guest-agent-language-go.md).
+- **AWS Lambda** ([`references.md`](../references.md) Lambda framing, [ADR-0010](../adr/0010-lambda-as-inspiration-not-runtime.md)) — pattern source for Firecracker tiering, two-tier control split, and snapshot-pool cold-start economics. **Inspiration, not deployment substrate.**
+- **E2B `envd`** ([`research/02`](../research/02-e2b-infra.md)) — Go-language L1 reference and production-shape validation.
+- **Coder** ([`research/03`](../research/03-coder.md)) — workspace-proxy and multi-region patterns for Phase 10.
+- **Anthropic local sandbox-runtime** ([`research/13`](../research/13-anthropic-sandbox-runtime.md)) — bubblewrap/seatbelt patterns that inform secondary defense inside microVMs at Phase 9.
 
 ## Source
 
