@@ -27,7 +27,7 @@ The question is whether L4 should expose only `/mcp` or accept additional extern
   3. **Wire contract must be stable.** If the dialect's wire format belongs to an upstream we don't control, the upstream's compatibility guarantees must be acceptable; otherwise pin and document supported version ranges.
 - **No adapter is committed by this ADR.** Each dialect is gated on its own validation gate (see Verification below).
 
-```
+```text
                   ┌─── /mcp                        Primary, frozen        (n8n, Claude Desktop, LiteLLM, OpenAI Agents SDK)
 L4 (Go) ──────────┼─── /api/v1/policies, /p/...    Proposed adapter       Open WebUI orchestrator dialect, status Hypothesis
                   ├─── /v1/chat/completions        Proposed adapter       OpenAI-compatible, status Hypothesis

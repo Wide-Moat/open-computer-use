@@ -14,7 +14,7 @@
 
 Open WebUI integrates both natively. The backend (`backend/open_webui/routers/configs.py:277-323`) auto-detects which one the user pointed at:
 
-```
+```text
 GET {url}/api/v1/policies → 200 → server_type = "orchestrator"  (terminals)
 GET {url}/api/config      → 200 → server_type = "terminal"      (open-terminal)
 ```
@@ -47,7 +47,7 @@ Useful to record verbatim because the protocol is what unlocks native integratio
 
 ### 3.1 Auto-detection probes
 
-```
+```text
 GET /api/v1/policies          → orchestrator dialect
 GET /api/config               → single-terminal dialect, returns { features: { terminal: bool } }
 ```
@@ -89,7 +89,7 @@ This constraint **takes precedence** over any UX gain from native Open WebUI int
 
 Add an **external protocol dialect** to L4 that speaks the orchestrator wire contract from §3.2 alongside the primary MCP endpoint, while internal tool execution stays MCP-shaped end-to-end.
 
-```
+```text
                   ┌─── /mcp                        primary, frozen          (n8n, Claude Desktop, LiteLLM, OpenAI Agents)
 L4 (Go) ──────────┼─── /api/v1/policies, /p/...    Open WebUI native UX     (FileNav, XTerminal, OpenAPI tools)
                   ├─── /v1/chat/completions        OpenAI-compat            (future, for OpenAI-API consumers)
@@ -106,7 +106,7 @@ All four are adapters over the same internal connect-go RPC ([ADR-0008](../adr/0
 ### What still has to be proven before this becomes decision-grade
 
 1. **Skill parity check.** The Open WebUI dialect would deliver tools via OpenAPI 3.0, not MCP `tools/call`. We have to confirm that for every skill we ship, the OpenAPI representation and the MCP representation produce identical model behaviour. If not, the dialect splits the skill surface and §4 forces rejection.
-2. **CDP and live browser viewer.** Open WebUI's terminal dialect has no concept of a Chrome DevTools Protocol stream. Either we extend the dialect with our own WebSocket endpoint under `/p/{policy_id}/devtools/...` (and patch Open WebUI to recognise it — back to the patch-mainenance problem), or we accept that Computer Use's primary fronted-killer feature is unavailable through this path.
+2. **CDP and live browser viewer.** Open WebUI's terminal dialect has no concept of a Chrome DevTools Protocol stream. Either we extend the dialect with our own WebSocket endpoint under `/p/{policy_id}/devtools/...` (and patch Open WebUI to recognise it — back to the patch-maintenance problem), or we accept that Computer Use's primary fronted-killer feature is unavailable through this path.
 3. **`computer_link_filter` value.** Today the filter injects skill descriptions into the system prompt and rewrites output URLs into iframe previews. Open WebUI's native flow injects OpenAPI tool descriptions automatically but does **not** rewrite output URLs. We have to decide whether the URL-rewriting UX is essential — if yes, we still need the filter even when using the native dialect, and the simplification budget shrinks.
 4. **State of the contract.** `open-webui/terminals` is at `v0.0.3` with an Enterprise License. Backwards-compat guarantees on the orchestrator wire format are unclear; pinning to a specific Open WebUI version range may be necessary.
 5. **`X-Session-Id` semantics.** Open WebUI assumes sessions outlive single requests (CWD persists). Our session model is sandbox-per-chat with a TTL. Confirm the mapping doesn't surprise anyone — e.g. what happens to file ops sent during sandbox cold-start.
