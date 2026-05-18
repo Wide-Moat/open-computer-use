@@ -13,7 +13,7 @@
 A static-PIE Rust binary (≈ 4.3 MB, Tokio 1.52.2) reported to run **either as PID 1 inside a Firecracker microVM** or as a sidecar in gVisor/runc. It owns the WebSocket transport, all child-process lifecycle, OOM monitoring, JWT auth, and the snapstart hand-off. It is **not** an LLM client — it's a process supervisor with a wire protocol.
 
 Build shape (per the pattern notes under [`sandboxd/anthropic/`](../../../sandboxd/anthropic/)):
-```
+```text
 Size:    ~4.3 MB · static-PIE x86-64 · stripped, type names retained
 Class:   Rust + Tokio async; static linkage
 ```
@@ -48,7 +48,7 @@ The JWT's `sub` claim is matched against a `container_name` read at boot from a 
 ## 4. Capabilities negotiation (V1/V2)
 
 The wire-protocol enum is catalogued as:
-```
+```rust
 ConnectionCapabilities { supports_traces, supports_zstd }
 ProcessCreated   / ProcessCreatedV2
 AttachedToProcess / AttachedToProcessV2
@@ -79,7 +79,7 @@ Per connection the supervisor owns:
 - `ProcHandle` — the OS child: PID, stdin/stdout/stderr FDs, and the boolean `killed_by_process_api` flag.
 
 Terminal states are mutually exclusive:
-```
+```rust
 ProcessExited { code }      // normal exit            (killed_by_process_api = false)
 ProcessTimedOut             // wall-clock budget hit  (killed_by_process_api = true)
 ProcessCpuTimedOut          // CPU budget hit         (killed_by_process_api = true)
@@ -161,7 +161,7 @@ ADR-0008 picked **connect-go (gRPC + Connect + HTTP/JSON) on vsock or TCP** for 
 | Binary size | Larger (Connect runtime + Protobuf) | Smaller (just `hyper` + `tungstenite`) |
 | Crate ecosystem fit (Rust) | Connect-rust is younger than connect-go; smaller blast radius | First-class: `tokio-tungstenite-0.24.0` is what process_api itself uses |
 
-> **Implication for us.** ADR-0008 is **Go-era**: it picked connect-go partly because the L1 was assumed to be Go. With L1 going Rust, the L3↔L1 leg needs a Phase 7 re-evaluation against the WS-frame option. This file does not amend ADR-0008; the Phase 7 gate language inside ADR-0008 will be tightened to call this out explicitly.
+> **Implication for us.** ADR-0008 is **Go-era**: it picked connect-go partly because the L1 was assumed to be Go. With L1 going Rust, the L3↔L1 leg needs a Phase 7 re-evaluation against the WS-frame option. [ADR-0008](../adr/0008-internal-grpc-external-rest-mcp.md) was updated 2026-05-18 to leave the L3↔L1 row open and call the choice out explicitly in its Phase 7 gate.
 
 ## 13. Adopt / Adapt / Reject
 

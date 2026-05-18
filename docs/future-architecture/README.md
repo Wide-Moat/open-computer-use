@@ -12,7 +12,13 @@ The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4
 - **4 layers:** Control Plane (L4) → Orchestrator/Provider (L3) → Sandbox Runtime (L2) → Guest Agent (L1).
 - **11-phase roadmap** (0, 0.5, 1–10). Each phase strips one specific blocker. **No phase breaks the Docker Compose PoC** — that's an [explicit non-blocking invariant](./roadmap.md#non-blocking-invariants).
 - **Order reshuffle** (post-review): egress proxy (now Phase 8) ships **before** Kata untrusted tier (now Phase 9) — otherwise "untrusted" is a lie.
-- **Locked decisions** (ADRs): Go control plane, **Rust guest agent** (rewritten 2026-05-18 after [`research/19`](./research/19-anthropic-process-api.md) study; matches Anthropic `process_api` stack), Docker-first then any k8s, pluggable runtime via `RuntimeClass`, MCP stays the user-facing protocol, no AGPL/BSL dependencies, **internal = connect-go (L4↔L3); L3↔L1 transport re-evaluated at Phase 7 (connect-rust vs WS-frame protocol); external = MCP + REST; CDP/ttyd = WebSocket passthrough**, **AWS Lambda is inspiration, not runtime** ([ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md)).
+- **Locked decisions (ADRs):**
+  - **Languages:** Go control plane ([ADR-0001](./adr/0001-control-plane-language-go.md)); **Rust guest agent** ([ADR-0002](./adr/0002-guest-agent-language-go.md), rewritten 2026-05-18 after [`research/19`](./research/19-anthropic-process-api.md) study; matches the `process_api` stack).
+  - **Internal transport:** connect-go on L4↔L3; L3↔L1 re-evaluated at Phase 7 (connect-rust vs `process_api`-style WS-frame protocol) per [ADR-0008](./adr/0008-internal-grpc-external-rest-mcp.md).
+  - **External protocols:** MCP user-facing ([ADR-0005](./adr/0005-mcp-as-control-plane-gateway.md)); REST for admin; CDP/ttyd is WebSocket passthrough; optional dialect adapters per [ADR-0009](./adr/0009-external-protocol-dialects.md).
+  - **Deployment:** Docker-first then k8s ([ADR-0003](./adr/0003-docker-poc-first-then-k8s.md)); pluggable runtime via `RuntimeClass` ([ADR-0004](./adr/0004-pluggable-runtime-via-runtimeclass.md)).
+  - **Dependencies:** no AGPL/BSL ([ADR-0006](./adr/0006-no-agpl-no-bsl-dependencies.md)).
+  - **AWS Lambda:** inspiration, not runtime ([ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md)).
 
 ## Reference architectures we draw from
 

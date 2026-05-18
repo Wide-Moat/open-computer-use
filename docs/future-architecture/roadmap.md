@@ -355,7 +355,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - `references/firecracker/` — Firecracker snapshot for comparison.
 - `references/firecracker-containerd/` — demux snapshotter for COW rootfs (fast restore) — see [`research/11-firecracker-containerd.md`](./research/11-firecracker-containerd.md) §1.
 - Multi-region: KV replication (Redis cluster / etcd multi-DC) — standard docs.
-- **Post-restore hardening checklist** — kernel CRNG reseed on VM fork, `init_on_free=1`, `CAP_SYS_RESOURCE` drop. See [`research/15-claude-code-reverse-engineering.md`](./research/15-claude-code-reverse-engineering.md) §10.
+- **Post-restore hardening checklist** — kernel CRNG reseed on VM fork, `init_on_free=1`, `CAP_SYS_RESOURCE` drop. Primary reference: [`research/20-snapstart-hot-swap.md`](./research/20-snapstart-hot-swap.md) §4. Historical context: [`research/15-claude-code-reverse-engineering.md`](./research/15-claude-code-reverse-engineering.md) §10.
 - Output: `phase-10-research.md` — snapshot frequency policy; pod-failure mid-session → snapshot-then-restore-elsewhere flow; backup/DR.
 
 **Acceptance.**

@@ -83,4 +83,4 @@ We adopt **patterns** from the Lambda design lineage:
 - `references.md` contains a single "Lambda framing" subsection that cross-links to this ADR.
 - `architecture/04-layer2-runtimes.md` mentions Firecracker's Lambda lineage exactly once, with a back-link here.
 - Search the docs tree for "Lambda" — every hit either points to this ADR, the references paragraph, or a research digest. No standalone claims.
-- Phase 9 / Phase 10 PRs that touch microVM choice or snapshot pooling include "ADR-0010 reviewed" in the PR description checklist.
+- Phase 9 / Phase 10 PRs that touch microVM choice or snapshot pooling tick the **"ADRs reviewed"** checklist in [`.github/PULL_REQUEST_TEMPLATE.md`](../../../.github/PULL_REQUEST_TEMPLATE.md) with `ADR-0010` listed.

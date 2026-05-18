@@ -55,7 +55,7 @@ These match the sandboxd targets and are validated in Phase 5 (k8s prod) + Phase
 
 The first question operators ask is "how many sandboxes does a node hold?" The answer is bounded by **RAM**, not CPU — sandboxes idle most of the time but always reserve their memory request. For `kata-ch` / `kata-fc` specifically, the VMM itself owns a slab of memory that the workload never sees.
 
-```
+```text
 concurrent_sandboxes_per_node = floor(
     (node_ram_bytes - system_reserve_bytes - kubelet_reserve_bytes)
     / (template.mem_request_bytes × overcommit_factor + vmm_overhead_bytes)

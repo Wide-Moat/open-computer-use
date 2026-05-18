@@ -14,7 +14,7 @@ Instead of keeping warm VMs around (RAM-expensive at scale), the Anthropic Claud
 ## 2. Two-phase lifecycle
 
 ### Phase A — template (one-time, per release)
-```
+```text
 1. Firecracker boots minimal kernel + initramfs (~3 MB) holding /process_api.
 2. process_api --firecracker-init runs:
      mount /proc /sys /dev; configure networking; signal "ready".
@@ -23,7 +23,7 @@ Instead of keeping warm VMs around (RAM-expensive at scale), the Anthropic Claud
 ```
 
 ### Phase B — session restore (per user session)
-```
+```text
 1. Host prepares per-session block devices:
      vda — root filesystem (per-tenant data + ephemeral overlay)
      vdb — squashfs of /opt/<app>             (read-only, per release)

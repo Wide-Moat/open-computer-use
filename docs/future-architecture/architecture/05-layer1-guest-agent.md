@@ -40,7 +40,8 @@ service Agent {
 }
 ```
 
-**WebSocket passthroughs** are routed through the same data-plane port (or, optionally, a sibling port — Phase 7 research decides):
+**WebSocket passthroughs** are routed through a **sibling port by default** (one passthrough socket per stream), so the data-plane WS does not have to multiplex CDP / ttyd binary frames alongside `Agent.*` RPC frames. The same-port variant ("one socket per sandbox") stays available as an option if a future deployment needs to minimize listener count, but Phase 7 ships the sibling-port shape.
+
 - `WS /v1/cdp` — bidirectional CDP proxy to local Chromium; L4 shovels frames opaquely.
 - `WS /v1/tty` — ttyd-equivalent terminal stream.
 

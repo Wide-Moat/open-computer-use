@@ -15,7 +15,7 @@ Where `process_api` is a transport + lifecycle supervisor with no knowledge of L
 
 ## 2. Internal package layout (as catalogued)
 
-```
+```text
 api/               Anthropic API client — session ingress, work polling
 auth/              GitHub app token provider
 claude/            Claude Code install, upgrade, execution
@@ -57,7 +57,7 @@ util/              Git helpers, retry, stream tailer
 
 Open Computer Use is **MCP-server-first**, sub-agent-second. The control flow is:
 
-```
+```text
 LLM (host) ──MCP──> L4 (computer-use-server) ──Docker──> Sandbox
                                                               ├── MCP tools (bash, view, …)
                                                               └── (optional) sub-agent CLI on demand

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
-# ADR-0008 — Internal transport: connect-go (gRPC). External: MCP + REST. CDP/ttyd: WebSocket passthrough.
+# ADR-0008 — Internal transport: connect-go on L4↔L3 (Phase 7 picks L3↔L1). External: MCP + REST. CDP/ttyd: WebSocket passthrough.
 
 - **Status:** Accepted (Phase 7 gate tightened 2026-05-18 after [ADR-0002](./0002-guest-agent-language-go.md) flipped L1 to Rust)
 - **Date:** 2026-05-17 (original) · 2026-05-18 (Phase 7 gate edit)
@@ -24,8 +24,8 @@ Until now docs said "HTTP/gRPC" everywhere — ambiguous. The Anthropic pattern 
 |---|---|---|
 | User → L4 (agents, Open WebUI) | **MCP** (JSON-RPC over HTTP/WebSocket) | Frozen contract per [ADR-0005](./0005-mcp-as-control-plane-gateway.md) |
 | Admin UI → L4 | **REST** (OpenAPI-described) | Standard for SPAs, generates browser clients trivially, debuggable via curl/Postman |
-| L4 ↔ L3 (provider) | **connect-go** (mTLS) | Schema-first; gRPC streaming + Connect/HTTP-JSON from one `.proto` |
-| L3 ↔ L1 (agent) | **connect-go** (vsock on microVM, TCP on runc/sysbox) | Same `.proto` shape; transport-agnostic |
+| L4 ↔ L3 (provider) | **connect-go** (mTLS) | Schema-first; gRPC streaming + Connect/HTTP-JSON from one `.proto`. L4 is Go ([ADR-0001](./0001-control-plane-language-go.md)). |
+| L3 ↔ L1 (agent) | **Open — Phase 7 picks** between connect-rust (typed `.proto` over vsock/TCP) and a `process_api`-style WS-frame protocol over `tokio-vsock` ([research/19 §12](../research/19-anthropic-process-api.md)) | L1 is Rust ([ADR-0002](./0002-guest-agent-language-go.md), rewritten 2026-05-18); the language flip changes the trade-off vs. the original Go-era pick. Gate language below. |
 | User UI ↔ sandbox CDP/ttyd | **WebSocket passthrough** via L4 | L4 does **not** parse; shovels frames opaquely |
 
 **connect-go** specifically (not pure grpc-go):
