@@ -6,7 +6,9 @@
 > Source: empirical observation from inside a live Anthropic Claude sandbox session, 2026-05.
 > Distinct from [`13-anthropic-sandbox-runtime.md`](./13-anthropic-sandbox-runtime.md) which covers the open-source local sandbox (`anthropic-experimental/sandbox-runtime`, bubblewrap-based). This file documents the **production hosted environment** — closed, but observable from the inside.
 >
-> Status: **observation, not yet decision-grade.** Locks in only one downstream choice (rclone baseline for Tier 4 — see [`../architecture/06-storage.md`](../architecture/06-storage.md)). All other implications stay open until Phase 3 / Phase 7 / Phase 8 research.
+> **Companion deep dive:** [`19-anthropic-firecracker-microvm-internals-observed.md`](./19-anthropic-firecracker-microvm-internals-observed.md). This file is the high-level summary; #19 is the layer-by-layer transcript with every supporting datum, locked decisions (incl. "no PVC for sandbox session workspace" — [A37](../antipatterns.md#a37--pvc-for-sandbox-session-workspace)), and a reproduction recipe.
+>
+> Status: **observation, not yet decision-grade.** Locks in only one downstream choice (rclone baseline for Tier 4 — see [`../architecture/06-storage.md`](../architecture/06-storage.md)). All other implications stay open until Phase 3 / Phase 7 / Phase 8 research. See #19 for additional locked decisions.
 
 ## 1. Runtime — Firecracker microVM, NOT k8s
 

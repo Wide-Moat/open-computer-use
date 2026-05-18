@@ -66,7 +66,11 @@ docs/future-architecture/
     ├── 12-docker-socket-proxy.md      (Phase 2, 8)
     ├── 13-anthropic-sandbox-runtime.md (Phase 7, 9)
     ├── 14-e2b-desktop-and-surf.md     (Phase 7)
-    └── 15-claude-code-reverse-engineering.md (Phase 6, 7, 10)
+    ├── 15-claude-code-reverse-engineering.md (Phase 6, 7, 10)
+    ├── 16-anthropic-production-sandbox-observed.md (Phase 3, 7, 9)
+    ├── 17-anthropic-claude-code-remote-env-observed.md (Phase 4, 6, 10)
+    ├── 18-open-webui-terminals-observed.md (Phase 6)
+    └── 19-anthropic-firecracker-microvm-internals-observed.md ⭐ (Phase 3, 7, 9, 10) — locks A37 "no PVC for sandbox session workspace"
 ```
 
 ## Reference repositories

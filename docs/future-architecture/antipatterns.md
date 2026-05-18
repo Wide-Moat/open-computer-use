@@ -139,10 +139,10 @@ Ordered by phase where they FIRST become possible.
 
 - **Source.** `sandboxd/antipatterns.md:302-316`.
 - **Failure.** Disk bloat; compliance liability (GDPR/HIPAA — old PII on disk); compromised sandbox reads prior tenant's data.
-- **Our choice — ephemeral by default, persistence opt-in.**
+- **Our choice — ephemeral by default, no persistent sandbox-workspace tier.**
   - Computer Use sessions are hours, not days.
-  - If Phase 3+ adds "continue yesterday's session" → opt-in PVC with per-session encryption ([A34](#a34--no-per-session-encryption-for-persistent-data)) and explicit cleanup policy.
-  - No default PVC in any template.
+  - "Continue yesterday's session" is served by **Tier 4 (S3 with `filesystem_id` token auth)**, not by a persistent Tier 3 workspace. The next VM re-binds to the same `filesystem_id` prefix — the user's files reappear without any persistent workspace volume.
+  - **No PVC for the session workspace tier in any template.** Locked — see [A37](#a37--pvc-for-sandbox-session-workspace).
 - **Phase.** 3 (storage MVP) + ongoing.
 - **Detection.** Helm chart's default `SandboxTemplate.persistence: ephemeral`. Validate at admission.
 
@@ -402,6 +402,27 @@ Ordered by phase where they FIRST become possible.
 - **Phase.** 6 (L4 KV management).
 - **Detection.** Integration test from A5.
 
+### A37 — PVC for sandbox session workspace
+
+- **Source.** [`research/19-anthropic-firecracker-microvm-internals-observed.md` §2.3](./19-anthropic-firecracker-microvm-internals-observed.md#23-rootfs-as-cow-snapshot--the-pvc-replacement-pattern-). Observation: Anthropic's production Firecracker microVM serves `/home/claude` from a per-VM CoW snapshot (qcow2 backing / dm-thin / ZFS clone) of a golden rootfs — **not** from a per-session PVC.
+- **Failure.**
+  - **Cross-tenant leak (security).** A reused PVC that isn't scrubbed exactly right between sessions = previous tenant's data to the next one. The scrub step is operationally fragile; CoW snapshots eliminate the failure mode by design (delta is discarded, golden image is the only shared state and it is read-only).
+  - **Reset isn't free.** Wiping a 10 GiB PVC before a session lease takes seconds-to-minutes; discarding a qcow2 delta is constant-time.
+  - **Claim controller drag.** Per-session PVC create/delete melts the apiserver at high session churn ([A2](#a2--service-per-pod--service-per-session)-class failure). CoW snapshots are a storage-layer concern, no k8s object on the create path.
+  - **No multi-region story.** PVCs are AZ-pinned (RWO). The CoW-rootfs + S3-FUSE pattern is location-agnostic: the next VM can spawn in a different region and re-bind to the same `filesystem_id` prefix.
+  - **Wrong primitive shape.** "Continue yesterday's session" is a **Tier 4** concern (the user's *data*), not a Tier 3 concern (the agent's *runtime fs*). The PVC tries to solve the wrong problem.
+- **Our choice — Tier 3 is always ephemeral; CoW snapshot is the implementation.**
+  - **No PVC for the session workspace tier in any template.** Helm admission rejects `persistence != ephemeral` on Tier 3.
+  - **Phase 9 (Kata / FC):** Tier 3 = CoW snapshot of golden rootfs via `qcow2` backing files / `dm-thin` snapshots / ZFS `clone`.
+  - **Phase 5 (sysbox / runc):** Tier 3 = tmpfs or overlayfs over the image layer.
+  - **Persistence for the user, when needed,** is served by Tier 4 (S3 + FUSE) with `filesystem_id` session-token auth — the next VM re-binds to the same prefix.
+  - PVC remains the right primitive for **classical platform workloads** (PostgreSQL, Redis, Prometheus, etcd) — none of which our sandbox runtime hosts. This antipattern is scoped to the sandbox session workspace tier specifically.
+- **Phase.** 3 (storage MVP) — admission rule lands here. 9 (Kata templates) — CoW backend wires in.
+- **Detection.**
+  - Grep every Helm template / `SandboxTemplate` for `kind: PersistentVolumeClaim` inside a sandbox spec — should not exist outside platform-services charts.
+  - Admission webhook: `SandboxTemplate.mounts[type=workspace].persistence` must be `ephemeral`; any other value rejected with a link to this entry.
+  - Integration test: spawn → write file → terminate → spawn fresh → assert file absent (clean reset). No scrub step in the provisioning path.
+
 ---
 
 ## Section C — Antipatterns specific to OUR stack (not in sandboxd)
@@ -511,13 +532,13 @@ Quick lookup: when planning Phase N, scan these entries.
 | 0.5 (docs polish) | A18 (don't build yet another platform — record decisions, don't reimplement) |
 | 1 (provider interface) | A10, A11 (start image hygiene + reproducibility) |
 | 2 (HTTP pool sidecar) | A12 (warm pool bounds), A13 (idle timeout skeleton) |
-| 3 (S3 + squashfs) | A9 (ephemeral by default), A10 (no secrets in image), A34 (encryption if persistence) |
+| 3 (S3 + squashfs) | A9 (ephemeral by default), A10 (no secrets in image), A34 (encryption if persistence), **A37 (no PVC for sandbox session workspace)** |
 | 4 (secret broker) | A8 (per-session JWT), A33 (signing key rotation) |
-| 5 (Helm + K8sProvider) | A2 (no per-session Service), A3 (overprovisioning), A5/A36 (pod IP cache + watch), A11 (cosign verify), A12 (warm pool real), A15 (graceful shutdown), A16 (`restartPolicy: Never`), A17 (cattle/pets), A29 (smoke tests), A30 (kernel version validation) |
+| 5 (Helm + K8sProvider) | A2 (no per-session Service), A3 (overprovisioning), A5/A36 (pod IP cache + watch), A11 (cosign verify), A12 (warm pool real), A15 (graceful shutdown), A16 (`restartPolicy: Never`), A17 (cattle/pets), A29 (smoke tests), A30 (kernel version validation), **A37 (no PVC for sandbox session workspace — admission rule)** |
 | 6 (Go control plane) | A4 (no ClientIP affinity), A5/A36 (informer-driven cache), A8 (mint JWT), A14 (audit metadata only), A26 (no env values in logs), C5 (3 replicas), C6 (leader-only reconcile), C8 (buf-lint), C9 (single ToolCall), C10 (HTTP/JSON debug-only) |
 | 7 (Go guest agent) | A1 (defense in depth, all 4 layers), A6 (Configure-before-Chrome), A7 (no auth in agent), A15 (cooperative Shutdown RPC), A27 (versioned agent), A35 (tight seccomp), C1 (vsock auto-detect), C3 (4 RPC shapes), C4 (push model) |
 | 8 (egress proxy + audit) | A8 (token lifetime), A14/A25/A26 (log discipline), A24 (DNS rebinding), A31 (wildcard rejection), A32 (CONNECT timeouts), A33 (key rotation overlap) |
-| 9 (Kata + CH) | A20 (`cache=never`), A21 (seccomp ON), A23 (Landlock pre-declare), A28 (template-level RuntimeClass), C2 (dedicated node pool), C7 (don't bake runtime) |
+| 9 (Kata + CH) | A20 (`cache=never`), A21 (seccomp ON), A23 (Landlock pre-declare), A28 (template-level RuntimeClass), **A37 (CoW snapshot backend for Tier 3, not PVC)**, C2 (dedicated node pool), C7 (don't bake runtime) |
 | 10 (snapshot/HA) | A19 (measure first), A22 (no GPU on snapshottable), A34 (KMS per session), and the sandboxd post-restore hardening triad (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop) |
 
 ---
