@@ -32,7 +32,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 | 4 | Secret broker + key rotation | L4-precursor | Static env-injected secrets; finishes Phase 3 prod-readiness | broker flag |
 | 5 | Helm hardening + `KubernetesProvider` | L3 | DinD-only k8s deploy | separate chart values; Compose still default |
 | 6 | Go control plane (dual-run) | L4 | FastAPI orchestrator monolith | reverse-proxy split per route; revert by re-pointing |
-| 7 | Rust guest agent + per-template RuntimeClass selection | L1 + L2 | Python in-image MCP server; single global runtime | new image digest; pin previous to roll back |
+| 7 | Rust guest agent + per-template RuntimeClass selection | L1 + L2 | Python in-image MCP server; single global runtime | new image digest; pin prior digest to roll back |
 | **8** | **Egress proxy + audit pipeline (lands BEFORE untrusted tier)** | L4 | No egress control; foundation for untrusted tier | additive; templates without `egress_baseline` keep working |
 | **9** | **Kata + Cloud Hypervisor for untrusted tier** | L2 | No hardware isolation (now safe because Phase 8 egress shipped) | opt-in template; sysbox stays default |
 | 10 | Snapshot/restore + multi-region | L3 + L4 | No HA, no pause-session | additive per-template + per-deployment |
