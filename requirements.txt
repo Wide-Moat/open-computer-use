@@ -79,7 +79,7 @@ mediapipe==0.10.14
 magika==0.6.2
 
 # Web automation
-playwright==1.57.0
+playwright==1.60.0
 pyee==13.0.0
 
 # Office/LibreOffice integration
