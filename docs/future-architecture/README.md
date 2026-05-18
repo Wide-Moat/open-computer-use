@@ -12,7 +12,16 @@ The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4
 - **4 layers:** Control Plane (L4) → Orchestrator/Provider (L3) → Sandbox Runtime (L2) → Guest Agent (L1).
 - **11-phase roadmap** (0, 0.5, 1–10). Each phase strips one specific blocker. **No phase breaks the Docker Compose PoC** — that's an [explicit non-blocking invariant](./roadmap.md#non-blocking-invariants).
 - **Order reshuffle** (post-review): egress proxy (now Phase 8) ships **before** Kata untrusted tier (now Phase 9) — otherwise "untrusted" is a lie.
-- **Locked decisions** (ADRs): Go control plane, Go guest agent, Docker-first then any k8s, pluggable runtime via `RuntimeClass`, MCP stays the user-facing protocol, no AGPL/BSL dependencies, **internal = connect-go (gRPC + Connect + HTTP/JSON from one `.proto`); external = MCP + REST; CDP/ttyd = WebSocket passthrough**.
+- **Locked decisions** (ADRs): Go control plane, **Rust guest agent** (rewritten 2026-05-18 after [`research/19`](./research/19-anthropic-process-api.md) study; matches Anthropic `process_api` stack), Docker-first then any k8s, pluggable runtime via `RuntimeClass`, MCP stays the user-facing protocol, no AGPL/BSL dependencies, **internal = connect-go (L4↔L3); L3↔L1 transport re-evaluated at Phase 7 (connect-rust vs WS-frame protocol); external = MCP + REST; CDP/ttyd = WebSocket passthrough**, **AWS Lambda is inspiration, not runtime** ([ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md)).
+
+## Reference architectures we draw from
+
+- **Anthropic `process_api`** ([`research/19`](./research/19-anthropic-process-api.md), source under [`sandboxd/anthropic/process_api_re/`](../../sandboxd/anthropic/process_api_re/)) — closest precedent for Phase 7 L1.
+- **AWS Lambda** ([`references.md`](./references.md) Lambda framing, [ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md)) — pattern source for Firecracker tiering and snapshot-pool cold-start economics. Inspiration only.
+- **Snapstart hot-swap** ([`research/20`](./research/20-snapstart-hot-swap.md)) — Phase 10 cold-start design.
+- **E2B `envd`** ([`research/02`](./research/02-e2b-infra.md)) — production-shape L1 comparison.
+- **Coder** ([`research/03`](./research/03-coder.md)) — multi-region workspace-proxy pattern.
+- **Anthropic `environment-runner`** ([`research/21`](./research/21-environment-runner-go.md)) — inspiration-only Go session agent; not on roadmap.
 - **Per-phase research-then-sign-off cadence.** Every phase begins with a research pass against the cloned reference repos (under `/references/`, git-ignored) **and** the matching digest in [`research/`](./research/), produces `phase-N-research.md`, and requires owner approval before code starts. **Mandatory pre-read:** the matching phase row in [`antipatterns.md`](./antipatterns.md) — 36 antipatterns mapped to phases, each with our locked decision.
 
 ## Document map
@@ -31,21 +40,23 @@ docs/future-architecture/
 │   ├── 02-layer4-control-plane.md  Go service: MCP gateway, OIDC, admin UI, secret broker
 │   ├── 03-layer3-providers.md      SandboxProvider interface + Docker/K8s/Direct impls
 │   ├── 04-layer2-runtimes.md       runc / sysbox / gVisor / kata-fc / kata-ch matrix
-│   ├── 05-layer1-guest-agent.md    Go agent contract, PID-1 duties, MCP tool exec
+│   ├── 05-layer1-guest-agent.md    Rust agent contract, PID-1 duties, MCP tool exec
 │   ├── 06-storage.md               4-tier: image / squashfs skills / workspace / S3 user-data
 │   ├── 07-security.md              Threat model, secret rotation, egress, image signing, audit
 │   ├── 08-networking.md            NetworkPolicy default-deny, egress proxy, CDP routing
 │   ├── 09-templates.md             SandboxTemplate spec, tenant→template resolver
 │   └── 10-observability.md         Metrics, traces, audit log, SLOs
 └── adr/                            Locked decisions
-    ├── 0001-control-plane-language-go.md
-    ├── 0002-guest-agent-language-go.md      (Rust re-eval gate at Phase 7)
+    ├── 0001-control-plane-language-go.md       (Phase 6 re-eval gate added 2026-05-18)
+    ├── 0002-guest-agent-language-go.md         (rewritten 2026-05-18: Rust, not Go)
     ├── 0003-docker-poc-first-then-k8s.md
     ├── 0004-pluggable-runtime-via-runtimeclass.md
     ├── 0005-mcp-as-control-plane-gateway.md
     ├── 0006-no-agpl-no-bsl-dependencies.md
     ├── 0007-superseded-by-future-architecture.md
-    └── 0008-internal-grpc-external-rest-mcp.md
+    ├── 0008-internal-grpc-external-rest-mcp.md (Phase 7 gate tightened 2026-05-18)
+    ├── 0009-external-protocol-dialects.md
+    └── 0010-lambda-as-inspiration-not-runtime.md   (added 2026-05-18)
 ```
 
 **Research archive (read at start of relevant phase only):**
@@ -66,7 +77,13 @@ docs/future-architecture/
     ├── 12-docker-socket-proxy.md      (Phase 2, 8)
     ├── 13-anthropic-sandbox-runtime.md (Phase 7, 9)
     ├── 14-e2b-desktop-and-surf.md     (Phase 7)
-    └── 15-claude-code-reverse-engineering.md (Phase 6, 7, 10)
+    ├── 15-claude-code-reverse-engineering.md (Phase 6, 7, 10)
+    ├── 16-anthropic-production-sandbox-observed.md (Phase 3, 7, 8)
+    ├── 17-anthropic-claude-code-remote-env-observed.md (Phase 6, 7, 10)
+    ├── 18-open-webui-terminals-observed.md (Phase 6, 8)
+    ├── 19-anthropic-process-api.md    (Phase 7, 10 — primary L1 precedent)
+    ├── 20-snapstart-hot-swap.md       (Phase 10)
+    └── 21-environment-runner-go.md    (inspiration-only; no Phase consumer)
 ```
 
 ## Reference repositories

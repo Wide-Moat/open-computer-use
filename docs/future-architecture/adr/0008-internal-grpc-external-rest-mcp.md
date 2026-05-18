@@ -3,9 +3,9 @@
 
 # ADR-0008 — Internal transport: connect-go (gRPC). External: MCP + REST. CDP/ttyd: WebSocket passthrough.
 
-- **Status:** Accepted
-- **Date:** 2026-05-17
-- **Related:** [ADR-0001](./0001-control-plane-language-go.md), [ADR-0002](./0002-guest-agent-language-go.md), [ADR-0005](./0005-mcp-as-control-plane-gateway.md)
+- **Status:** Accepted (Phase 7 gate tightened 2026-05-18 after [ADR-0002](./0002-guest-agent-language-go.md) flipped L1 to Rust)
+- **Date:** 2026-05-17 (original) · 2026-05-18 (Phase 7 gate edit)
+- **Related:** [ADR-0001](./0001-control-plane-language-go.md), [ADR-0002](./0002-guest-agent-language-go.md), [ADR-0005](./0005-mcp-as-control-plane-gateway.md), [research/19](../research/19-anthropic-process-api.md)
 
 ## Context
 
@@ -84,7 +84,7 @@ Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** d
 **Negative:**
 - One more tool in the toolbox (`buf` for `.proto` linting, `connect-go` codegen). Worth it.
 - L1 agent must include connect-go runtime → slightly larger binary than raw HTTP server (~1–2 MB). Acceptable per [ADR-0002](./0002-guest-agent-language-go.md) targets (~5–10 MB total).
-- Phase 7 research must include "vsock + connect-go" feasibility — vsock transport for connect/gRPC is well-trodden but not zero-config.
+- Phase 7 research must include "vsock + connect-go" feasibility — vsock transport for connect/gRPC is well-trodden but not zero-config. **Update (2026-05-18):** with L1 now in Rust ([ADR-0002](./0002-guest-agent-language-go.md)), the L3↔L1 leg is effectively **connect-rust** (not connect-go) **or** a `process_api`-style WS-frame protocol over `tokio-vsock` ([research/19](../research/19-anthropic-process-api.md) §12). Phase 7 research must explicitly compare these two and pick one. The L4↔L3 leg stays connect-go (L4 is Go per [ADR-0001](./0001-control-plane-language-go.md)).
 
 **Neutral:**
 - Phase 6 research now picks connect-go as primary candidate; the framework choice section in `roadmap.md` narrows.
@@ -94,7 +94,7 @@ Long-lived WebSocket from user UI → L4 → sandbox Chromium. L4 must **not** d
 
 - **Phases 1–5 (Python orchestrator):** stay on Python HTTP; provider interface is in-process Protocol; HTTP transport between orchestrator and pool-manager sidecar.
 - **Phase 6 (Go control plane):** introduces `.proto` files for L4↔L3 boundary. Python orchestrator keeps working in parallel; new Go service serves both MCP gateway (external) and connect RPCs (internal).
-- **Phase 7 (Go agent):** L1 serves connect-go on vsock/TCP; L3 client compiled from same `.proto`.
+- **Phase 7 (Rust agent per [ADR-0002](./0002-guest-agent-language-go.md)):** L1 serves either connect-rust or a WS-frame protocol on vsock/TCP, decided by the Phase 7 research gate. L3 client compiled from the same `.proto` (connect path) or a hand-rolled WS client (process_api-shape path).
 - **Phase 8 (egress proxy):** connect for L4↔proxy stats/control; egress traffic itself stays HTTP CONNECT (proxy is a TCP proxy, not RPC).
 - **Phase 9 (Kata):** vsock + connect-go validated.
 - **Phase 10 (HA / multi-region):** mTLS on all internal RPCs; cert rotation via cert-manager or equivalent.

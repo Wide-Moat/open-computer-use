@@ -26,7 +26,32 @@ Numbers from [`sandboxd/docs/architecture.md`](../../../sandboxd/docs/architectu
 - **Hot-plug** — easier resource adjustments.
 - Trade-off: ~80K LoC vs Firecracker's ~50K (larger attack surface, still small).
 
-Firecracker stays available via `kata-fc` for the fastest-cold-start tier (e.g., free-tier anonymous trials).
+Firecracker stays available via `kata-fc` for the fastest-cold-start tier (e.g., free-tier anonymous trials). Note that Firecracker is the microVM that AWS Lambda and Fargate are built on — its scale-pattern lineage informs the Phase 10 snapshot-pool design ([`research/20`](../research/20-snapstart-hot-swap.md)) without making us a Lambda deployment. See the Lambda framing in [`references.md`](../references.md) and [ADR-0010](../adr/0010-lambda-as-inspiration-not-runtime.md).
+
+## virtio-fs vs 9p — the CH/FC asymmetry
+
+CH and FC do not agree on shared-filesystem story, and the difference is load-bearing for Tier-2 (skills) and Tier-4 (user data) mounts:
+
+| | virtio-fs | 9p |
+|---|---|---|
+| Cloud Hypervisor | First-class (default) | Possible but not the natural path |
+| Firecracker upstream | **Not supported** in stock Firecracker | The historical option; out-of-tree patches and Kata wrappers exist |
+| Performance | Native-ish (FUSE protocol, shared page cache) | Slower; protocol overhead dominates |
+| Posix coverage | High | Lower (the legacy choice) |
+
+Implication: `kata-ch` is the only tier where Tier-2 / Tier-4 mounts are "free." On `kata-fc` we either accept 9p's performance/POSIX trade-offs, lean on rclone-FUSE-inside-VM (per [`research/16`](../research/16-anthropic-production-sandbox-observed.md) §3), or block-device-mount squashfs (per [`research/20`](../research/20-snapstart-hot-swap.md) §6). Phase 9 research locks the choice per tier.
+
+## nydus snapshotter for lazy image-layer load
+
+For the microVM tiers (`kata-fc`, `kata-ch`), pulling the full container image at sandbox spawn is the single biggest cold-start cost. **nydus** ([nydus-snapshotter](https://github.com/containerd/nydus-snapshotter), Apache 2.0) reformats OCI images into a chunk-addressable layout that the VM can lazy-load on demand — pages are fetched as files are touched, not upfront.
+
+- **Relevance.** Phase 9 cold-start budget for `kata-ch` is in the 100–200 ms range with full image pull. Lazy-load with nydus gets that closer to template-snapshot territory ([`research/20`](../research/20-snapstart-hot-swap.md)) without the snapshot-pool engineering bill.
+- **Trade-off.** Adds a new component to the runtime path; failure modes (registry hiccups mid-execution) need their own playbook.
+- **Decision.** Phase 9 research evaluates whether nydus or a snapshot pool (or both, layered) hits the cold-start target.
+
+## VMM Lambda lineage (one paragraph, by reference)
+
+Firecracker exists because AWS needed a VMM small enough to scale Lambda/Fargate. Anthropic's `process_api` and our Phase-9 `kata-fc` tier both inherit from that lineage. The architectural takeaway is the **VMM design** (minimal device model, small attack surface, fast init) — not the deployment substrate. See [`references.md`](../references.md) Lambda framing, [`research/05`](../research/05-firecracker.md), and [ADR-0010](../adr/0010-lambda-as-inspiration-not-runtime.md) for the closed answer to "are we going to run on Lambda?" (no).
 
 ## Why NOT gVisor for browsers
 

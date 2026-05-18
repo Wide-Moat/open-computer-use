@@ -13,12 +13,20 @@
 
 ## Layer 1 — Guest agents (sandbox PID 1)
 
+### `process_api` (Anthropic Claude.ai sandbox pattern reference)
+- **URL:** internal to Anthropic; not publicly released. Our pattern notes live under [`sandboxd/anthropic/`](../../sandboxd/anthropic/).
+- **License:** our notes are BUSL-1.1; the patterns described are observed behaviour of a closed system.
+- **Language:** Rust (Tokio, hyper, tokio-tungstenite, tokio-vsock, ring, jsonwebtoken).
+- **Role:** **The closest documented reference for our Phase 7 L1 design.** Static-PIE Rust binary reported to run as PID 1 in Firecracker (`--firecracker-init`) or as a sidecar in gVisor/runc. WebSocket-over-three-transports (vsock / UDS / TCP), Ed25519 JWT bound to `container_name`, capabilities negotiation (V1/V2 + zstd + traces), dual-port API (data-plane WS + control-plane HTTP for `/mount_root` / `/shutdown` / `/fs_freeze`).
+- **Notes:** Drives ADR-0002 (Rust for L1). Full pattern catalogue in [`research/19-anthropic-process-api.md`](./research/19-anthropic-process-api.md). The Go session agent that runs above it (`environment-runner`) is documented separately in [`research/21-environment-runner-go.md`](./research/21-environment-runner-go.md) but is **inspiration-only** — out of scope.
+- **To research:** Phase 7, Phase 10.
+
 ### e2b-dev/infra — `envd`
 - **URL:** https://github.com/e2b-dev/infra/tree/main/packages/envd
 - **License:** Apache 2.0
 - **Language:** Go
-- **Role:** Reference for our future Go guest agent (Phase 7). API surface, gRPC streaming, image-build pipeline.
-- **Notes:** Production at E2B Cloud. Coupled to Firecracker networking and Nomad — port API ideas, not glue.
+- **Role:** Comparison point for the L1 agent (Phase 7). API surface, gRPC streaming, image-build pipeline. Production at E2B Cloud.
+- **Notes:** Coupled to Firecracker networking and Nomad — port API ideas, not glue. With ADR-0002 now Rust, this is a comparison reference, not a stack reference.
 - **To research:** Phase 7.
 
 ### kata-containers / src / agent
@@ -162,7 +170,7 @@
 - **chromedp** (Go, MIT) — direct CDP; candidate if guest agent goes Go
 - **fantoccini** (Rust, MIT/Apache 2.0)
 
-For Computer Use we want direct CDP (not WebDriver) — fine-grained event injection + screencast. **To research (Phase 7):** chromedp vs raw CDP WebSocket in the Go agent.
+For Computer Use we want direct CDP (not WebDriver) — fine-grained event injection + screencast. **To research (Phase 7):** Rust CDP options (`chromiumoxide`) vs raw CDP WebSocket passthrough in the Rust agent (per [ADR-0002](./adr/0002-guest-agent-language-go.md)).
 
 ---
 
@@ -205,10 +213,22 @@ For Computer Use we want direct CDP (not WebDriver) — fine-grained event injec
 |---|---|---|---|
 | current Python entrypoint + MCP server | runc / sysbox | Docker Compose | Today's PoC (Phase 0–5) |
 | current Python entrypoint + MCP server | sysbox | k8s (any) via our Helm chart | Phase 5 target |
-| **future Go agent** | sysbox | k8s | Internal/trusted tier (Phase 7) |
-| future Go agent | gVisor | k8s | Code-execution (non-browser) tier (Phase 7) |
-| future Go agent | Kata + Cloud Hypervisor | k8s | Untrusted tier — Computer Use, public (Phase 9 — requires Phase 8 egress proxy) |
-| future Go agent | Kata + Firecracker | k8s | Untrusted tier — fastest cold start (Phase 9 — requires Phase 8 egress proxy) |
+| **future Rust agent** | sysbox | k8s | Internal/trusted tier (Phase 7) |
+| future Rust agent | gVisor | k8s | Code-execution (non-browser) tier (Phase 7) |
+| future Rust agent | Kata + Cloud Hypervisor | k8s | Untrusted tier — Computer Use, public (Phase 9 — requires Phase 8 egress proxy) |
+| future Rust agent | Kata + Firecracker | k8s | Untrusted tier — fastest cold start (Phase 9 — requires Phase 8 egress proxy) |
+
+---
+
+## Lambda framing
+
+AWS Lambda recurs in this document and in the research digests ([`research/05`](./research/05-firecracker.md), [`research/16`](./research/16-anthropic-production-sandbox-observed.md), [`research/19`](./research/19-anthropic-process-api.md), [`research/20`](./research/20-snapstart-hot-swap.md)) as the design lineage behind Firecracker, behind `process_api`'s two-tier control split, and behind the snapshot-pool cold-start pattern we evaluate at Phase 10.
+
+**We are not deploying on Lambda or Fargate.** Open Computer Use targets 100–10K concurrent long-lived sandboxes on Kubernetes + Kata, not 10M serverless invocations. Sessions are multi-hour and stateful; Lambda's 15-minute cap and request-shaped billing fight every assumption.
+
+What we adopt from Lambda is **patterns**, bounded and named: (a) Firecracker as the smallest-attack-surface microVM tier, (b) two-tier control split (host router + in-guest supervisor) ported as L4↔L1 over vsock, (c) frozen-snapshot pool with block-device hot-swap as the Phase-10 cold-start optimization, (d) per-session VM isolation with no cross-tenant reuse. Everything else — the deployment substrate, the orchestrator, the billing model, the AWS product names — stays out.
+
+This question is closed by [ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md). Future "should we go serverless?" debates should land on that ADR and not be re-opened here.
 
 ---
 

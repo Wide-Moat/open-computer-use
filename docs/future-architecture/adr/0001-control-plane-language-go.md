@@ -68,3 +68,11 @@ Constraints:
 
 - Phase 6 research doc (`phase-6-research.md`) must confirm web framework + k8s client + MCP-on-Go strategy before code starts.
 - Parity acceptance: integration tests (`tests/integration/test_mcp_*.py`) pass against the new Go endpoint unchanged.
+
+## Phase 6 re-evaluation gate (added 2026-05-18)
+
+[ADR-0002](./0002-guest-agent-language-go.md) flipped L1 to Rust after this ADR was accepted. That changes the two-language calculus referenced under "Negative consequences" above — we no longer have a single-language stack. Phase 6 research must therefore answer one extra question before Go code starts:
+
+> Given that L1 is Rust, does L4 still want to be Go? The default answer remains **yes** (k8s ecosystem fit, owner familiarity, streaming concurrency, hiring) and this ADR is **not pre-superseded**. The gate exists so the Phase 6 author cannot ship Go code without having considered the alternative explicitly.
+
+If Phase 6 research instead concludes that L4 should also be Rust, supersede this ADR rather than amending it.

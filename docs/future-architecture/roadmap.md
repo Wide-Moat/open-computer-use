@@ -32,7 +32,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 | 4 | Secret broker + key rotation | L4-precursor | Static env-injected secrets; finishes Phase 3 prod-readiness | broker flag |
 | 5 | Helm hardening + `KubernetesProvider` | L3 | DinD-only k8s deploy | separate chart values; Compose still default |
 | 6 | Go control plane (dual-run) | L4 | FastAPI orchestrator monolith | reverse-proxy split per route; revert by re-pointing |
-| 7 | Go guest agent + per-template RuntimeClass selection | L1 + L2 | Python in-image MCP server; single global runtime | new image digest; pin previous to roll back |
+| 7 | Rust guest agent + per-template RuntimeClass selection | L1 + L2 | Python in-image MCP server; single global runtime | new image digest; pin previous to roll back |
 | **8** | **Egress proxy + audit pipeline (lands BEFORE untrusted tier)** | L4 | No egress control; foundation for untrusted tier | additive; templates without `egress_baseline` keep working |
 | **9** | **Kata + Cloud Hypervisor for untrusted tier** | L2 | No hardware isolation (now safe because Phase 8 egress shipped) | opt-in template; sysbox stays default |
 | 10 | Snapshot/restore + multi-region | L3 + L4 | No HA, no pause-session | additive per-template + per-deployment |
@@ -66,22 +66,23 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 
 **Research checklist.** None — synthesis of existing pattern docs.
 
-**Deliverables (file-by-file).**
-- `architecture/05-layer1-guest-agent.md`: commit to vsock-first / TCP-fallback runtime auto-detect (not build-tag gating); add `PR_SET_DUMPABLE=0`; add `SIGCHLD` reaping + `SIGTERM` propagation explicit; add **dual-port API** (data-plane WS + control-plane HTTP) per Anthropic.
-- `architecture/07-security.md`: add `memfd_create` agent binary as defense-in-depth; add **mandatory deny paths** inside workspace home (`.git/hooks`, `.bashrc`, `.mcp.json`, …); add **graceful-shutdown protocol** (page-cache drop → SIGTERM → wait → SIGKILL).
-- `architecture/03-layer3-providers.md`: extend warm-pool knobs with `refillRate` + `maxAge`; add **environment-type dispatch** (Baku pattern); add **SandboxClaim CRD** semantics for k8s provider.
-- `architecture/02-layer4-control-plane.md`: explicit anti-pattern note "no `sessionAffinity: ClientIP`"; add **HA-replica upgrade strategy** (scale-to-1, migrate, scale-up); add **blue-green deployment** section.
-- `architecture/06-storage.md`: add **block-device tooling swap** (Baku/process_api pattern) for microVM templates.
-- `architecture/08-networking.md`: add **multi-region workspace-proxies** pattern (Coder) as a Phase-10 substrate.
-- `architecture/10-observability.md`: add **RAM-based capacity-sizing formula**; add concrete **SLO targets** (session-create p99 < 500 ms warm, exec p99 < 50 ms, CDP ≥ 10 fps, egress p99 < 100 ms); add **distributed tracing** subsection.
-- `architecture/04-layer2-runtimes.md`: add **nydus snapshotter** for lazy-load image layers (relevant Phase 9 with Kata); clarify **virtio-fs vs 9p** decision (CH/FC asymmetry).
-- `antipatterns.md`: confirm all referenced entries (A1–A36, C1–C10) align with the new architecture detail; add any new ones surfaced during the polish.
-- README index: add `architecture/11-deployment-shapes.md` if any of the above grows too big to fit existing files.
+**Deliverables (file-by-file).** All shipped 2026-05-18.
+- ✅ `architecture/05-layer1-guest-agent.md`: rewrote on the `process_api` precedent. Auto-detected transport (vsock if `/dev/vsock`, TCP otherwise), `PR_SET_DUMPABLE=0`, `SIGCHLD` reaping, `SIGTERM`→`SIGKILL` chain, capabilities negotiation (V1/V2), dual-port API (data-plane WS + control-plane HTTP). Language flipped Go → **Rust** ([ADR-0002](./adr/0002-guest-agent-language-go.md) rewritten in place).
+- ✅ `architecture/07-security.md`: added mandatory deny paths (`.git/hooks/*`, `.bashrc`, `.mcp.json`, `.claude/`, etc.), graceful-shutdown protocol, optional `memfd_create` (Phase 9+ defense-in-depth), and full snapstart-restore hardening (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop, env-scrub) — Phase 10 mandatory.
+- ✅ `architecture/03-layer3-providers.md`: warm-pool knobs extended with `refillRate` and `maxAge`; SandboxClaim CRD spec added; environment-type (Baku) dispatch matrix added.
+- ✅ `architecture/02-layer4-control-plane.md`: no-`sessionAffinity:ClientIP` anti-pattern called out; HA upgrade strategy (scale-to-1 + blue-green); prompt-caching pass-through position recorded.
+- ✅ `architecture/06-storage.md`: block-device tooling swap subsection added (Baku / process_api pattern, Phase 10 prereq).
+- ✅ `architecture/08-networking.md`: multi-region workspace-proxy pattern (Coder) added as Phase-10 substrate.
+- ✅ `architecture/10-observability.md`: RAM-based capacity-sizing formula added; SLO targets restated; distributed-tracing subsection added (traceparent across L4 → L3 → L1, audit-event linkage).
+- ✅ `architecture/04-layer2-runtimes.md`: nydus snapshotter mention added; virtio-fs vs 9p CH/FC asymmetry resolved; Firecracker / Lambda lineage paragraph added with cross-link to [ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md).
+- ✅ `antipatterns.md`: referenced from the new layer additions; no new entries surfaced — all gaps mapped to existing A/C IDs.
+- ✅ New research digests landed: [`research/19`](./research/19-anthropic-process-api.md), [`research/20`](./research/20-snapstart-hot-swap.md), [`research/21`](./research/21-environment-runner-go.md).
+- ✅ ADR updates: ADR-0002 rewritten (Go → Rust), ADR-0008 Phase 7 gate tightened, ADR-0001 gained a Phase 6 re-evaluation gate, new ADR-0010 (Lambda framing) landed.
 
 **Acceptance.**
-- Each architecture/* doc cross-references the matching `research/NN-*.md`.
-- the antipatterns doc table includes all 21 rows with `Action` column.
-- No new ADRs needed; if any of the additions requires a decision, file an ADR in the same PR.
+- ✅ Each architecture/* doc cross-references the matching `research/NN-*.md`.
+- ✅ The antipatterns doc remains aligned; no new IDs needed.
+- ✅ ADR-0002 rewritten, ADR-0008 + ADR-0001 amended, ADR-0010 added — recorded in the polish PR.
 
 **Reversibility.** Pure docs — flip via `git revert`.
 
@@ -248,9 +249,9 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 
 ---
 
-## Phase 7 — Go guest agent + RuntimeClass selection per template
+## Phase 7 — Rust guest agent + RuntimeClass selection per template
 
-**Goal.** Replace today's Python entrypoint + in-image MCP server with a Go static binary as PID 1. Templates gain `runtime_class` selection; gVisor lands as experimental for code-exec sandboxes.
+**Goal.** Replace today's Python entrypoint + in-image MCP server with a Rust static binary as PID 1 (per [ADR-0002](./adr/0002-guest-agent-language-go.md), rewritten 2026-05-18). Templates gain `runtime_class` selection; gVisor lands as experimental for code-exec sandboxes.
 
 **Blocker removed.** Python in-image agent = big attack surface, no vsock readiness, blocks microVM. Single global runtime = no tiering.
 

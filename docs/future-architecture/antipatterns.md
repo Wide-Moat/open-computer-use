@@ -5,7 +5,7 @@
 
 > Source: [`sandboxd/docs/antipatterns.md`](../../../sandboxd/docs/antipatterns.md) + footgun sections in `research/01-15` + production-gap notes.
 >
-> **This is a decision log, not a generic survey.** Each entry filtered for our stack (k8s + Kata + Cloud Hypervisor + Rust/Go agent + Computer Use + connect-go internal RPC). Antipatterns that don't apply to our chosen stack are dropped explicitly. Each kept antipattern carries **our choice** in addition to "don't do this".
+> **This is a decision log, not a generic survey.** Each entry filtered for our stack (k8s + Kata + Cloud Hypervisor + Rust agent ([ADR-0002](./adr/0002-guest-agent-language-go.md)) + Go control plane ([ADR-0001](./adr/0001-control-plane-language-go.md)) + Computer Use + connect-go L4↔L3 RPC). Antipatterns that don't apply to our chosen stack are dropped explicitly. Each kept antipattern carries **our choice** in addition to "don't do this".
 >
 > Use this doc when planning a phase: before you write code for Phase N, scan the entries tagged `Phase N` here. Reviewers reject PRs that reintroduce documented antipatterns without an ADR.
 
@@ -53,7 +53,7 @@ Ordered by phase where they FIRST become possible.
   - `PR_SET_DUMPABLE=0` on agent PID 1.
   - Non-root inside sandbox where the runtime allows (Kata is fine).
   - Separate PID namespace (Kata gives this for free).
-- **Phase.** 7 (Go agent) — implement all four together; do not ship the agent rewrite without them.
+- **Phase.** 7 (Rust agent) — implement all four together; do not ship the agent rewrite without them.
 - **Detection.** PR-review checklist for Phase 7. CI test asserts `cat /proc/1/exe` from inside a built sandbox returns nothing.
 
 ### A2 — Service per pod / Service per session
@@ -108,7 +108,7 @@ Ordered by phase where they FIRST become possible.
   - Pool member = warm with pre-loaded Chrome dependencies, **but Chrome not running**.
   - On session assign: L4 calls `Agent.Configure(ctx)` → agent receives env/secrets/JWT → agent starts Chrome with the right env in one step.
   - We never mutate env on a running process.
-- **Phase.** 7 (Go agent) — `Configure` must complete before any tool RPC accepted.
+- **Phase.** 7 (Rust agent) — `Configure` must complete before any tool RPC accepted.
 - **Detection.** Agent state machine has `unconfigured | configured | running`. RPCs other than `Configure` return `FailedPrecondition` in `unconfigured`. Test asserts.
 
 ### A7 — Trust agent for authentication
@@ -120,7 +120,7 @@ Ordered by phase where they FIRST become possible.
   - Network policy + Kata isolation ensures only L4 can.
   - Agent does NOT validate JWTs.
   - **Counter-pattern note from [`research/15-claude-code-reverse-engineering.md`](./research/15-claude-code-reverse-engineering.md) §6:** Anthropic adds public-key JWT verification at L1 as defense-in-depth. We revisit if we ever expose L1 over TCP at scale; for vsock/localhost it stays "trust the network".
-- **Phase.** 7 (Go agent design).
+- **Phase.** 7 (Rust agent design).
 - **Detection.** Grep `jwt.Parse`, `jwt.Verify` in agent code — should not exist.
 
 ### A8 — Long-lived egress tokens (e.g. 30 days)
@@ -515,7 +515,7 @@ Quick lookup: when planning Phase N, scan these entries.
 | 4 (secret broker) | A8 (per-session JWT), A33 (signing key rotation) |
 | 5 (Helm + K8sProvider) | A2 (no per-session Service), A3 (overprovisioning), A5/A36 (pod IP cache + watch), A11 (cosign verify), A12 (warm pool real), A15 (graceful shutdown), A16 (`restartPolicy: Never`), A17 (cattle/pets), A29 (smoke tests), A30 (kernel version validation) |
 | 6 (Go control plane) | A4 (no ClientIP affinity), A5/A36 (informer-driven cache), A8 (mint JWT), A14 (audit metadata only), A26 (no env values in logs), C5 (3 replicas), C6 (leader-only reconcile), C8 (buf-lint), C9 (single ToolCall), C10 (HTTP/JSON debug-only) |
-| 7 (Go guest agent) | A1 (defense in depth, all 4 layers), A6 (Configure-before-Chrome), A7 (no auth in agent), A15 (cooperative Shutdown RPC), A27 (versioned agent), A35 (tight seccomp), C1 (vsock auto-detect), C3 (4 RPC shapes), C4 (push model) |
+| 7 (Rust guest agent) | A1 (defense in depth, all 4 layers), A6 (Configure-before-Chrome), A7 (no auth in agent), A15 (cooperative Shutdown RPC), A27 (versioned agent), A35 (tight seccomp), C1 (vsock auto-detect), C3 (4 RPC shapes), C4 (push model) |
 | 8 (egress proxy + audit) | A8 (token lifetime), A14/A25/A26 (log discipline), A24 (DNS rebinding), A31 (wildcard rejection), A32 (CONNECT timeouts), A33 (key rotation overlap) |
 | 9 (Kata + CH) | A20 (`cache=never`), A21 (seccomp ON), A23 (Landlock pre-declare), A28 (template-level RuntimeClass), C2 (dedicated node pool), C7 (don't bake runtime) |
 | 10 (snapshot/HA) | A19 (measure first), A22 (no GPU on snapshottable), A34 (KMS per session), and the sandboxd post-restore hardening triad (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop) |
