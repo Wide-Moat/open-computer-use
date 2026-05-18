@@ -25,7 +25,7 @@ Config env vars:
   ORCHESTRATOR_URL -- internal URL of computer-use-server for large-result uploads
 
 Must run AFTER fix_tool_loop_errors.py (Mod 2 targets its marker).
-Target: Open WebUI 0.9.2
+Target: Open WebUI 0.9.5
 """
 
 import os
@@ -194,13 +194,19 @@ REPLACE_TOOL_LOOP = (
 
 # Mod 3: Truncate historical tool messages loaded from DB
 SEARCH_HISTORY = (
-    "    form_data['messages'] = process_messages_with_output(form_data.get('messages', []))\n"
+    "    form_data['messages'] = process_messages_with_output(\n"
+    "        form_data.get('messages', []),\n"
+    "        reasoning_format=get_reasoning_format(model),\n"
+    "    )\n"
     "\n"
     "    system_message = get_system_message(form_data.get('messages', []))\n"
 )
 
 REPLACE_HISTORY = (
-    "    form_data['messages'] = process_messages_with_output(form_data.get('messages', []))\n"
+    "    form_data['messages'] = process_messages_with_output(\n"
+    "        form_data.get('messages', []),\n"
+    "        reasoning_format=get_reasoning_format(model),\n"
+    "    )\n"
     "    _truncate_tool_messages_in_history(form_data['messages'])  # LARGE_TOOL_RESULTS: trim old results\n"
     "\n"
     "    system_message = get_system_message(form_data.get('messages', []))\n"

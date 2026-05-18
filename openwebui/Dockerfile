@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2025 Open Computer Use Contributors
-ARG OPENWEBUI_VERSION=0.9.2
+ARG OPENWEBUI_VERSION=0.9.5
 FROM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION}
 
 # Copy all patches into the image
@@ -20,7 +20,7 @@ RUN python3 /tmp/patches/fix_preview_url_detection.py
 # Config: TOOL_RESULT_MAX_CHARS (default 50000), TOOL_RESULT_PREVIEW_CHARS (default 2000)
 RUN python3 /tmp/patches/fix_large_tool_results.py
 
-# Enabled backend patches (rewritten for v0.9.2 in Phase 6):
+# Enabled backend patches:
 #
 # fix_large_tool_args: Truncates oversized tool call arguments in HTML attributes
 # to prevent browser UI freeze on large tool outputs (>10KB).

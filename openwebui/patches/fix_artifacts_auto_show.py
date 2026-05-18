@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2025 Open Computer Use Contributors
 """
-Patch for Open WebUI 0.9.2: auto-open Artifacts panel
+Patch for Open WebUI 0.9.5: auto-open Artifacts panel
 
 Problem: If an HTML code block is inside a collapsed <details>, CodeBlock is not mounted ->
 onUpdate does not fire -> Artifacts panel does not open. Artifacts.svelte subscribe
@@ -432,7 +432,7 @@ if __name__ == "__main__":
         print(
             "ERROR: fix_artifacts_auto_show anchor not found in "
             f"{BUILD_CHUNKS_DIR}/*.js -- upstream may have refactored. "
-            "Check v0.9.2 source + update regex. "
+            "Check v0.9.5 source + update regex. "
             "Refusing to produce a silently-broken image.",
             file=sys.stderr,
         )
