@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.9.5.0-rc.2 — bump Open WebUI base to 0.9.5 (2026-05-19)
+
+Minor release: Open WebUI base bumped from `0.9.2` → `0.9.5` (upstream shipped 0.9.3, 0.9.4, 0.9.5 on 2026-05-09). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains in 0.9.3–0.9.5). Frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes; four backend patches needed updated SEARCH/REPLACE anchors to track upstream refactors.
+
+### Changed
+
+- **`openwebui/Dockerfile`** — `ARG OPENWEBUI_VERSION=0.9.2` → `0.9.5`.
+- **`fix_tool_loop_errors` Mod 1 (tool_loop)** — upstream wrapped `convert_output_to_messages(output, raw=True)` into a multi-line call with the new `reasoning_format=get_reasoning_format(model)` kwarg (introduced for OR-aligned reasoning emission). SEARCH/REPLACE updated to match the multi-line shape at both call sites (stateful Responses API branch and Chat Completions branch).
+- **`fix_tool_loop_errors` Mod 2 (code_interp)** — upstream guarded the post-loop `title = await Chats.get_chat_title_by_id(metadata['chat_id'])` with a `channel:`-prefix check, turning the assignment into a multi-line parenthesized ternary. SEARCH/REPLACE updated to match.
+- **`fix_large_tool_results` Mod 3 (history)** — same `reasoning_format` refactor: upstream `process_messages_with_output(form_data.get('messages', []))` is now a multi-line call with `reasoning_format=get_reasoning_format(model)`. SEARCH/REPLACE updated to match.
+- **`fix_skip_embedding_chat_files` Patch 1 (early return for regular uploads)** — upstream inserted an `else: await _validate_collection_access([collection_name], user, access_type='write')` branch between `if collection_name is None:` and `if form_data.content:` (part of the v0.9.5 file-access enforcement, upstream PR #24524). SEARCH/REPLACE updated to preserve the new guard.
+
+### Verified
+
+- Backend dry-run: all six middleware/retrieval patches applied cleanly against a fresh `v0.9.5` source tree; resulting files parse with `ast.parse` (Python syntax intact).
+- Docker build: `docker build --platform linux/amd64 -t open-webui-ocu:0.9.5.0-rc.2 -f openwebui/Dockerfile openwebui/` succeeds end-to-end; all eight patches' hard-fail guards (`sys.exit(1)`) green.
+
+### Upstream behavior changes worth knowing
+
+- New default `AIOHTTP_CLIENT_ALLOW_REDIRECTS=False` blocks 3xx redirects in web fetch / tool servers / OAuth (we don't rely on redirects through `host.docker.internal`, no action).
+- `POST /api/v1/auth/signout` (was GET); `init.sh` does not call signout, no action.
+- New `IFRAME_CSP` env var controls iframe Content-Security-Policy (Artifacts panel uses iframes); leave default unless smoke test shows blank Artifacts.
+- Per-model `params` dict now stripped from non-write-access users in `models.py` GET responses; `init.sh` runs as admin, no action.
+
 ## v0.9.2.4 — fix xlsx upload hang on Open WebUI 0.9.x (2026-05-11)
 
 Patch release on top of v0.9.2.3 (Open WebUI base unchanged). Fixes a regression from the OWUI v0.8 → v0.9 base bump: the `fix_skip_embedding_chat_files` patch was written against the v0.8 sync database/storage signatures and quietly broke when OWUI made `Files.update_file_data_by_id`, `Storage.get_file`, and `Loader.load` async.

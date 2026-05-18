@@ -17,7 +17,7 @@ Solution:
 
 When adding a file to a knowledge base (collection_name is set), full processing works.
 
-Target: Open WebUI 0.9.2
+Target: Open WebUI 0.9.5
 """
 
 import os
@@ -31,14 +31,19 @@ NEW_PATCH_MARKER = "FIX_SKIP_EMBEDDING_CHAT_FILES"
 
 # === Patch 1: early return for regular uploads ===
 # v0.8.11-0.9.2 uses single quotes: f'file-{file.id}'
+# v0.9.5: added `else: await _validate_collection_access(...)` between the two if-blocks.
 
 SEARCH_PATTERN_1 = """            if collection_name is None:
                 collection_name = f'file-{file.id}'
+            else:
+                await _validate_collection_access([collection_name], user, access_type='write')
 
             if form_data.content:"""
 
 REPLACE_PATTERN_1 = """            if collection_name is None:
                 collection_name = f'file-{file.id}'
+            else:
+                await _validate_collection_access([collection_name], user, access_type='write')
 
             # PATCH: skip_processing_chat_files -- skip extraction + embedding; FIX_SKIP_EMBEDDING_CHAT_FILES
             # for large files (> 1 MB) during regular uploads (not KB).

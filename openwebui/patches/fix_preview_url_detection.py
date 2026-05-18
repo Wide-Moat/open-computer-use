@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2025 Open Computer Use Contributors
 """
-Patch for Open WebUI 0.9.2 (host-agnostic): automatic detection of file URLs in messages
+Patch for Open WebUI 0.9.5 (host-agnostic): automatic detection of file URLs in messages
 
 Problem: To show file preview in the Artifacts panel, we need to detect
 Computer Use Server file links in assistant messages and auto-open the
@@ -221,7 +221,7 @@ if __name__ == "__main__":
         print(
             "ERROR: fix_preview_url_detection anchor not found in "
             f"{BUILD_CHUNKS_DIR}/*.js -- getCodeBlockContents compiled shape changed. "
-            "Check v0.9.2 source + update CONST_DECL_PATTERN. "
+            "Check v0.9.5 source + update CONST_DECL_PATTERN. "
             "Refusing to produce a silently-broken image.",
             file=sys.stderr,
         )

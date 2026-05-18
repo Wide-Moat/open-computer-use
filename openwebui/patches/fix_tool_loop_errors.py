@@ -17,7 +17,7 @@ Problems solved:
 6. SSE parse errors logged at debug level only
 
 Applied at Docker build time. Works on ORIGINAL middleware.py (no dependencies).
-Target: Open WebUI 0.9.2 (output-based architecture, serialize_output, prior_output).
+Target: Open WebUI 0.9.5 (output-based architecture, serialize_output, prior_output).
 
 Fail-loud: ANY sub-anchor miss triggers sys.exit(1) with stderr ERROR — refuses
 to ship a partially-patched middleware.py. Idempotent: re-run prints ALREADY PATCHED.
@@ -59,10 +59,14 @@ SEARCH_TOOL_LOOP = """\
                             system_message = get_system_message(form_data['messages'])
                             new_form_data['messages'] = (
                                 [system_message] if system_message else []
-                            ) + convert_output_to_messages(output, raw=True)
+                            ) + convert_output_to_messages(
+                                output, raw=True, reasoning_format=get_reasoning_format(model)
+                            )
                             new_form_data['previous_response_id'] = last_response_id
                         else:
-                            tool_messages = convert_output_to_messages(output, raw=True)
+                            tool_messages = convert_output_to_messages(
+                                output, raw=True, reasoning_format=get_reasoning_format(model)
+                            )
 
                             # Chat Completions providers don't support multimodal
                             # tool messages.  Extract images into a user message.
@@ -148,10 +152,14 @@ REPLACE_TOOL_LOOP = (
     "                            system_message = get_system_message(form_data['messages'])\n"
     "                            new_form_data['messages'] = (\n"
     "                                [system_message] if system_message else []\n"
-    "                            ) + convert_output_to_messages(output, raw=True)\n"
+    "                            ) + convert_output_to_messages(\n"
+    "                                output, raw=True, reasoning_format=get_reasoning_format(model)\n"
+    "                            )\n"
     "                            new_form_data['previous_response_id'] = last_response_id\n"
     "                        else:\n"
-    "                            tool_messages = convert_output_to_messages(output, raw=True)\n"
+    "                            tool_messages = convert_output_to_messages(\n"
+    "                                output, raw=True, reasoning_format=get_reasoning_format(model)\n"
+    "                            )\n"
     "\n"
     "                            # Chat Completions providers don't support multimodal\n"
     "                            # tool messages.  Extract images into a user message.\n"
@@ -272,6 +280,7 @@ REPLACE_TOOL_LOOP = (
 # ============================================================
 # Mod 2: Code interpreter catch -> log.error + UI error display
 # v0.9.1: `title = await Chats.get_chat_title_by_id(...)` — async-ified
+# v0.9.3+: title wrapped in multi-line parenthesized ternary (channel: guard)
 # ============================================================
 SEARCH_CODE_INTERP = """\
                         except Exception as e:
@@ -283,7 +292,11 @@ SEARCH_CODE_INTERP = """\
                     if item.get('status') == 'in_progress':
                         item['status'] = 'completed'
 
-                title = await Chats.get_chat_title_by_id(metadata['chat_id'])"""
+                title = (
+                    await Chats.get_chat_title_by_id(metadata['chat_id'])
+                    if not metadata['chat_id'].startswith('channel:')
+                    else ''
+                )"""
 
 REPLACE_CODE_INTERP = (
     "                        except Exception as e:\n"
@@ -302,7 +315,11 @@ REPLACE_CODE_INTERP = (
     "                    if item.get('status') == 'in_progress':\n"
     "                        item['status'] = 'completed'\n"
     "\n"
-    "                title = await Chats.get_chat_title_by_id(metadata['chat_id'])"
+    "                title = (\n"
+    "                    await Chats.get_chat_title_by_id(metadata['chat_id'])\n"
+    "                    if not metadata['chat_id'].startswith('channel:')\n"
+    "                    else ''\n"
+    "                )"
 )
 
 # ============================================================
