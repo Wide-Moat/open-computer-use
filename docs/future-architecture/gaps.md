@@ -252,7 +252,7 @@ Before publishing:
 | D. Determinism & session replay | 2 | Phase 7 + Phase 8 | Section in `architecture/05-*` and `architecture/10-*` |
 | E. Cost attribution & metering | 1 | Proposed **Phase 6.5** | `architecture/10-observability.md` billing-primitives section |
 | F. DR — RTO/RPO/backup/chaos | 1 | Rename Phase 10 → "HA + DR"; explicit RTO/RPO in acceptance | DR-runbook index |
-| G. Supply chain security | 1 | Cross-cut; add CI policy in a Phase-0.5 follow-on | SBOM/SLSA section in `architecture/07-security.md` |
+| G. Supply chain security | 1 | Cross-cut; add CI policy in a Phase-0.5 follow-on; base-image hardening in Phase 7 | SBOM/SLSA section in `architecture/07-security.md` |
 | H. Air-gap & corp networking | 2 | Dedicated future phase (customer-triggered) | Air-gap install guide |
 | I. Operator UX day-2 | 2 | Cross-cut; grows per phase | Runbook catalogue; diagnostic-bundle spec |
 | J. Versioning policy | 1 | New `architecture/11-versioning.md` | The file itself |
