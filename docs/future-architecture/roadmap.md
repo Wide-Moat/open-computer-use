@@ -39,6 +39,8 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 
 > **8 ↔ 9 reordering note.** Originally Kata (now Phase 9) shipped before egress proxy. That would have meant "hardware isolation for untrusted users, but they can still freely contact the internet" — unsafe. Egress proxy (Phase 8) is the prerequisite for any "untrusted" claim.
 
+> **Gap inventory.** For architecture topics not yet absorbed into a phase scope (multi-tenancy beyond per-session, identity beyond OIDC, compliance frameworks, metering, DR RTO/RPO, supply chain, air-gap, versioning policy, agentic-workload edge cases, MCP ecosystem, OSS-ops), see [`gaps.md`](./gaps.md). The phase pointers there are **suggestions**, not commitments — each Tier-1 gap is expected to graduate into its own ADR / phase-research doc when it is taken up.
+
 ---
 
 ## Phase 0 — Document & decide

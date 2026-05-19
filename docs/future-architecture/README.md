@@ -39,6 +39,7 @@ docs/future-architecture/
 ├── README.md                       ← you are here
 ├── roadmap.md                      11 phases (0, 0.5, 1–10), invariants, failure modes, rollback
 ├── antipatterns.md                 ⭐ operational decision log, per-phase index
+├── gaps.md                         Pre-mortem gap inventory (A–M); suggestions, not commitments
 ├── phase-template.md               Skeleton for phase-N-research.md and phase-N-plan.md
 ├── references.md                   External repos + projects, annotated
 ├── architecture/                   Target design — 4-layer spec
