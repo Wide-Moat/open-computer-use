@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.9.5.0-rc.2 — bump Open WebUI base to 0.9.5 (2026-05-19)
+## v0.9.5.0 — bump Open WebUI base to 0.9.5 (2026-05-20)
 
 Minor release: Open WebUI base bumped from `0.9.2` → `0.9.5` (upstream shipped 0.9.3, 0.9.4, 0.9.5 on 2026-05-09). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains in 0.9.3–0.9.5). Frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes; four backend patches needed updated SEARCH/REPLACE anchors to track upstream refactors.
 
