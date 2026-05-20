@@ -56,13 +56,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       volumes:
-        # Socket the orchestrator and cleanup sidecar use to talk to inner dockerd.
-        # Shared via emptyDir per the Sysbox sidecar pattern (sysbox docs + nestybox#406).
+        # Socket the orchestrator and cleanup sidecar use to talk to inner dockerd,
+        # shared via an emptyDir.
         - name: dind-socket
           emptyDir: {}
         # /var/lib/docker for the inner dockerd, mounted only into the dind
-        # container. Under Sysbox this MUST be a dedicated emptyDir (sysbox#406);
-        # under Kata it is a Block-mode PVC (virtio-blk + ext4 preserves xattrs).
+        # container. Under Kata it is a Block-mode PVC (virtio-blk + ext4
+        # preserves xattrs); under the runc fallback it is an emptyDir.
         - name: var-lib-docker
           {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
           persistentVolumeClaim:
@@ -238,7 +238,7 @@ spec:
             - name: DATA_DIR
               value: /tmp/computer-use-data
           volumeMounts:
-            # Share the socket via the same emptyDir — see Sysbox sidecar pattern.
+            # Share the dockerd socket via the same emptyDir.
             - name: dind-socket
               mountPath: /var/run
             - name: user-data

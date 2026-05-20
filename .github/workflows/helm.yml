@@ -55,42 +55,38 @@ jobs:
           # Examples must lint cleanly
           helm lint helm/computer-use-server -f examples/helm/standalone/values.yaml
           helm lint helm/computer-use-server -f examples/helm/with-open-webui/values-computer-use.yaml
-          helm lint helm/computer-use-server -f examples/helm/kata/values.yaml
 
-      - name: helm template (default + privileged downgrade + Kata path)
+      - name: helm template (default Kata path + runc fallback)
         run: |
           set -e
-          # Default — Sysbox path
+          # Default — Kata is the supported runtime; chart defaults render it.
           helm template ocu helm/computer-use-server \
             -f examples/helm/standalone/values.yaml \
             > /tmp/render-default.yaml
-          grep -q "runtimeClassName: sysbox-runc" /tmp/render-default.yaml
-          grep -q "privileged: false" /tmp/render-default.yaml
+          grep -q "runtimeClassName: kata-qemu" /tmp/render-default.yaml
+          grep -q "privileged: true" /tmp/render-default.yaml
           grep -q "name: orchestrator" /tmp/render-default.yaml
           grep -q "name: dind" /tmp/render-default.yaml
           grep -q "name: cleanup" /tmp/render-default.yaml
-          # Backward-compat regression guard: the Sysbox path must NOT pick up
-          # any Kata machinery (entrypoint wrapper, Block PVC).
-          ! grep -q "dind-entrypoint.sh" /tmp/render-default.yaml
-          ! grep -q "volumeMode: Block" /tmp/render-default.yaml
-          # Privileged downgrade
+          # The Kata machinery must be present by default.
+          grep -q "dind-entrypoint.sh" /tmp/render-default.yaml
+          grep -q "volumeMode: Block" /tmp/render-default.yaml
+          grep -q "devicePath: /dev/var-lib-docker" /tmp/render-default.yaml
+          grep -q "storage-driver=fuse-overlayfs" /tmp/render-default.yaml
+          # Unsupported runc fallback — explicit opt-out of every Kata knob.
           helm template ocu helm/computer-use-server \
             --set secrets.mcpApiKey=t \
             --set orchestrator.env.PUBLIC_BASE_URL=https://x \
             --set orchestrator.runtimeClassName="" \
+            --set dind.privileged=null \
+            --set dind.kataInit.enabled=false \
+            --set dind.storageDriver=overlay2 \
+            --set persistence.varLibDocker.persistentVolume.enabled=false \
             > /tmp/render-runc.yaml
           grep -q "privileged: true" /tmp/render-runc.yaml
           ! grep -q "runtimeClassName:" /tmp/render-runc.yaml
-          # Kata path — full opt-in render. No cluster needed; assertions only.
-          helm template ocu helm/computer-use-server \
-            -f examples/helm/kata/values.yaml \
-            > /tmp/render-kata.yaml
-          grep -q "runtimeClassName: kata-qemu" /tmp/render-kata.yaml
-          grep -q "privileged: true" /tmp/render-kata.yaml
-          grep -q "dind-entrypoint.sh" /tmp/render-kata.yaml
-          grep -q "volumeMode: Block" /tmp/render-kata.yaml
-          grep -q "devicePath: /dev/var-lib-docker" /tmp/render-kata.yaml
-          grep -q "storage-driver=fuse-overlayfs" /tmp/render-kata.yaml
+          ! grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml
+          ! grep -q "volumeMode: Block" /tmp/render-runc.yaml
 
       - name: Install kubeconform and validate manifests against k8s schemas
         env:
@@ -100,7 +96,6 @@ jobs:
             | sudo tar -xz -C /usr/local/bin kubeconform
           kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-default.yaml
           kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-runc.yaml
-          kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-kata.yaml
 
   release:
     name: Publish chart to gh-pages

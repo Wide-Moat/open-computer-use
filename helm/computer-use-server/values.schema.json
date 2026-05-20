@@ -104,7 +104,7 @@
             "sizeLimit": { "type": "string" },
             "persistentVolume": {
               "type": "object",
-              "$comment": "Block-mode PVC for /var/lib/docker. Kata only — do NOT enable under Sysbox (sysbox#406).",
+              "$comment": "Block-mode PVC for /var/lib/docker (the Kata default). Disable only for the unsupported runc fallback.",
               "properties": {
                 "enabled": { "type": "boolean" },
                 "size": { "type": "string" },
