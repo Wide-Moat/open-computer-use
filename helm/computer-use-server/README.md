@@ -1,6 +1,6 @@
 # computer-use-server Helm chart
 
-Deploys the [open-computer-use](https://github.com/Wide-Moat/open-computer-use) orchestrator on Kubernetes. The pod runs the FastAPI MCP server, an inner Docker daemon (DinD), and an optional cleanup sidecar. Disposable workspace containers are spawned by the inner daemon — the same architecture as the Docker Compose stack, lifted onto Kubernetes via [Sysbox](https://github.com/nestybox/sysbox).
+Deploys the [open-computer-use](https://github.com/Wide-Moat/open-computer-use) orchestrator on Kubernetes. The pod runs the FastAPI MCP server, an inner Docker daemon (DinD), and an optional cleanup sidecar. Disposable workspace containers are spawned by the inner daemon — the same architecture as the Docker Compose stack, lifted onto Kubernetes via a DinD-capable runtime: **[Sysbox](https://github.com/nestybox/sysbox)** (containerd 1.x) or **[Kata Containers](https://katacontainers.io/)** (containerd 2.x — see [`docs/kata-runtime.md`](../../docs/kata-runtime.md)).
 
 Open WebUI is **not** packaged here. It has its own [official chart](https://github.com/open-webui/helm-charts) and most users already run it. See [`examples/helm/with-open-webui/`](../../examples/helm/with-open-webui/README.md) for the integration walkthrough.
 
@@ -9,11 +9,13 @@ Open WebUI is **not** packaged here. It has its own [official chart](https://git
 ## Prerequisites
 
 1. **Kubernetes ≥ 1.27** with a working CNI and a default StorageClass that supports `ReadWriteOnce`.
-2. **[Sysbox](https://github.com/nestybox/sysbox)** installed on every node that may schedule the orchestrator pod, with a matching `RuntimeClass` (default name: `sysbox-runc`). Sysbox lets the inner Docker daemon run **without** `privileged: true`. The chart still supports stock runc, but only as an explicit, documented downgrade.
+2. **A DinD-capable runtime** installed on every node that may schedule the orchestrator pod, with a matching `RuntimeClass`:
+   - **containerd 1.x** — [Sysbox](https://github.com/nestybox/sysbox), RuntimeClass `sysbox-runc` (chart default). Runs the inner Docker daemon **without** `privileged: true`.
+   - **containerd 2.x** (RKE2 / k3s / kubeadm ≥ 1.34) — [Kata Containers](https://katacontainers.io/), RuntimeClass `kata-qemu`. Sysbox does **not** work on containerd 2.x. Follow [`docs/kata-runtime.md`](../../docs/kata-runtime.md).
 3. **`helm` ≥ 3.14** (Helm 4 also works).
 4. The orchestrator and workspace images published to a registry the cluster can pull from.
 
-> **Why Sysbox?** The orchestrator needs to spawn Docker containers inside its own pod (matches the existing app code, no rewrite). Sysbox is the only mainstream runtime that supports `dockerd` inside an unprivileged container. Without it, you fall back to `privileged: true`, which gives the inner daemon host-kernel access and trivially breaks pod isolation. Don't run that in production.
+> **Why a DinD runtime?** The orchestrator spawns Docker containers inside its own pod (matches the existing app code, no rewrite). Stock `runc` can only do that with `privileged: true`, which gives the inner daemon host-kernel access and trivially breaks isolation — never run that in production. Sysbox isolates an unprivileged inner daemon via user-namespaces; Kata isolates the whole pod in a microVM. See the [runtime comparison](../../docs/kata-runtime.md#tradeoffs).
 
 ---
 
@@ -88,7 +90,10 @@ The full schema lives in [`values.yaml`](values.yaml). The knobs you most often 
 | `image.repository` | `ghcr.io/wide-moat/open-computer-use-server` | orchestrator image |
 | `image.tag` | `.Chart.AppVersion` | override if pinning |
 | `workspaceImage.repository` | `ghcr.io/wide-moat/open-computer-use` | passed as `DOCKER_IMAGE` to the orchestrator; the inner dockerd pulls this on first chat |
-| `orchestrator.runtimeClassName` | `sysbox-runc` | set to `""` to drop to stock runc + privileged (UNSUPPORTED) |
+| `orchestrator.runtimeClassName` | `sysbox-runc` | `sysbox-runc` (containerd 1.x), `kata-qemu` (containerd 2.x — see [kata-runtime.md](../../docs/kata-runtime.md)), or `""` to drop to stock runc + privileged (UNSUPPORTED) |
+| `dind.privileged` | `null` | explicit override of the runtime/privileged coupling. `null` = auto (see [Runtime selection](#runtime-selection)). Set `true` for Kata. |
+| `dind.storageDriver` | `overlay2` | dockerd storage driver. Use `fuse-overlayfs` under Kata (`overlay2` fails on the virtio-fs guest root). |
+| `dind.kataInit.enabled` | `false` | enables the chart-managed Kata-guest init wrapper. See [kata-runtime.md](../../docs/kata-runtime.md). |
 | `orchestrator.replicas` | `1` | **must stay 1** — single owner of inner dockerd and RWO PVCs |
 | `orchestrator.env.PUBLIC_BASE_URL` | `""` | **REQUIRED** — browser-facing URL (no trailing slash). Without it, chat file previews 404. |
 | `orchestrator.extraEnv` / `envFrom` | `[]` | inject `ANTHROPIC_*`, `VISION_*`, etc. from existing Secrets / ConfigMaps |
@@ -98,7 +103,8 @@ The full schema lives in [`values.yaml`](values.yaml). The knobs you most often 
 | `persistence.userData.size` | `20Gi` | `/tmp/computer-use-data` — uploads + outputs |
 | `persistence.data.size` | `5Gi` | `/data` — long-lived orchestrator state |
 | `persistence.skillsCache.size` | `2Gi` | `/data/skills-cache` |
-| `persistence.varLibDocker.sizeLimit` | `50Gi` | emptyDir for the inner `/var/lib/docker`. **Never** make this a PVC — see [nestybox/sysbox#406](https://github.com/nestybox/sysbox/issues/406). |
+| `persistence.varLibDocker.sizeLimit` | `50Gi` | emptyDir for the inner `/var/lib/docker` (Sysbox path). Under Sysbox **never** make this a PVC — see [nestybox/sysbox#406](https://github.com/nestybox/sysbox/issues/406). |
+| `persistence.varLibDocker.persistentVolume.enabled` | `false` | back `/var/lib/docker` with a Block-mode PVC instead of emptyDir. **Kata only** — required for xattr-dependent workloads. See [kata-runtime.md](../../docs/kata-runtime.md). |
 | `cleanup.enabled` | `true` | runs the same crons as `docker-compose.yml` (`cron/cleanup.sh` + `cron/cleanup-quick.sh`) |
 | `cleanup.containerMaxAgeHours` | `24` | stop workspace containers older than this |
 | `cleanup.dataMaxAgeDays` | `7` | remove stale data dirs older than this |
@@ -147,17 +153,35 @@ The Secret is mounted via `envFrom` — every key becomes an env var on the orch
 
 ---
 
-## Sysbox handling
+## Runtime selection
 
-The chart couples `runtimeClassName` and `dind.securityContext.privileged`:
+The chart supports two production DinD runtimes plus an unsupported testing fallback.
 
-| `orchestrator.runtimeClassName` | `dind` runs as | Supported? |
-|---|---|---|
-| `sysbox-runc` (default) | `privileged: false` | ✅ recommended |
-| (other RuntimeClass) | `privileged: false` | ⚠️ only if that runtime supports unprivileged DinD |
-| `""` (empty) | `privileged: true` on stock runc | ❌ unsupported, container-escape risk |
+| `orchestrator.runtimeClassName` | `dind.privileged` | `dind` runs as | Supported? |
+|---|---|---|---|
+| `sysbox-runc` (default) | `null` (auto) | `privileged: false` | ✅ recommended on containerd 1.x |
+| `kata-qemu` | `true` (explicit) | `privileged: true` (caps confined to the microVM) | ✅ recommended on containerd 2.x |
+| (other RuntimeClass) | `null` (auto) | `privileged: false` | ⚠️ only if that runtime supports unprivileged DinD |
+| `""` (empty) | `null` (auto) | `privileged: true` on stock runc | ❌ unsupported, container-escape risk |
 
-When `runtimeClassName` is empty the chart prints a loud warning in `NOTES.txt` after install. The `privileged: true` flip is purely a "make it functional for testing" escape hatch — don't ship a production cluster that way.
+By default (`dind.privileged: null`) the chart derives `privileged` from
+`runtimeClassName` — empty ⇒ `true`, set ⇒ `false`. This is the legacy Sysbox
+behavior and is unchanged. Set `dind.privileged` explicitly to override it; Kata
+requires `true` because the inner `dockerd` needs `CAP_NET_ADMIN`/`CAP_NET_RAW`
+for iptables NAT (safe — the caps stay inside the microVM).
+
+When `runtimeClassName` is empty the chart prints a loud warning in `NOTES.txt`.
+The stock-runc + privileged path is purely a "make it functional for testing"
+escape hatch — never ship a production cluster that way.
+
+### Kata Containers (containerd 2.x)
+
+Sysbox does not work on containerd 2.x. On RKE2 / k3s / kubeadm ≥ 1.34, use Kata:
+install `kata-deploy`, set `runtimeClassName: kata-qemu`, `dind.privileged: true`,
+`dind.kataInit.enabled: true`, `dind.storageDriver: fuse-overlayfs`, and a
+Block-mode PVC for `/var/lib/docker`. The full runbook — install, configure,
+verify, troubleshoot — is in [`docs/kata-runtime.md`](../../docs/kata-runtime.md);
+a copy-paste values file is at [`examples/helm/kata/values.yaml`](../../examples/helm/kata/values.yaml).
 
 ---
 
@@ -177,6 +201,9 @@ The dind container hasn't finished starting yet, or the shared `dind-socket` vol
 
 **Workspace containers can't pull the workspace image.**
 The inner dockerd does the pull, not Kubernetes. The image must be reachable from inside the pod (public registry, or `imagePullSecrets` won't help — they apply only to outer kubelet pulls). For private registries, configure inner-dockerd auth via a custom dind image or `dockerd --insecure-registry` arg.
+
+**`dockerd: iptables: Could not fetch rule set generation id: Permission denied` (Kata).**
+The inner dockerd is not privileged. Under Kata, set `dind.privileged: true` — it is safe because the capabilities are confined to the microVM. See [`docs/kata-runtime.md`](../../docs/kata-runtime.md#troubleshooting) for the full Kata troubleshooting table (`overlay2` mount failures, cgroup-v2 errors, xattr loss).
 
 ---
 

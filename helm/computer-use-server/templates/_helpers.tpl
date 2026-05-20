@@ -82,11 +82,33 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Whether the inner dind container must run privileged.
-true => stock runc (no Sysbox) — required for dockerd to start.
-false => sysbox-runc handles isolation; privileged stays off.
+Resolution order:
+  1. dind.privileged explicitly set (true/false) => use it verbatim.
+     Kata needs `true`: dockerd requires CAP_NET_ADMIN/RAW for iptables NAT,
+     and the caps stay confined to the microVM.
+  2. otherwise (dind.privileged is null) => legacy auto-derivation:
+       runtimeClassName empty => true  (stock runc, required for dockerd to start)
+       runtimeClassName set   => false (sysbox-runc handles isolation)
+A null default means Sysbox installs render identically to before this knob existed.
 */}}
 {{- define "computer-use-server.dindPrivileged" -}}
-{{- if eq (default "" .Values.orchestrator.runtimeClassName) "" -}}
+{{- if not (kindIs "invalid" .Values.dind.privileged) -}}
+{{- .Values.dind.privileged -}}
+{{- else if eq (default "" .Values.orchestrator.runtimeClassName) "" -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
+{{/*
+Whether /var/lib/docker is backed by a Block-mode PVC (Kata) rather than an
+emptyDir (Sysbox / default). True when persistence.varLibDocker.persistentVolume
+is enabled or an existingClaim is supplied.
+*/}}
+{{- define "computer-use-server.varLibDockerIsPVC" -}}
+{{- $pv := .Values.persistence.varLibDocker.persistentVolume | default dict -}}
+{{- if or $pv.enabled $pv.existingClaim -}}
 true
 {{- else -}}
 false

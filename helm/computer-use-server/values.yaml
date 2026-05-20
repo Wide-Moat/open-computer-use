@@ -2,7 +2,9 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 #
 # Default values for computer-use-server.
-# See README.md for prerequisites (Sysbox) and the full knob reference.
+# See README.md for prerequisites and the full knob reference.
+# Two DinD runtimes are supported: Sysbox (default, containerd 1.x) and Kata
+# Containers (containerd 2.x). For Kata, see docs/kata-runtime.md.
 
 # -- Override the chart name. Useful when running multiple releases in one namespace.
 nameOverride: ""
@@ -28,8 +30,14 @@ imagePullSecrets: []
 
 orchestrator:
   # runtimeClassName MUST match a RuntimeClass that already exists in the cluster.
-  # Default: sysbox-runc (install Sysbox: https://github.com/nestybox/sysbox).
-  # Empty string => stock runc + privileged dind (UNSUPPORTED, container-escape risk).
+  # Supported values:
+  #   sysbox-runc  Default. Install Sysbox: https://github.com/nestybox/sysbox.
+  #                Note: Sysbox does NOT work on containerd 2.x (RKE2/k3s/kubeadm
+  #                >= 1.34) — public releases are frozen on containerd 1.x.
+  #   kata-qemu    Kata Containers — works on containerd 2.x, hypervisor isolation.
+  #                Requires dind.privileged=true + dind.kataInit.enabled=true.
+  #                Full setup guide: docs/kata-runtime.md.
+  #   "" (empty)   Stock runc + privileged dind (UNSUPPORTED, container-escape risk).
   runtimeClassName: sysbox-runc
 
   # Single replica is the only supported topology — the pod owns the inner dockerd
@@ -121,8 +129,36 @@ dind:
       cpu: "4"
       memory: 8Gi
   # storage driver passed to dockerd. overlay2 works on Sysbox; for stock runc you
-  # may need vfs (slow, only for emergencies).
+  # may need vfs (slow, only for emergencies). Under Kata, overlay2 FAILS on the
+  # virtio-fs guest root (kata-containers/kata-containers#1888) — use fuse-overlayfs
+  # (dind.kataInit installs it). See docs/kata-runtime.md.
   storageDriver: overlay2
+
+  # -- Explicit override of the runtime/privileged coupling.
+  # null (default) => legacy behavior: privileged is auto-derived from
+  #   orchestrator.runtimeClassName (empty => true, set => false). Sysbox users
+  #   MUST leave this null.
+  # true  => force the dind container privileged. REQUIRED for Kata: dockerd needs
+  #   CAP_NET_ADMIN/CAP_NET_RAW to build the iptables NAT chain, otherwise it fails
+  #   with "iptables: Could not fetch rule set generation id: Permission denied".
+  #   privileged=true is SAFE under Kata — the caps are confined to the microVM.
+  # false => force the dind container unprivileged.
+  privileged: null
+
+  # -- Kata-guest init wrapper. Default OFF => Sysbox render is byte-identical.
+  # When enabled, the dind container runs a chart-managed entrypoint that, before
+  # exec'ing dockerd:
+  #   (1) installs fuse-overlayfs (overlay2 fails on the Kata virtio-fs root)
+  #   (2) mknod /dev/fuse  (the Kata guest kernel has fuse but no device node)
+  #   (3) if persistence.varLibDocker.persistentVolume is enabled — mkfs.ext4 +
+  #       mounts the Block-mode PVC at /var/lib/docker
+  #   (4) runs the cgroup-v2 PID-1 evacuation shim (docker-library/docker#308) so
+  #       nested runc can enter cgroups inside the Kata guest
+  # Every step is idempotent and self-detecting. See docs/kata-runtime.md.
+  kataInit:
+    enabled: false
+    # extra apk packages installed at container start (idempotent, needs egress)
+    extraPackages: []
 
 cleanup:
   enabled: true
@@ -183,10 +219,24 @@ persistence:
     accessMode: ReadWriteOnce
     existingClaim: ""
 
-  # /var/lib/docker inside the dind container. Must be a dedicated emptyDir —
-  # NEVER a PVC and NEVER shared with other containers (nestybox/sysbox#406).
+  # /var/lib/docker inside the dind container.
+  # Under Sysbox this MUST be a dedicated emptyDir — NEVER a PVC and NEVER shared
+  # with other containers (nestybox/sysbox#406). Leave persistentVolume disabled.
   varLibDocker:
+    # sizeLimit applies to the emptyDir (used when persistentVolume.enabled=false).
     sizeLimit: 50Gi
+    # -- Back /var/lib/docker with a Block-mode PVC instead of an emptyDir.
+    # REQUIRED under Kata if the workspace image relies on security.capability
+    # xattrs (Kata virtio-fs drops them — CVE-2021-20263 — which breaks e.g.
+    # GStreamer binaries). A Block PVC arrives in the guest as a virtio-blk
+    # device; dind.kataInit formats it ext4, so xattrs are preserved.
+    # Do NOT enable under Sysbox (sysbox#406). See docs/kata-runtime.md.
+    persistentVolume:
+      enabled: false
+      size: 50Gi
+      storageClass: ""
+      # When set, the chart uses this claim instead of creating one.
+      existingClaim: ""
 
 service:
   type: ClusterIP

@@ -28,6 +28,9 @@ spec:
         {{- if and .Values.secrets.create (not .Values.secrets.existingSecret) }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Values.dind.kataInit.enabled }}
+        checksum/dind-init: {{ include (print $.Template.BasePath "/configmap-dind-init.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -57,11 +60,28 @@ spec:
         # Shared via emptyDir per the Sysbox sidecar pattern (sysbox docs + nestybox#406).
         - name: dind-socket
           emptyDir: {}
-        # /var/lib/docker for the inner dockerd. MUST be a dedicated emptyDir mounted
-        # only into the dind container — see nestybox/sysbox#406.
+        # /var/lib/docker for the inner dockerd, mounted only into the dind
+        # container. Under Sysbox this MUST be a dedicated emptyDir (sysbox#406);
+        # under Kata it is a Block-mode PVC (virtio-blk + ext4 preserves xattrs).
         - name: var-lib-docker
+          {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
+          persistentVolumeClaim:
+            {{- if .Values.persistence.varLibDocker.persistentVolume.existingClaim }}
+            claimName: {{ .Values.persistence.varLibDocker.persistentVolume.existingClaim }}
+            {{- else }}
+            claimName: {{ include "computer-use-server.fullname" . }}-var-lib-docker
+            {{- end }}
+          {{- else }}
           emptyDir:
             sizeLimit: {{ .Values.persistence.varLibDocker.sizeLimit }}
+          {{- end }}
+        {{- if .Values.dind.kataInit.enabled }}
+        # Kata-guest init wrapper script — see configmap-dind-init.yaml.
+        - name: dind-init
+          configMap:
+            name: {{ include "computer-use-server.fullname" . }}-dind-init
+            defaultMode: 0755
+        {{- end }}
         # PVCs follow the same enabled / existingClaim / emptyDir-fallback pattern
         # so disabling any volume in values.yaml does not produce an unschedulable Pod.
         - name: user-data
@@ -158,11 +178,20 @@ spec:
         - name: dind
           image: "{{ .Values.dind.image.repository }}:{{ .Values.dind.image.tag }}"
           imagePullPolicy: {{ .Values.dind.image.pullPolicy }}
-          # Use the docker:dind entrypoint, but pin the socket location so the
-          # orchestrator (and the cleanup sidecar) can talk to it over the
-          # shared emptyDir at /var/run/docker.sock.
+          {{- if .Values.dind.kataInit.enabled }}
+          # Kata path: run the chart-managed init wrapper, which prepares the
+          # guest (fuse-overlayfs, /dev/fuse, Block PVC, cgroup shim) then
+          # exec's dockerd with the args below. See configmap-dind-init.yaml.
+          command:
+            - /usr/local/bin/dind-entrypoint.sh
+          {{- else }}
+          # Default path: the docker:dind entrypoint runs dockerd directly.
           command:
             - dockerd
+          {{- end }}
+          # Pin the socket location so the orchestrator (and the cleanup
+          # sidecar) can talk to it over the shared emptyDir at
+          # /var/run/docker.sock.
           args:
             - --host=unix:///var/run/docker.sock
             - --storage-driver={{ .Values.dind.storageDriver }}
@@ -171,13 +200,27 @@ spec:
           volumeMounts:
             - name: dind-socket
               mountPath: /var/run
+            {{- if .Values.dind.kataInit.enabled }}
+            - name: dind-init
+              mountPath: /usr/local/bin/dind-entrypoint.sh
+              subPath: dind-entrypoint.sh
+            {{- end }}
+            {{- if ne (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
             - name: var-lib-docker
               mountPath: /var/lib/docker
+            {{- end }}
             # The inner dockerd needs access to /tmp/computer-use-data so the
             # bind mounts it creates for workspace containers resolve to real
             # files (same path inside the pod and inside spawned containers).
             - name: user-data
               mountPath: /tmp/computer-use-data
+          {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
+          # Block-mode PVC — exposed as a raw device; the init wrapper formats
+          # it ext4 and mounts it at /var/lib/docker inside the guest.
+          volumeDevices:
+            - name: var-lib-docker
+              devicePath: /dev/var-lib-docker
+          {{- end }}
           resources:
             {{- toYaml .Values.dind.resources | nindent 12 }}
         {{- if .Values.cleanup.enabled }}
