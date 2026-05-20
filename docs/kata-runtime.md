@@ -22,11 +22,6 @@ distributions (RKE2 / k3s / kubeadm ≥ 1.34) — and gives **hypervisor-grade
 isolation**. The cost is a slower cold start and a fixed per-pod memory overhead
 (see [Tradeoffs](#tradeoffs)).
 
-Earlier chart versions used Sysbox. Sysbox no longer works on containerd 2.x —
-its public releases are frozen on containerd 1.x with no upstream fix — so the
-chart moved to Kata. The [Tradeoffs](#tradeoffs) table keeps Sysbox as a
-comparison point only; it is no longer a chart option.
-
 ---
 
 ## Prerequisites
@@ -244,24 +239,25 @@ succeed end to end.
 
 ## Tradeoffs
 
-Kata is the runtime the chart uses. The table puts it next to the alternatives
-for context — Sysbox is shown only as a historical comparison (it is no longer a
-chart option), and `runc + privileged` is the unsupported testing fallback.
+Kata is the runtime the chart uses. The table puts it next to the
+`runc + privileged` fallback for context — that fallback is functional but
+insecure, fit for local testing only.
 
-| Dimension | Kata-qemu (chart default) | Sysbox (no longer supported) | runc + privileged (unsupported) |
-|---|---|---|---|
-| Isolation | hardware VM, **separate** guest kernel | user-ns + syscall trapping, **shared** host kernel | none — host kernel, escape is trivial |
-| containerd 2.x | ✅ works | ❌ broken (frozen on 1.x) | ✅ works |
-| Cold start | slower (microVM boot, ~1–3 s) | fast (~container) | fast |
-| Storage driver | `fuse-overlayfs` (`overlay2` fails) | `overlay2` | `overlay2` / `vfs` |
-| Memory overhead | ~150–350 MiB/pod (guest kernel + hypervisor) | low | none |
-| `privileged` needed | yes — but caps confined to the VM | no | yes — caps on the **host** |
-| Setup complexity | medium (kata-deploy, init wrapper, Block PVC) | low (when it works) | low |
-| Production-safe | yes | only on containerd 1.x | **no** |
+| Dimension | Kata-qemu (chart default) | runc + privileged (testing only) |
+|---|---|---|
+| Isolation | hardware VM, **separate** guest kernel | none — host kernel, escape is trivial |
+| containerd 2.x | ✅ works | ✅ works |
+| Cold start | slower (microVM boot, ~1–3 s) | fast |
+| Storage driver | `fuse-overlayfs` (`overlay2` fails) | `overlay2` / `vfs` |
+| Memory overhead | ~150–350 MiB/pod (guest kernel + hypervisor) | none |
+| `privileged` needed | yes — but caps confined to the VM | yes — caps on the **host** |
+| Setup complexity | medium (kata-deploy, init wrapper, Block PVC) | low |
+| Production-safe | yes | **no** |
 
-**Bottom line:** Kata is the supported runtime and the strongest isolation of
-the three, and it works on modern containerd 2.x. `runc + privileged` is only a
-local testing escape hatch, never production.
+**Bottom line:** Kata is the recommended runtime — strong isolation and it works
+on modern containerd 2.x. `runc + privileged` works too, but the inner daemon
+shares the host kernel, so it is a local-testing escape hatch only, never
+production.
 
 ## See also
 

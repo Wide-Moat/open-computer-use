@@ -23,9 +23,10 @@ Ingress:
 ###############################################################################
 # WARNING: orchestrator.runtimeClassName is empty.                            #
 # The inner Docker daemon is running with privileged=true on stock runc.      #
-# This is UNSUPPORTED and a container-escape risk — local testing only.       #
+# It works, but the daemon shares the host kernel — a container escape is     #
+# trivial. INSECURE: local testing only, never production.                   #
 #                                                                             #
-# For a supported deployment, install Kata Containers and set:                #
+# For a secure deployment, install Kata Containers and set:                   #
 #   --set orchestrator.runtimeClassName=kata-qemu                             #
 # Full guide: docs/kata-runtime.md                                            #
 ###############################################################################

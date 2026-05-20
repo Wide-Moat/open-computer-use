@@ -13,7 +13,7 @@ Open WebUI is **not** packaged here. It has its own [official chart](https://git
 3. **`helm` ≥ 3.14** (Helm 4 also works).
 4. The orchestrator and workspace images published to a registry the cluster can pull from.
 
-> **Why Kata?** The orchestrator spawns Docker containers inside its own pod (matches the existing app code, no rewrite). Stock `runc` can only do that with `privileged: true`, which gives the inner daemon host-kernel access and trivially breaks isolation — never run that in production. Kata isolates the whole pod in a microVM, so the inner daemon's privileges cannot reach the host kernel. It also works on containerd 2.x (RKE2 / k3s / kubeadm ≥ 1.34), unlike Sysbox. See the [runtime comparison](../../docs/kata-runtime.md#tradeoffs).
+> **Why Kata?** The orchestrator spawns Docker containers inside its own pod (matches the existing app code, no rewrite). Stock `runc` can only do that with `privileged: true`, which gives the inner daemon host-kernel access and trivially breaks isolation — never run that in production. Kata isolates the whole pod in a microVM, so the inner daemon's privileges cannot reach the host kernel, and it works on containerd 2.x (RKE2 / k3s / kubeadm ≥ 1.34). See the [runtime comparison](../../docs/kata-runtime.md#tradeoffs).
 
 ---
 
@@ -88,7 +88,7 @@ The full schema lives in [`values.yaml`](values.yaml). The knobs you most often 
 | `image.repository` | `ghcr.io/wide-moat/open-computer-use-server` | orchestrator image |
 | `image.tag` | `.Chart.AppVersion` | override if pinning |
 | `workspaceImage.repository` | `ghcr.io/wide-moat/open-computer-use` | passed as `DOCKER_IMAGE` to the orchestrator; the inner dockerd pulls this on first chat |
-| `orchestrator.runtimeClassName` | `kata-qemu` | the Kata `RuntimeClass` (see [kata-runtime.md](../../docs/kata-runtime.md)); `""` drops to stock runc + privileged (UNSUPPORTED) |
+| `orchestrator.runtimeClassName` | `kata-qemu` | the Kata `RuntimeClass` (see [kata-runtime.md](../../docs/kata-runtime.md)); `""` drops to stock runc + privileged (functional but INSECURE — testing only) |
 | `dind.privileged` | `true` | whether the dind container runs privileged. `true` is required for Kata (caps confined to the microVM). `null` auto-derives from `runtimeClassName`. |
 | `dind.storageDriver` | `fuse-overlayfs` | dockerd storage driver. `fuse-overlayfs` is required under Kata (`overlay2` fails on the virtio-fs guest root). |
 | `dind.kataInit.enabled` | `true` | runs the chart-managed Kata-guest init wrapper. See [kata-runtime.md](../../docs/kata-runtime.md). Disable only for the runc fallback. |
@@ -160,17 +160,18 @@ PVC for `/var/lib/docker`) are all set for Kata — install `kata-deploy` and th
 chart works out of the box. The full runbook — install, configure, verify,
 troubleshoot — is in [`docs/kata-runtime.md`](../../docs/kata-runtime.md).
 
-| `orchestrator.runtimeClassName` | `dind.privileged` | `dind` runs as | Supported? |
+| `orchestrator.runtimeClassName` | `dind.privileged` | `dind` runs as | Use it? |
 |---|---|---|---|
-| `kata-qemu` (default) | `true` | `privileged: true` (caps confined to the microVM) | ✅ supported |
-| `""` (empty) | `null` (auto) ⇒ `true` | `privileged: true` on stock runc | ❌ unsupported, container-escape risk |
+| `kata-qemu` (default) | `true` | `privileged: true` (caps confined to the microVM) | ✅ recommended |
+| `""` (empty) | `null` (auto) ⇒ `true` | `privileged: true` on stock runc | ⚠️ functional but insecure — testing only |
 
 `dind.privileged: true` is required for Kata — the inner `dockerd` needs
 `CAP_NET_ADMIN`/`CAP_NET_RAW` for iptables NAT, and the capabilities stay
 confined to the microVM. Setting `runtimeClassName: ""` drops to stock runc with
-a privileged dind; the chart prints a loud warning in `NOTES.txt`. That path is
-purely a "make it functional for local testing" escape hatch — never ship a
-production cluster that way, and pair it with `dind.kataInit.enabled=false` and
+a privileged dind; this works, but the inner daemon shares the host kernel, so a
+container escape is trivial. The chart prints a loud warning in `NOTES.txt`. Use
+that path only for local testing — never ship a production cluster that way, and
+pair it with `dind.kataInit.enabled=false` and
 `persistence.varLibDocker.persistentVolume.enabled=false`.
 
 ---

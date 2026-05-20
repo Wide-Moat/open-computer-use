@@ -30,15 +30,16 @@ imagePullSecrets: []
 
 orchestrator:
   # runtimeClassName MUST match a RuntimeClass that already exists in the cluster.
-  # Supported values:
-  #   kata-qemu    Default. Kata Containers — install kata-deploy first
-  #                (docs/kata-runtime.md). Works on containerd 2.x and gives
-  #                hypervisor (microVM) isolation. The other dind.* / persistence
-  #                defaults below assume this runtime.
-  #   "" (empty)   Stock runc + privileged dind (UNSUPPORTED, container-escape
-  #                risk). Local-testing escape hatch only — also set
-  #                dind.kataInit.enabled=false and persistence.varLibDocker
-  #                .persistentVolume.enabled=false. Never ship this to production.
+  # Values:
+  #   kata-qemu    Default, and the recommended runtime. Kata Containers —
+  #                install kata-deploy first (docs/kata-runtime.md). Works on
+  #                containerd 2.x and gives hypervisor (microVM) isolation. The
+  #                other dind.* / persistence defaults below assume this runtime.
+  #   "" (empty)   Stock runc + privileged dind. Functional, but INSECURE — the
+  #                inner daemon shares the host kernel and a container escape is
+  #                trivial. Local-testing escape hatch only; do not run it in
+  #                production. Also set dind.kataInit.enabled=false and
+  #                persistence.varLibDocker.persistentVolume.enabled=false.
   runtimeClassName: kata-qemu
 
   # Single replica is the only supported topology — the pod owns the inner dockerd
@@ -132,7 +133,7 @@ dind:
   # storage driver passed to dockerd. The Kata default is fuse-overlayfs —
   # overlay2 FAILS on the Kata virtio-fs guest root
   # (kata-containers/kata-containers#1888); dind.kataInit installs fuse-overlayfs.
-  # If you run the unsupported runc fallback, set this to overlay2.
+  # If you run the insecure runc fallback, set this to overlay2.
   storageDriver: fuse-overlayfs
 
   # -- Explicit override of whether the dind container runs privileged.
@@ -142,7 +143,7 @@ dind:
   #   privileged=true is SAFE under Kata — the caps are confined to the microVM.
   # false => force the dind container unprivileged.
   # null  => auto-derive from orchestrator.runtimeClassName (empty => true,
-  #   set => false). Only useful for the unsupported runc fallback.
+  #   set => false). Only useful for the runc fallback.
   privileged: true
 
   # -- Kata-guest init wrapper. Runs a chart-managed entrypoint that, before
@@ -154,7 +155,7 @@ dind:
   #   (4) runs the cgroup-v2 PID-1 evacuation shim (docker-library/docker#308) so
   #       nested runc can enter cgroups inside the Kata guest
   # Every step is idempotent and self-detecting. Set enabled=false only for the
-  # unsupported runc fallback. See docs/kata-runtime.md.
+  # runc fallback. See docs/kata-runtime.md.
   kataInit:
     enabled: true
     # extra apk packages installed at container start (idempotent, needs egress)
@@ -229,8 +230,7 @@ persistence:
     # xattrs, and the Kata virtio-fs root drops them (CVE-2021-20263), which
     # breaks e.g. GStreamer binaries. A Block PVC arrives in the guest as a
     # virtio-blk device; dind.kataInit formats it ext4, so xattrs are preserved.
-    # Set enabled=false only for the unsupported runc fallback. See
-    # docs/kata-runtime.md.
+    # Set enabled=false only for the runc fallback. See docs/kata-runtime.md.
     persistentVolume:
       enabled: true
       size: 50Gi
