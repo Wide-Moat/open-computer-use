@@ -10,7 +10,7 @@ This is the Kubernetes analog of running `docker-compose.yml` + `docker-compose.
 │                              │ HTTP (ORCHESTRATOR_URL, MCP_API_KEY)            │
 │                              ▼                                                  │
 │                  Service: ocu-computer-use-server :8081                         │
-│                  (Sysbox DinD pod, see helm/computer-use-server/README.md)      │
+│                  (Kata DinD pod, see helm/computer-use-server/README.md)         │
 │                              │                                                  │
 │                              ▼                                                  │
 │                  StatefulSet: postgres  (Bitnami subchart, or BYO)              │
@@ -19,7 +19,7 @@ This is the Kubernetes analog of running `docker-compose.yml` + `docker-compose.
 
 ## Prerequisites
 
-The same prereqs as `standalone/`: Sysbox on nodes, RWO StorageClass, Ingress controller, DNS + TLS. Plus:
+The same prereqs as `standalone/`: Kata Containers on nodes (see [`docs/kata-runtime.md`](../../../docs/kata-runtime.md)), RWO + Block StorageClass, Ingress controller, DNS + TLS. Plus:
 
 - The upstream Open WebUI Helm repo configured:
   ```bash

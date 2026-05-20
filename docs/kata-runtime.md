@@ -8,24 +8,24 @@ This guide is the runbook for deploying `computer-use-server` on Kubernetes with
 (DinD) runtime. It covers why Kata, how to install it, how to configure the Helm
 chart, and how to verify and troubleshoot the result.
 
-For the Sysbox runtime (containerd 1.x) and the chart reference in general, see
-[`kubernetes.md`](kubernetes.md) and the
+For the chart reference in general, see [`kubernetes.md`](kubernetes.md) and the
 [chart README](../helm/computer-use-server/README.md).
 
 ---
 
 ## Why Kata
 
-The chart's default DinD runtime, **Sysbox**, no longer works on **containerd 2.x**
-— the runtime that ships with current Kubernetes distributions (RKE2 / k3s /
-kubeadm ≥ 1.34). Sysbox fails there with mount-permission errors. Docker
-acquired Nestybox and public Sysbox releases are frozen on containerd 1.x; there
-is no upstream fix.
+Kata Containers is the supported DinD runtime for the Helm chart. It runs each
+pod inside a lightweight VM (a *microVM*) with its own guest kernel, works on
+**containerd 2.x** — the runtime that ships with current Kubernetes
+distributions (RKE2 / k3s / kubeadm ≥ 1.34) — and gives **hypervisor-grade
+isolation**. The cost is a slower cold start and a fixed per-pod memory overhead
+(see [Tradeoffs](#tradeoffs)).
 
-Kata Containers runs each pod inside a lightweight VM (a *microVM*) with its own
-guest kernel. It works on containerd 2.x and gives **hypervisor-grade isolation**
-— stronger than Sysbox's user-namespace approach. The cost is a slower cold
-start and a fixed per-pod memory overhead (see [Tradeoffs](#tradeoffs)).
+Earlier chart versions used Sysbox. Sysbox no longer works on containerd 2.x —
+its public releases are frozen on containerd 1.x with no upstream fix — so the
+chart moved to Kata. The [Tradeoffs](#tradeoffs) table keeps Sysbox as a
+comparison point only; it is no longer a chart option.
 
 ---
 
@@ -108,9 +108,9 @@ at install time.
 
 ## Step 2 — Configure the Helm chart
 
-A ready-to-edit values file is at
-[`examples/helm/kata/values.yaml`](../examples/helm/kata/values.yaml). The
-Kata-specific keys:
+The chart defaults already target Kata — the keys below are the chart defaults,
+shown here so you understand what each one does. A ready-to-edit values file is
+at [`examples/helm/standalone/values.yaml`](../examples/helm/standalone/values.yaml).
 
 ```yaml
 orchestrator:
@@ -134,9 +134,7 @@ Why each setting:
 
 - **`dind.privileged: true`** — `dockerd` needs `CAP_NET_ADMIN`/`CAP_NET_RAW` to
   build its iptables NAT chain. Without it dockerd fails with
-  `iptables: Could not fetch rule set generation id: Permission denied`. The
-  chart's default helper sets `privileged: false` whenever a `runtimeClassName`
-  is present (it assumes Sysbox); `dind.privileged: true` overrides that.
+  `iptables: Could not fetch rule set generation id: Permission denied`.
   **This is safe under Kata** — the capabilities are confined to the microVM and
   cannot reach the host kernel.
 - **`dind.storageDriver: fuse-overlayfs`** — `overlay2` cannot mount on the Kata
@@ -160,7 +158,7 @@ kubectl label namespace open-computer-use \
 
 helm install ocu helm/computer-use-server \
   -n open-computer-use \
-  -f examples/helm/kata/values.yaml
+  -f examples/helm/standalone/values.yaml
 ```
 
 ---
@@ -246,25 +244,28 @@ succeed end to end.
 
 ## Tradeoffs
 
-| Dimension | Sysbox | Kata-qemu | runc + privileged |
-|---|---|---|---|
-| Isolation | user-ns + syscall trapping, **shared** host kernel | hardware VM, **separate** guest kernel | none — host kernel, escape is trivial |
-| containerd 2.x | ❌ broken (frozen on 1.x) | ✅ works | ✅ works |
-| Cold start | fast (~container) | slower (microVM boot, ~1–3 s) | fast |
-| Storage driver | `overlay2` | `fuse-overlayfs` (`overlay2` fails) | `overlay2` / `vfs` |
-| Memory overhead | low | ~150–350 MiB/pod (guest kernel + hypervisor) | none |
-| `privileged` needed | no | yes — but caps confined to the VM | yes — caps on the **host** |
-| Setup complexity | low (when it works) | medium (kata-deploy, init wrapper, Block PVC) | low |
-| Production-safe | yes, on containerd 1.x | yes | **no** |
+Kata is the runtime the chart uses. The table puts it next to the alternatives
+for context — Sysbox is shown only as a historical comparison (it is no longer a
+chart option), and `runc + privileged` is the unsupported testing fallback.
 
-**Bottom line:** on containerd 1.x clusters Sysbox is still the simplest option.
-On containerd 2.x — the modern default — Kata is the supported path and also the
-strongest isolation of the three. `runc + privileged` is only a local
-testing escape hatch, never production.
+| Dimension | Kata-qemu (chart default) | Sysbox (no longer supported) | runc + privileged (unsupported) |
+|---|---|---|---|
+| Isolation | hardware VM, **separate** guest kernel | user-ns + syscall trapping, **shared** host kernel | none — host kernel, escape is trivial |
+| containerd 2.x | ✅ works | ❌ broken (frozen on 1.x) | ✅ works |
+| Cold start | slower (microVM boot, ~1–3 s) | fast (~container) | fast |
+| Storage driver | `fuse-overlayfs` (`overlay2` fails) | `overlay2` | `overlay2` / `vfs` |
+| Memory overhead | ~150–350 MiB/pod (guest kernel + hypervisor) | low | none |
+| `privileged` needed | yes — but caps confined to the VM | no | yes — caps on the **host** |
+| Setup complexity | medium (kata-deploy, init wrapper, Block PVC) | low (when it works) | low |
+| Production-safe | yes | only on containerd 1.x | **no** |
+
+**Bottom line:** Kata is the supported runtime and the strongest isolation of
+the three, and it works on modern containerd 2.x. `runc + privileged` is only a
+local testing escape hatch, never production.
 
 ## See also
 
 - [`kubernetes.md`](kubernetes.md) — Kubernetes deployment overview
 - [chart README](../helm/computer-use-server/README.md) — full values reference
 - [ADR-0011](future-architecture/adr/0011-kata-as-first-class-dind-runtime.md) — the decision record
-- [`examples/helm/kata/values.yaml`](../examples/helm/kata/values.yaml) — copy-paste config
+- [`examples/helm/standalone/values.yaml`](../examples/helm/standalone/values.yaml) — copy-paste config
