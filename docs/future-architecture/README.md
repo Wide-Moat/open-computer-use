@@ -90,7 +90,8 @@ docs/future-architecture/
     ├── 18-open-webui-terminals-observed.md (Phase 6, 8)
     ├── 19-anthropic-process-api.md    (Phase 7, 10 — primary L1 precedent)
     ├── 20-snapstart-hot-swap.md       (Phase 10)
-    └── 21-environment-runner-go.md    (inspiration-only; no Phase consumer)
+    ├── 21-environment-runner-go.md    (inspiration-only; no Phase consumer)
+    └── 22-anthropic-firecracker-microvm-internals-observed.md ⭐ (Phase 3, 7, 9, 10) — locks A37 "no PVC for sandbox session workspace"
 ```
 
 ## Reference repositories
