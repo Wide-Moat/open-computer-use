@@ -49,7 +49,18 @@
             "tag": { "type": "string" }
           }
         },
-        "storageDriver": { "type": "string" }
+        "storageDriver": { "type": "string" },
+        "privileged": {
+          "type": ["boolean", "null"],
+          "$comment": "null => privileged auto-derived from runtimeClassName (legacy). Set true for Kata, false to force unprivileged."
+        },
+        "kataInit": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "$comment": "Enables the chart-managed Kata-guest entrypoint wrapper. Pair with a Kata runtimeClassName and dind.privileged=true." },
+            "extraPackages": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
     "cleanup": {
@@ -89,7 +100,19 @@
         "varLibDocker": {
           "type": "object",
           "required": ["sizeLimit"],
-          "properties": { "sizeLimit": { "type": "string" } }
+          "properties": {
+            "sizeLimit": { "type": "string" },
+            "persistentVolume": {
+              "type": "object",
+              "$comment": "Block-mode PVC for /var/lib/docker (the Kata default). Disable only for the runc fallback.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "size": { "type": "string" },
+                "storageClass": { "type": "string" },
+                "existingClaim": { "type": "string" }
+              }
+            }
+          }
         }
       }
     },
@@ -109,6 +132,42 @@
     },
     "postgresql": false
   },
+  "allOf": [
+    {
+      "$comment": "When a Kata RuntimeClass is used, the dind container must run privileged and the kata init wrapper must stay enabled.",
+      "if": {
+        "properties": {
+          "orchestrator": {
+            "properties": {
+              "runtimeClassName": { "type": "string", "pattern": "^kata" }
+            },
+            "required": ["runtimeClassName"]
+          }
+        },
+        "required": ["orchestrator"]
+      },
+      "then": {
+        "properties": {
+          "dind": {
+            "properties": {
+              "privileged": {
+                "not": { "const": false },
+                "$comment": "Kata needs a privileged dind container (caps confined to the microVM)."
+              },
+              "kataInit": {
+                "properties": {
+                  "enabled": {
+                    "not": { "const": false },
+                    "$comment": "The Kata guest init wrapper is required under a Kata runtime."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "pvcSpec": {
       "type": "object",

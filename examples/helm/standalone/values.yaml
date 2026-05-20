@@ -2,6 +2,18 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 #
 # Minimum-viable values for computer-use-server.
+#
+# The chart runs the inner Docker daemon under Kata Containers. Before installing:
+#   1. Install kata-deploy and confirm the RuntimeClass exists:
+#        kubectl get runtimeclass kata-qemu
+#   2. Allow privileged pods in the target namespace:
+#        kubectl label ns open-computer-use \
+#          pod-security.kubernetes.io/enforce=privileged --overwrite
+#   3. The cluster default StorageClass must provision Block volumes (the chart
+#      uses a Block-mode PVC for /var/lib/docker). Override
+#      persistence.varLibDocker.persistentVolume.storageClass if it does not.
+# Full runbook: docs/kata-runtime.md.
+#
 # Run:
 #   helm install ocu helm/computer-use-server \
 #     -n open-computer-use --create-namespace \

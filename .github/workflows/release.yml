@@ -78,7 +78,7 @@ jobs:
               --set cleanup.image.tag="$VERSION"
             ```
 
-            See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/helm/computer-use-server/README.md) for prerequisites (Sysbox) and full values reference.
+            See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/helm/computer-use-server/README.md) for prerequisites (Kata Containers) and full values reference.
 
             ## Quick Start (Docker Compose)
 

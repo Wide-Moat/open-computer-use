@@ -9,10 +9,11 @@ Two ready-to-tweak deployment recipes for [`helm/computer-use-server/`](../../he
 
 Open WebUI itself is **not** packaged by our chart. Use the upstream chart at <https://github.com/open-webui/helm-charts> instead — `with-open-webui/` shows how to wire the two together.
 
-## Prerequisites (both recipes)
+## Prerequisites
 
-- Kubernetes ≥ 1.27, with [Sysbox](https://github.com/nestybox/sysbox) installed on candidate nodes
-- A StorageClass that supports `ReadWriteOnce`
+- Kubernetes ≥ 1.27
+- [Kata Containers](https://katacontainers.io/) installed on candidate nodes (the chart runs the inner Docker daemon under Kata) — see [`docs/kata-runtime.md`](../../docs/kata-runtime.md)
+- A StorageClass that supports `ReadWriteOnce`, and one that provisions Block volumes for `/var/lib/docker`
 - An Ingress controller (nginx-ingress, Traefik, etc.)
 - DNS + TLS for the public hostnames
 
