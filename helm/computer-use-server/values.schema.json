@@ -132,6 +132,42 @@
     },
     "postgresql": false
   },
+  "allOf": [
+    {
+      "$comment": "When a Kata RuntimeClass is used, the dind container must run privileged and the kata init wrapper must stay enabled.",
+      "if": {
+        "properties": {
+          "orchestrator": {
+            "properties": {
+              "runtimeClassName": { "type": "string", "pattern": "^kata" }
+            },
+            "required": ["runtimeClassName"]
+          }
+        },
+        "required": ["orchestrator"]
+      },
+      "then": {
+        "properties": {
+          "dind": {
+            "properties": {
+              "privileged": {
+                "not": { "const": false },
+                "$comment": "Kata needs a privileged dind container (caps confined to the microVM)."
+              },
+              "kataInit": {
+                "properties": {
+                  "enabled": {
+                    "not": { "const": false },
+                    "$comment": "The Kata guest init wrapper is required under a Kata runtime."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "pvcSpec": {
       "type": "object",

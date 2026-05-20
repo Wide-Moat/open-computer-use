@@ -31,7 +31,7 @@ isolation**. The cost is a slower cold start and a fixed per-pod memory overhead
   `/dev/kvm` available. Check with `ls -l /dev/kvm` on a node.
 - `helm` ≥ 3.14.
 - The target namespace must allow privileged pods (Kata DinD runs privileged —
-  see [why](#configure-the-helm-chart)). Pod Security Admission `enforce`
+  see [why](#step-2--configure-the-helm-chart)). Pod Security Admission `enforce`
   baseline must be `privileged` for that namespace.
 
 ---
