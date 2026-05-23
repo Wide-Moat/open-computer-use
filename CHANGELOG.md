@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — `next/v1` branch
+
+### Changed
+
+- **License migration: BUSL-1.1 → FSL-1.1-Apache-2.0.** All future releases ship under the Functional Source License, Version 1.1, Apache 2.0 Future License. Use, modification, forking, internal self-hosting, and redistribution remain permitted; offering a hosted or embedded service that competes with our paid version(s) requires a separate commercial agreement. Each release automatically converts to Apache-2.0 two years after publication under the Grant of Future License clause. Past releases retain their original BUSL-1.1 terms per the LICENSE file published at that tag. Affected: `LICENSE`, `NOTICE`, `README.md` badge + License section, `CLAUDE.md` License Headers section, `CONTRIBUTING.md`, `package.json`, SPDX headers across 176 source files, `helm/computer-use-server/`, `THIRD-PARTY-LICENSES.md`, `computer-use-server/cli-defaults/*.json`.
+
 ## v0.9.5.0 — bump Open WebUI base to 0.9.5 (2026-05-20)
 
 Minor release: Open WebUI base bumped from `0.9.2` → `0.9.5` (upstream shipped 0.9.3, 0.9.4, 0.9.5 on 2026-05-09). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains in 0.9.3–0.9.5). Frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes; four backend patches needed updated SEARCH/REPLACE anchors to track upstream refactors.

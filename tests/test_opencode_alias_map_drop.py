@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """TEST-02-01: D-05 / D-06 — empty _OPENCODE_ALIAS_MAP and raising _resolve_opencode.
 

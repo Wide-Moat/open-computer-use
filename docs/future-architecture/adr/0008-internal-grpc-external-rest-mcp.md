@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # ADR-0008 — Internal transport: connect-go on L4↔L3 (Phase 7 picks L3↔L1). External: MCP + REST. CDP/ttyd: WebSocket passthrough.

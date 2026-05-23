@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """Tests for fix_skip_rag_files_native_fc.py against v0.9.1 middleware.py."""
 import ast

@@ -1,6 +1,6 @@
 # Third-party dependencies & licensing
 
-This project's source code is BUSL-1.1 (see [`LICENSE`](LICENSE)). The Docker image built from this repo bundles third-party software under various licenses, including but not limited to:
+This project's source code is FSL-1.1-Apache-2.0 (see [`LICENSE`](LICENSE)). The Docker image built from this repo bundles third-party software under various licenses, including but not limited to:
 
 | Component | License | Notes |
 | --- | --- | --- |

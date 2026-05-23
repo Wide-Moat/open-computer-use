@@ -67,6 +67,8 @@ All new source files MUST include an SPDX license header as the first comment:
 
 - Files in `skills/public/describe-image/` or `skills/public/sub-agent/`: `# SPDX-License-Identifier: MIT`
 - Files in other `skills/` directories with their own LICENSE.txt: DO NOT add headers
-- All other new files: `# SPDX-License-Identifier: BUSL-1.1`
+- All other new files: `# SPDX-License-Identifier: FSL-1.1-Apache-2.0`
 
 Always include: `# Copyright (c) 2025 Open Computer Use Contributors`
+
+The FSL-1.1-Apache-2.0 license permits use, modification, forking, internal self-hosting, and redistribution. It prohibits offering the Software as a hosted or embedded service that competes with our paid version(s). Each release automatically converts to Apache-2.0 two years after publication.

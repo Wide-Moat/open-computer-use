@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """Tests for D-01..D-04: legacy SUB_AGENT_DEFAULT_MODEL global removed;
 per-CLI explicit defaults enforced in resolver; CLAUDE_SUB_AGENT_DEFAULT_MODEL
