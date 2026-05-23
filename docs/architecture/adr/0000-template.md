@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
 ---
 status: proposed
 last-reviewed: YYYY-MM-DD
@@ -11,6 +14,12 @@ threat-mitigation-link: null
 ---
 
 # ADR-NNNN: <title>
+
+## Status
+
+`proposed` | `accepted` | `superseded` | `deprecated`
+
+Mirror the value in front-matter. On lifecycle change, update both this section and the front-matter `status` / `superseded-by` fields.
 
 ## Context
 
