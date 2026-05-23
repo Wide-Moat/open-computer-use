@@ -34,5 +34,4 @@ The in-progress materials at [`docs/future-architecture/`](../future-architectur
 1. [`MANIFESTO.md`](./MANIFESTO.md) — what the project is and what's non-negotiable.
 2. [`glossary.md`](./glossary.md) — vocabulary.
 3. [`PROCESS.md`](./PROCESS.md) — how to add new content.
-4. The component diagram in `components/00-overview.md` (when it lands).
-5. Specific ADRs and component specs as needed.
+4. Specific ADRs and component specs as needed (none yet — `adr/` and `components/` will populate per `PROCESS.md`).
