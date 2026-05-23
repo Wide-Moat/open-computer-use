@@ -108,6 +108,12 @@ orchestrator:
   affinity: {}
 
 dind:
+  # Optional override for the dind container's `privileged` SecurityContext.
+  # When unset, _helpers.tpl auto-detects: true if runtimeClassName is empty
+  # (stock runc), false otherwise (Sysbox). Set true explicitly when running
+  # under Kata Containers (VM-isolated; privileged caps cannot escape host).
+  # privileged: true   # uncomment to override auto-detection
+
   # Image for the inner Docker daemon. Must accept the standard dockerd flags.
   image:
     repository: docker
@@ -183,9 +189,25 @@ persistence:
     accessMode: ReadWriteOnce
     existingClaim: ""
 
-  # /var/lib/docker inside the dind container. Must be a dedicated emptyDir —
-  # NEVER a PVC and NEVER shared with other containers (nestybox/sysbox#406).
+  # /var/lib/docker inside the dind container.
+  #
+  # Default: emptyDir (must be dedicated — see nestybox/sysbox#406).
+  # sizeLimit applies only to the emptyDir mode.
+  #
+  # Optional: Block-mode PVC. Set enabled=true + volumeMode=Block to use a
+  # PersistentVolumeClaim (Block volumeMode) instead of emptyDir. The entrypoint
+  # will mkfs.ext4 the raw device and mount it at /var/lib/docker. This is the
+  # supported workaround for Kata + virtio-fs xattr loss (kata#1888,
+  # CVE-2021-20263) where overlay2 layers with security.capability xattrs fail.
   varLibDocker:
+    enabled: false
+    size: 30Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    # Filesystem | Block. Block requires storage class supporting block volumes.
+    volumeMode: Filesystem
+    existingClaim: ""
+    # emptyDir fallback (used when enabled=false or volumeMode=Filesystem without existingClaim)
     sizeLimit: 50Gi
 
 service:

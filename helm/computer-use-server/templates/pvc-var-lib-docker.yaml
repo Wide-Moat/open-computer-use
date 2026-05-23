@@ -1,0 +1,29 @@
+{{- /*
+Optional Block-mode PVC for /var/lib/docker. Useful when running under Kata
+Containers + virtio-fs: virtio-fs drops security.capability xattrs
+(kata-containers/runtime#1888, CVE-2021-20263), which breaks images whose
+layers carry xattrs (most distro packages). A Block-mode PVC arrives as
+virtio-blk in the Kata guest, where it can be mkfs.ext4'd and mounted
+inside the container — full xattr support, durable image cache.
+
+Defaults to disabled; the chart falls back to emptyDir when this is off.
+*/ -}}
+{{- if and .Values.persistence.varLibDocker.enabled (eq (.Values.persistence.varLibDocker.volumeMode | default "Filesystem") "Block") (not .Values.persistence.varLibDocker.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}-var-lib-docker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.varLibDocker.accessMode | default "ReadWriteOnce" }}
+  volumeMode: Block
+  resources:
+    requests:
+      storage: {{ .Values.persistence.varLibDocker.size }}
+  {{- if .Values.persistence.varLibDocker.storageClass }}
+  storageClassName: {{ .Values.persistence.varLibDocker.storageClass | quote }}
+  {{- end }}
+{{- end }}

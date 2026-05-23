@@ -82,11 +82,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/*
 Whether the inner dind container must run privileged.
-true => stock runc (no Sysbox) — required for dockerd to start.
-false => sysbox-runc handles isolation; privileged stays off.
+- true  => stock runc (no Sysbox) or Kata runtime (VM-isolated, privileged safe).
+- false => sysbox-runc handles isolation; privileged stays off.
+
+Set .Values.dind.privileged explicitly to override the runtimeClassName-based
+auto-detection. Useful when running under Kata Containers, which need
+privileged=true so dockerd inside the guest VM can set up iptables, but where
+"privileged" is contained by the hypervisor boundary rather than escaping to
+the host.
 */}}
 {{- define "computer-use-server.dindPrivileged" -}}
-{{- if eq (default "" .Values.orchestrator.runtimeClassName) "" -}}
+{{- if hasKey .Values.dind "privileged" -}}
+{{- .Values.dind.privileged -}}
+{{- else if eq (default "" .Values.orchestrator.runtimeClassName) "" -}}
 true
 {{- else -}}
 false
