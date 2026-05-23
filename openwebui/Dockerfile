@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 ARG OPENWEBUI_VERSION=0.9.5
 FROM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION}

@@ -1,4 +1,4 @@
-{{/* SPDX-License-Identifier: BUSL-1.1 — Copyright (c) 2025 Open Computer Use Contributors */}}
+{{/* SPDX-License-Identifier: FSL-1.1-Apache-2.0 — Copyright (c) 2025 Open Computer Use Contributors */}}
 computer-use-server {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
 
 In-cluster URL:
