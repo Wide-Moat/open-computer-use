@@ -40,6 +40,7 @@ docs/future-architecture/
 ├── roadmap.md                      11 phases (0, 0.5, 1–10), invariants, failure modes, rollback
 ├── antipatterns.md                 ⭐ operational decision log, per-phase index
 ├── gaps.md                         Pre-mortem gap inventory (A–M); suggestions, not commitments
+├── design-notes.md                 Candidate solutions, not yet locked; sibling of gaps.md
 ├── phase-template.md               Skeleton for phase-N-research.md and phase-N-plan.md
 ├── references.md                   External repos + projects, annotated
 ├── architecture/                   Target design — 4-layer spec
@@ -91,7 +92,8 @@ docs/future-architecture/
     ├── 19-anthropic-process-api.md    (Phase 7, 10 — primary L1 precedent)
     ├── 20-snapstart-hot-swap.md       (Phase 10)
     ├── 21-environment-runner-go.md    (inspiration-only; no Phase consumer)
-    └── 22-anthropic-firecracker-microvm-internals-observed.md ⭐ (Phase 3, 7, 9, 10) — locks A37 "no PVC for sandbox session workspace"
+    ├── 22-anthropic-firecracker-microvm-internals-observed.md ⭐ (Phase 3, 7, 9, 10) — locks A37 "no PVC for sandbox session workspace"
+    └── 23-anthropic-microvm-execution-network-secrets-observed.md (Phase 4, 7, 8) — execution/egress/secrets; 4 proposed locks pending sign-off
 ```
 
 ## Reference repositories
