@@ -99,7 +99,7 @@ Adversarial review of PR #143 — Manifesto §01 plus 8 research-buffer files. A
 - **File**: `docs/future-architecture/research/SUMMARY-manifesto-01.md:157-177`
 - **Suggested**: The post-merge updates list (plan file, memory files) was generated before §01 landed. Verify each pointer (plan path, memory filenames) is still accurate before the queued post-merge work runs. The plan file path `/Users/nick/.claude/plans/users-nick-open-computer-use-sandboxd-v-eventual-allen.md` looks machine-generated; confirm it still exists.
 
-### IN-06: Two research-buffer files lack the SPDX license header
+### IN-06: Six research-buffer files lack the SPDX license header
 
 - **File**: `docs/future-architecture/research/bank-buyer.md`, `docs/future-architecture/research/enthusiast-audience.md`, `docs/future-architecture/research/widemoat-thesis-advisor.md`, `docs/future-architecture/research/proof-uipath-anthropic-2026-05.md`, `docs/future-architecture/research/proof-anthropic-sdk-license.md`, `docs/future-architecture/research/advisor-fsl-internal-use.md`
 - **Suggested**: CLAUDE.md "License Headers" rule says all new source files MUST include an SPDX header. `SUMMARY-manifesto-01.md` and `01-audience-and-buyer.md` carry the header; the six research briefs above do not. Research-buffer discipline is lower, but the rule is "all new source files" without a buffer exclusion. Add the two-line header to each on next touch; do not block merge.
