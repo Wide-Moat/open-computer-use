@@ -34,6 +34,10 @@ paths = [
   '''helm/.*/values\.example\.yaml''',
   # Legacy buffer — addressed in Layer 13 migration, not by this gate.
   '''docs/future-architecture/.*''',
+  # Vendored upstream research repos (kata-containers, firecracker, coder, …).
+  # Not part of any release artifact; CVEs and example secrets there are not
+  # our supply-chain risk.
+  '''references/.*''',
   # Node modules / venv / planning cache.
   '''node_modules/.*''',
   '''\.venv.*''',

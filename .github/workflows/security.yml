@@ -98,7 +98,13 @@ jobs:
           severity: CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-          skip-dirs: "node_modules,.venv,.planning,docs/future-architecture"
+          # `references/` is the vendored research buffer (upstream repos like
+          # kata-containers, firecracker, cloud-hypervisor, coder, sysbox).
+          # Same status as `docs/future-architecture/`: research-only, never
+          # part of any release artifact, never imported as a dependency.
+          # CVEs there are not our supply-chain risk and would block every
+          # PR on third-party churn.
+          skip-dirs: "node_modules,.venv,.planning,docs/future-architecture,references"
           format: sarif
           output: trivy-fs.sarif
       - name: Upload SARIF
