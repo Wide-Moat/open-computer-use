@@ -53,8 +53,10 @@ flowchart LR
     BR -->|"Broker scoped-JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
+    %% Compute plane gets a direct denylist check (Egress JWT TTL ≤4h needs it);
+    %% Egress trust-edge revoke is indirect via Credential broker scoped-JWT
+    %% non-reissue (TTL ≤15 min caps propagation), so no direct ORCH→PROXY edge.
     ORCH -.->|"revoke (denylist check)<br/>NFR-SEC-04 ≤5 min"| VM
-    ORCH -.->|"revoke (denylist check)<br/>NFR-SEC-04 ≤5 min"| PROXY
 
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>network-bound identity<br/>NFR-SEC-27"| PROXY
