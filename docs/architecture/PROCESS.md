@@ -45,6 +45,14 @@ Heavier and vendor-backed beats lighter and unknown. The platform targets banks;
 - TBD is a first-class state. Reviewers must not push to remove TBDs prematurely.
 - Skill registry is the canonical example: v1 ships zero default skills bundled; the `SkillProvider` abstraction stays TBD until the contract proves itself.
 
+## Capturing primitives discovered during research
+
+When a research, advisor, or verifier cycle surfaces an architectural primitive that Wide-Moat will need (e.g. evidence-as-code bundle, ModelProvider abstraction, MCP allow-list, DORA RoI field-level traceability, kill-switch SLA, replay-bundle schema), append it to `primitives-backlog.md` immediately. Do not stash primitives in research-buffer files only — they get lost on the next research cycle.
+
+Each entry is one line: `- **<primitive name>** — <one-line purpose> — surfaced in <research-file>; lands in <target-section-or-component>`. Target may be `§02` (NFRs), `§03` (non-negotiables), a component spec, or `TBD` if not yet placed.
+
+The backlog drains in two directions: each entry either resolves into a concrete NFR / principle / spec section (delete from backlog when it lands), or becomes a tracked GitHub issue when scope grows beyond a single line.
+
 ## Adding a new file kind to the tree
 
 Every file under `docs/architecture/` must match an entry in the whitelist at `scripts/docs-lint/architecture-tree-whitelist.sh`. The whitelist exists so that scratch notes, verifier snapshots, screenshots, and AI artifacts cannot drift into the architecture set. CI blocks merge if an unexpected file lands.
