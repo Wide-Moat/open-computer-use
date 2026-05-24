@@ -195,7 +195,6 @@ Confirmed defects from a prior pass — held back from the table until source-ve
 | Egress trust-edge → upstream | implicit-trust → untrusted crossing | § 500.15 encryption in transit | Art. 28 ICT third-party general | Art. 15 (`robustness`) | IVS-09 |
 | Audit pipeline → SIEM | implicit-trust → external sink | § 500.6 audit trail readable by covered entity | Art. 10 detection; retention via record-keeping rules (SEC 17a-4 / CFR / FCA SYSC 9), not DORA Art. 12 | Art. 12 logs accessible | LOG-04 |
 
-
 ## 12. Open questions
 
 1. Cross-tenant isolation grading — `arch/cross-tenant-isolation-grading` (TBD GitHub issue) — measurable target ("tenant A cannot observe tenant B side-channel") not yet in §02.
