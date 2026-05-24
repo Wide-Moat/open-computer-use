@@ -35,6 +35,7 @@ ALLOWED=(
   "MANIFESTO.md"
   "glossary.md"
   "PROCESS.md"
+  "primitives-backlog.md"
 
   # ADRs.
   "adr/README.md"
