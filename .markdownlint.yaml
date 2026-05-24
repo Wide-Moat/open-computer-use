@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# markdownlint configuration.
+#
+# Reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# Use the default rules as the baseline.
+default: true
+
+# MD013 — line length. Architecture docs use long table cells and citation
+# links that legitimately exceed 80 characters. Keep line-length enforcement
+# off and rely on prose discipline + the wc-budget script for size control.
+MD013: false
+
+# MD024 — multiple headings with the same content. Allowed if siblings differ
+# (e.g. "## Status" inside multiple ADRs).
+MD024:
+  siblings_only: true
+
+# MD033 — inline HTML. We use <!-- ... --> comments for SPDX headers above
+# YAML front-matter, and occasional <details> blocks.
+MD033:
+  allowed_elements:
+    - "!--"
+    - "details"
+    - "summary"
+    - "br"
+
+# MD041 — first line in file should be a top-level heading. Our docs lead
+# with an HTML license comment then YAML front-matter, so disable this.
+MD041: false
+
+# MD046 — code-block style. Allow both fenced and indented (research digests
+# sometimes inline indented blocks).
+MD046:
+  style: fenced
+
+# MD059 — link text should be descriptive. Allow "here" / "this" because we
+# use them in legitimate context-sentence patterns.
+MD059: false
