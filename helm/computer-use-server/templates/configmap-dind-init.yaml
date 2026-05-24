@@ -42,7 +42,7 @@ data:
     #     preserves security.capability xattrs that virtio-fs would drop
     #     (CVE-2021-20263).
     {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
-    DEV=/dev/var-lib-docker
+    DEV={{ include "computer-use-server.varLibDockerDevicePath" . }}
     if [ -b "$DEV" ]; then
       if ! blkid -s TYPE -o value "$DEV" 2>/dev/null | grep -q .; then
         log "formatting $DEV as ext4 (first boot)"
@@ -67,9 +67,12 @@ data:
         log "evacuating cgroup-v2 root (PID-1 domain-threaded fix)"
         mkdir -p /sys/fs/cgroup/init
         # Move every PID out of the root cgroup, one per line.
+        # Kernel threads legally refuse migration, so we only count failures.
+        skipped=0
         while read -r pid; do
-          echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true
+          echo "$pid" > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || skipped=$((skipped+1))
         done < /sys/fs/cgroup/cgroup.procs
+        [ "$skipped" -gt 0 ] && log "cgroup evacuation: $skipped PIDs not migrated (kernel threads or already in a child cgroup)"
         # Republish every available controller to the root subtree.
         sed 's/\([^ ]\+\)/+\1/g' /sys/fs/cgroup/cgroup.controllers \
           > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null \

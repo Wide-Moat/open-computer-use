@@ -113,3 +113,12 @@ true
 false
 {{- end -}}
 {{- end -}}
+
+{{/*
+Raw block-device path inside the dind container. Shared by the volumeDevices
+entry in deployment.yaml and the mkfs/mount logic in configmap-dind-init.yaml,
+which MUST agree on this path.
+*/}}
+{{- define "computer-use-server.varLibDockerDevicePath" -}}
+/dev/var-lib-docker
+{{- end -}}
