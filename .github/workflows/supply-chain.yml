@@ -1,0 +1,212 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Supply-chain integrity: SBOM + Cosign keyless signature + in-toto SBOM
+# attestation for every container image we publish.
+#
+# Per CLAUDE.md "Testing & QA discipline (next/v1)" top-3 gate #3:
+# "Signed SBOM + SLSA L3 provenance required for every release artifact.
+#  Syft → SPDX, Cosign-signed; CI fails if missing."
+#
+# Scope of this file: the SBOM + sign + attest half of that gate.
+#
+# SLSA-3 provenance is deferred to a follow-up release workflow that
+# colocates build/push and provenance generation so the real image digest
+# is available to slsa-github-generator's `digest:` input. Hard-coding
+# `digest: ""` violates the generator's contract and is worse than not
+# running it at all. Tracking: `manifesto/05-licensing-posture.md` BoM
+# row #9 (Sigstore/Cosign+Syft+Trivy+SLSA+in-toto) — keep its `status` as
+# `partial` until the release workflow lands.
+#
+# Pinning policy: every `uses:` and container `image:` is pinned to a
+# 40-char commit SHA / `@sha256:<digest>` — zizmor `unpinned-uses` would
+# block merge otherwise. Every actions/checkout sets
+# `persist-credentials: false` (zizmor `artipacked`).
+
+name: supply-chain
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Image ref (registry/name:tag) to sign and attest"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sbom-attest-sign:
+    name: SBOM + sign + attest (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    # `environment: production` enforces required-reviewer approval before
+    # this job runs. Without it, any maintainer with workflow_dispatch
+    # access can sign an arbitrary image as the project's Sigstore
+    # identity ("identity laundering"). The Sigstore certificate that
+    # cosign emits carries the workflow ref + repo as the identity, and
+    # that signature lives in Rekor forever — burning the project's
+    # reputation if it was used to attest an attacker-controlled image.
+    environment: production
+    # Least-privilege: only this job needs id-token / packages /
+    # attestations write — keep them off the workflow-level scope.
+    permissions:
+      contents: read
+      id-token: write       # Required for Cosign keyless / Sigstore OIDC.
+      packages: write       # Required to push signatures + SBOM to GHCR.
+      attestations: write   # Required for GitHub-native attestation API.
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # The 4 images we publish, mirroring release.yml release-body block.
+          - open-computer-use
+          - open-computer-use-server
+          - open-computer-use-cleanup
+          - open-computer-use-webui
+
+    # All `${{ }}` interpolation of context data happens in env-vars; the
+    # `run:` steps only reference `"$VAR"` to defuse shell-injection (CWE-78)
+    # — semgrep rule yaml.github-actions.security.run-shell-injection.
+    env:
+      IMAGE_NAME: ${{ matrix.image }}
+      OWNER: ${{ github.repository_owner }}
+      REPO: ${{ github.repository }}
+      REF_NAME: ${{ github.ref_name }}
+      EVENT_NAME: ${{ github.event_name }}
+      DISPATCH_REF: ${{ inputs.image_ref }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - name: Resolve image ref
+        id: ref
+        # Two gates on the ref before it flows into syft/cosign:
+        #   1. Character whitelist defangs shell metacharacters that could
+        #      survive workflow_dispatch input.
+        #   2. Prefix anchor to `ghcr.io/${OWNER}/` makes it impossible to
+        #      sign an arbitrary registry/image as the project's Sigstore
+        #      identity. Any dispatch trying to sign
+        #      `registry.example.com/attacker/malware:latest` fails here.
+        run: |
+          owner_lower="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ref="$DISPATCH_REF"
+          else
+            ref="ghcr.io/${owner_lower}/${IMAGE_NAME}:${REF_NAME}"
+          fi
+          # Whitelist-only: allowed chars are exactly what a valid OCI ref
+          # needs. Reject anything else outright instead of trying to
+          # escape it.
+          case "$ref" in
+            *[!A-Za-z0-9._/:@-]*)
+              echo "::error::image ref contains disallowed characters: $ref" >&2
+              exit 1
+              ;;
+          esac
+          # Prefix anchor — see header comment above.
+          case "$ref" in
+            ghcr.io/${owner_lower}/*) ;;
+            *)
+              echo "::error::image_ref must start with ghcr.io/${owner_lower}/, got: $ref" >&2
+              exit 1
+              ;;
+          esac
+          # GITHUB_OUTPUT is the canonical write channel — github docs require
+          # using >> "$GITHUB_OUTPUT", not echo into a heredoc.
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409  # v3.7.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+
+      - name: Generate SBOM (SPDX JSON + CycloneDX JSON)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          syft "$IMAGE_REF" \
+            -o spdx-json=sbom.spdx.json \
+            -o cyclonedx-json=sbom.cdx.json
+
+      - name: Sign image (keyless via Sigstore)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        # COSIGN_EXPERIMENTAL is no longer needed since cosign v2 — keyless
+        # signing via Fulcio is the default. See cosign CHANGELOG.
+        run: |
+          cosign sign --yes "$IMAGE_REF"
+
+      - name: Attest SBOM (in-toto, SPDX predicate)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            "$IMAGE_REF"
+
+      - name: Attest CycloneDX SBOM
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          cosign attest --yes \
+            --predicate sbom.cdx.json \
+            --type cyclonedx \
+            "$IMAGE_REF"
+
+      - name: Verify signature + SBOM attestation
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+          REPO_FOR_VERIFY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        # Anchored regex on certificate-identity. The unanchored variant
+        # `https://github.com/${REPO_FOR_VERIFY}` matched typosquats
+        # (`-EVIL` suffix) and signatures emitted by any other workflow in
+        # the same repo. We anchor on:
+        #   - protocol + `^`
+        #   - exact repo
+        #   - exact workflow path (`/.github/workflows/supply-chain.yml`)
+        #   - tag-shape ref (`@refs/tags/v…` on tag push; we accept any
+        #     ref on workflow_dispatch via a separate identity).
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@refs/tags/${REF_NAME}$"
+          else
+            # workflow_dispatch — signature identity carries the dispatch
+            # ref; accept anything under our workflow path on this repo.
+            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@.+$"
+          fi
+
+          cosign verify \
+            --certificate-identity-regexp "$cert_id" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE_REF"
+
+          cosign verify-attestation \
+            --type spdxjson \
+            --certificate-identity-regexp "$cert_id" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE_REF"
+
+      - name: Upload SBOMs as workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: sbom-${{ matrix.image }}
+          path: |
+            sbom.spdx.json
+            sbom.cdx.json
+          # Default retention is 90 days — too long for SBOMs, which leak
+          # internal package versions to anyone with repo read access.
+          # The canonical signed copies live in Rekor + the registry via
+          # `cosign attest` above; the workflow artifact is a debug aid.
+          retention-days: 7
