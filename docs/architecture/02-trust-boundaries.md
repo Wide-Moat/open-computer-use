@@ -8,19 +8,17 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
-Names the trust zones, the data classifications, the boundary properties that cross those zones, the signer identity at each boundary, and the regulator vocabulary every boundary must be readable through. Audience per `manifesto/01-audience-and-buyer.md`: InfoSec reviewer and self-hosting developer, same artifact.
+The zoning map. Audience per `manifesto/01-audience-and-buyer.md`: InfoSec reviewer and self-hosting developer.
 
 ## 1. Purpose and scope
 
-Layer 3 is the zoning map: what zones exist, what data classes cross which boundary, who signs what, and how each boundary maps to regulator vocabulary. Measurable targets stay in `02-nfrs.md`; component internals stay in `components/*.md`; threat content stays in Layer 7.
-
-Our scope as a platform is `MCP interface / control-plane RPC → guest agent → sandbox runtime → egress (proxy + credential broker)`. LLM hosting, chat UI, the caller of our MCP interface, customer IdPs, SIEM destinations, KMS — external actors, never zones we own.
+Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → egress (proxy + credential broker)`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
 
 Product invariant from NFR-SEC-16: the distributed configuration ships no outbound paths to vendor-controlled endpoints. On-prem deployments use only outbound paths the customer enabled.
 
-## 2. Drawn zones
+Measurable targets are in `02-nfrs.md`; component internals are in `components/*.md`; threat content is Layer 7.
 
-Five zones appear as subgraphs on the canonical diagram (§5).
+## 2. Drawn zones
 
 Compute plane in this doc is `data-plane` in §02 (NFR-FLEX-12, NFR-MAINT-02) and `VM` in the §02 mermaid. Egress trust-edge is §02's `egress-proxy` (NFR-SEC-05).
 
@@ -38,7 +36,7 @@ Cross-component encryption-in-transit invariant per NFR-SEC-37: every inter-zone
 
 ## 3. External actors
 
-These are the only systems with which we hold a published contract at a zone boundary. Outbound endpoints that guest workloads or Control plane talk to through Egress trust-edge (LLM upstreams, customer MCP servers, customer object stores, internal corporate APIs) are not listed — they are just destinations behind the egress policy and the credential broker decides which scoped token reaches them.
+Outbound endpoints behind the egress policy (LLM, customer MCP servers, object stores, internal APIs) are not actors — the egress policy gates them and the credential broker selects the scoped token.
 
 | Actor | Boundary it crosses | Contract |
 |---|---|---|
@@ -76,19 +74,19 @@ flowchart LR
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "Ed25519 JWT" --> VM
-    BR -- "scoped JWT" --> VM
+    CP -- "Ed25519 JWT (session ≤4h + RPC ≤60min)" --> VM
+    BR -- "scoped JWT (≤15min)" --> VM
     VM -- "single egress" --> EDGE
     EDGE --> EXT
     CP & BR & VM & EDGE -- "OCSF" --> AUDIT
     AUDIT --> EXT
 ```
 
-Canonical source: `docs/architecture/diagrams/02-trust-boundaries.mmd` (elk renderer, 11 external actors, optional-marking dashed strokes for opt-in configurations). Convention: solid border = always present; dashed border = optional configuration.
+Canonical source: `docs/architecture/diagrams/02-trust-boundaries.mmd`. Convention: solid border = always present; dashed border = optional configuration.
 
 ## 6. Data classification taxonomy
 
-Eight content-keyed classes. Each class maps inbound to a regulator's term; the inverse mapping (our class → customer class) is what the contract binds. Per-tenant data residency (NFR-COMP-13) constrains where any class above PUBLIC may sit on the substrate.
+Eight content-keyed classes. Per-tenant data residency (NFR-COMP-13) constrains where any class above PUBLIC may sit on the substrate.
 
 | Class | NYDFS NPI | GLBA NPI | SEC MNPI | GDPR Art. 4 / 9 | EU AI Act | PCI DSS v4.0 | Retention floor |
 |---|---|---|---|---|---|---|---|
