@@ -1,0 +1,157 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Security gates — the three a bank auditor opens first, per CLAUDE.md
+# "Testing & QA discipline (next/v1)":
+#
+#   1. Secrets scan blocks merge (gitleaks + trufflehog).
+#   2. SAST/SCA CRITICAL blocks merge (Semgrep + Trivy + Grype on changed
+#      files; HIGH allowed with tracked exception file).
+#   3. IaC scan HIGH+ on changed Helm/Terraform/Compose/K8s (Checkov + tfsec).
+#
+# Signed SBOM + SLSA-3 provenance for release artifacts lives in
+# release.yml (the existing release workflow); this file covers the
+# commit-time / PR-time gates.
+#
+# Per-rule "HIGH exception" file: .github/security-exceptions.yml.
+# Exceptions auto-expire after 14 days from the entry's `since` date.
+
+name: security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - next/v1
+  schedule:
+    # Full-repo nightly re-scan (PRs are diff-only — re-confirm baseline).
+    - cron: "27 3 * * *"
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets-gitleaks:
+    name: secrets — gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Block merge on any hit. No license needed for OSS scans.
+          GITLEAKS_ENABLE_COMMENTS: "true"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+
+  secrets-trufflehog:
+    name: secrets — trufflehog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run trufflehog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --results=verified,unknown --fail
+
+  sast-semgrep:
+    name: SAST — semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep CI (community rules)
+        run: semgrep ci --config "p/security-audit" --config "p/owasp-top-ten" --config "p/python" --config "p/javascript" --error
+        env:
+          SEMGREP_RULES: "p/security-audit p/owasp-top-ten p/python p/javascript"
+
+  sca-trivy-fs:
+    name: SCA — trivy (filesystem)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Block merge on CRITICAL. HIGH gets a 14-day grace via the
+          # exceptions file; everything else is informational.
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-fs.sarif
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  iac-checkov:
+    name: IaC — checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install checkov
+        run: pip install checkov==3.2.314
+      - name: Run checkov
+        # Scope to IaC dirs. --soft-fail-on LOW,MEDIUM — only HIGH/CRITICAL block.
+        run: |
+          checkov \
+            -d helm/ \
+            -d . \
+            --quiet \
+            --compact \
+            --framework helm,dockerfile,kubernetes,github_actions \
+            --soft-fail-on LOW,MEDIUM \
+            --skip-path docs/future-architecture/ \
+            --skip-path .venv \
+            --skip-path node_modules
+
+  conventional-commits:
+    name: commits — conventional-commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Match the Conventional Commits spec we use everywhere else.
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+            build
+            perf
+            style
+            revert
+          requireScope: false

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Security finding exceptions — only HIGH-severity findings can be
+# excepted, and only for ≤ 14 days from the `since` date. CRITICAL is
+# never excepted; CI fails regardless of what this file says.
+#
+# Schema:
+#   exceptions:
+#     - id: <CVE-id-or-tool-finding-id>
+#       severity: HIGH
+#       tool: trivy | semgrep | checkov | trufflehog | gitleaks
+#       since: YYYY-MM-DD
+#       expires: YYYY-MM-DD  # must be ≤ since + 14 days
+#       owner: "@github-handle"
+#       reason: one-line justification
+#       remediation: one-line plan
+#
+# CI does NOT yet enforce this file format programmatically — that's a
+# follow-up task once we have actual exceptions to track. For now the file
+# is documentation + a future-CI input.
+
+exceptions: []
