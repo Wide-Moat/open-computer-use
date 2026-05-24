@@ -8,13 +8,13 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
-Names the trust zones, the data classifications, the boundary properties that cross those zones, the signer identity at each boundary, and the regulator vocabulary every boundary must be readable through. Audience is anyone reasoning about where data sits, where it crosses, and who holds the keys on each leg — per `manifesto/01-audience-and-buyer.md`, the bank InfoSec reviewer and the self-hosting developer read this on the same artifact.
+Names the trust zones, the data classifications, the boundary properties that cross those zones, the signer identity at each boundary, and the regulator vocabulary every boundary must be readable through. Audience is anyone reasoning about where data sits, where it crosses, and who holds the keys on each leg — per `manifesto/01-audience-and-buyer.md`, the InfoSec reviewer and the self-hosting developer read this on the same artifact.
 
 Section caps follow `CLAUDE.md`: this file ≤600 lines. The canonical diagram source lives at `docs/architecture/diagrams/02-trust-boundaries.mmd` and is reproduced inline in §5 in a `≤15`-line form.
 
 ## 1. Purpose and scope
 
-Layer 3 is the zoning document. It does **not** restate `02-nfrs.md` measurable targets, it does **not** describe component internals (those live in `components/*.md`), and it does **not** carry threat-model content (that is Layer 7). It carries the **map**: what zones exist, what data classes cross which boundary, who signs what, and how each boundary maps to bank-reviewer vocabulary.
+Layer 3 is the zoning document. It does **not** restate `02-nfrs.md` measurable targets, it does **not** describe component internals (those live in `components/*.md`), and it does **not** carry threat-model content (that is Layer 7). It carries the **map**: what zones exist, what data classes cross which boundary, who signs what, and how each boundary maps to regulator-reviewer vocabulary.
 
 Our scope as a platform is `MCP interface / control-plane RPC → guest agent → sandbox runtime → egress (proxy + credential broker)`. Everything outside that path — LLM hosting, chat UI, the caller of our MCP interface, customer IdPs, customer SIEM destinations, customer KMS — appears on the diagram as an external actor, never as a zone we own.
 
@@ -101,7 +101,7 @@ Eight content-keyed classes. Each class maps inbound to a regulator's term; outb
 | **PUBLIC** | n/a | excluded | n/a | not personal data | n/a | n/a | none |
 | **INTERNAL** | n/a | n/a | n/a | not personal data | n/a | n/a | 1 yr ops |
 | **CONFIDENTIAL (PII)** | NPI on consumers | NPI | n/a | personal data Art. 4(1) | Art. 10 training data | track 2 / track 1 (non-PAN) | NYDFS §500.13 |
-| **RESTRICTED (NPI-financial)** | NPI tied to financial product | NPI | n/a if not material | personal data; Art. 6 lawful basis | high-risk-AI input | PAN, expiry, service code | 5 yr (CFR-cited bank rules) |
+| **RESTRICTED (NPI-financial)** | NPI tied to financial product | NPI | n/a if not material | personal data; Art. 6 lawful basis | high-risk-AI input | PAN, expiry, service code | 5 yr (CFR-cited financial-institution rules) |
 | **RESTRICTED (MNPI)** | n/a | n/a | Reg FD / 10b-5 | n/a directly | n/a | n/a | until public + 2 yr legal hold |
 | **SENSITIVE (special category)** | NPI plus health / biometric | NPI | n/a | Art. 9 special category | Annex III categories | n/a | per Art. 5(1)(e) |
 | **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | DORA Art. 12(2) 10 yr for critical functions |
@@ -186,7 +186,7 @@ Tamper-evidence: hash-chained store always; daily Merkle head software-signed by
 
 ## 11. Regulator citation map
 
-Every drawn zone and major boundary maps to regulator vocabulary. Bank reviewers copy this table into their workpapers; we cite section / control IDs verbatim rather than paraphrasing the regulator text.
+Every drawn zone and major boundary maps to regulator vocabulary. Reviewers copy this table into their workpapers; we cite section / control IDs verbatim rather than paraphrasing the regulator text.
 
 | Our zone / boundary | NIST SP 800-207 | NYDFS Part 500 | DORA | EU AI Act | CCM v4 | CRI Profile v2 |
 |---|---|---|---|---|---|---|
