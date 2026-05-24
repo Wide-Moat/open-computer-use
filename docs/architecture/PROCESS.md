@@ -45,6 +45,12 @@ Heavier and vendor-backed beats lighter and unknown. The platform targets banks;
 - TBD is a first-class state. Reviewers must not push to remove TBDs prematurely.
 - Skill registry is the canonical example: v1 ships zero default skills bundled; the `SkillProvider` abstraction stays TBD until the contract proves itself.
 
+## Adding a new file kind to the tree
+
+Every file under `docs/architecture/` must match an entry in the whitelist at `scripts/docs-lint/architecture-tree-whitelist.sh`. The whitelist exists so that scratch notes, verifier snapshots, screenshots, and AI artifacts cannot drift into the architecture set. CI blocks merge if an unexpected file lands.
+
+When a PR legitimately needs a new file kind (e.g. introducing the `contracts/` directory or a new compliance template), update `ALLOWED` in `architecture-tree-whitelist.sh` in the same PR. Reviewers check that the added pattern is as tight as possible: `compliance/*-mapping.md`, not `compliance/*`.
+
 ## What this file is not
 
 - Not a roadmap. Roadmaps live elsewhere.

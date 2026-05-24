@@ -78,6 +78,18 @@ jobs:
       - name: Check
         run: bash scripts/docs-lint/ai-slop-detector.sh
 
+  tree-whitelist:
+    name: architecture-tree whitelist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check
+        run: bash scripts/docs-lint/architecture-tree-whitelist.sh
+
   ascii-diagram:
     name: ASCII diagram detector
     runs-on: ubuntu-latest
