@@ -51,10 +51,23 @@ cleanup/
 
 # Bundled-skills PoC code — defused-xml gaps, file-perms issues. v1 ships
 # zero default skills (per manifesto/04-non-goals.md); SkillProvider stays
-# TBD. These directories will be deleted, not refactored.
+# TBD. These directories will be deleted, not refactored. Both
+# `skills/public/` and `skills/examples/` are out of scope: v1 GA does
+# not bundle any skill, the directories die together.
 skills/public/pptx/
 skills/public/docx/
 skills/public/webapp-testing/
+skills/examples/
+
+# Main-line Helm chart release workflow — pre-existing run-shell-injection
+# on its `gh release` step. Replaced by the Layer 6+ release workflow once
+# the supply-chain.yml pattern is extended to chart artifacts.
+.github/workflows/release-chart.yml
+
+# Main-line test code — stdlib XML parsing in PoC test fixtures. New
+# components ship their own tests under each component's directory;
+# this top-level `tests/` tree dies as the legacy code does.
+tests/
 
 # --- Not legacy, just out of scope for SAST ---------------------------------
 
