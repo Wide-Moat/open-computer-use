@@ -26,7 +26,7 @@ Compute plane in this doc is `data-plane` in §02 (NFR-FLEX-12, NFR-MAINT-02) an
 
 | # | Zone | One-line role | §02 anchor |
 |---|---|---|---|
-| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server + LLM-upstream proxy (we proxy, we do not host). Single instance per deployment. | NFR-IC-04, NFR-FLEX-14, NFR-REL-01 |
+| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Outbound to LLM and any other upstream goes through Egress trust-edge like any other request; the Control plane is not a model proxy. | NFR-IC-04, NFR-FLEX-14, NFR-REL-01 |
 | 2 | **Credential broker** | Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS. Holds real upstream creds; guest never does. | NFR-SEC-23, NFR-SEC-29, NFR-SEC-25 |
 | 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM (Kata-FC / Kata-CH) on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per NFR-SEC-22; per-tenant network isolation is a deployment property of this zone. | NFR-SEC-02, NFR-SEC-14, NFR-SEC-22, NFR-FLEX-02, NFR-PERF-02/03 |
 | 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per NFR-SEC-27 — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer-CA opt-in; DLP-ICAP a separate opt-in. MCP allow-list enforcement (NFR-SEC-08) sits here. | NFR-SEC-05, NFR-SEC-08, NFR-SEC-17, NFR-SEC-27, NFR-FLEX-15, NFR-COMP-26, NFR-COMP-28 |
@@ -38,19 +38,19 @@ Cross-component encryption-in-transit invariant per NFR-SEC-37: every inter-zone
 
 ## 3. External actors
 
-| Actor | Boundary it crosses | Contract owned by us |
+These are the only systems with which we hold a published contract at a zone boundary. Outbound endpoints that guest workloads or Control plane talk to through Egress trust-edge (LLM upstreams, customer MCP servers, customer object stores, internal corporate APIs) are not listed — they are just destinations behind the egress policy and the credential broker decides which scoped token reaches them.
+
+| Actor | Boundary it crosses | Contract |
 |---|---|---|
-| MCP client (the thing that calls our MCP server) | client → Control plane | yes — MCP authorization spec, audience-validated tokens |
-| LLM upstream (Anthropic / Bedrock / Vertex / vLLM / Ollama) | Control plane → upstream | yes — `ModelProvider` abstraction |
-| Customer IdP (SAML / OIDC) | IdP → Control plane | partial — we are a relying party |
-| Customer SIEM (Splunk / Chronicle / Elastic / QRadar / Sentinel) | Audit pipeline → SIEM | yes — OCSF schema + bridge contract |
-| Customer KMS / HSM (PKCS#11 / KMIP) | Credential broker / Audit pipeline → KMS | yes — PKCS#11 + KMIP contract |
-| Customer object store (S3 / customer S3-compat) | guest → upstream | partial — guest connects via Egress trust-edge with broker-issued token |
-| Customer outbound proxy (Zscaler / Symantec) | Egress trust-edge → customer proxy | yes — chained-proxy contract |
-| Customer DLP-ICAP service | Egress trust-edge → ICAP | yes — RFC 3507 ICAP req-mod + resp-mod contract |
-| SOAR (incident automation) | Control plane ↔ SOAR | yes — signed webhook + admin API |
-| Admin / Operator (PAM-JIT human) | Operator → Control plane | yes — short-lived SAML-asserted attribute claim, no shared service accounts (NFR-COMP-29) |
-| Transparency log (external; daily Merkle head) | Audit pipeline → transparency log | yes — RFC 9162 v2 publishing contract (see §13) |
+| MCP client (the thing that calls our MCP server) | client → Control plane | MCP authorization spec, audience-validated tokens |
+| Customer IdP (SAML / OIDC) | IdP → Control plane | relying-party (we are RP) |
+| Customer SIEM (Splunk / Chronicle / Elastic / QRadar / Sentinel) | Audit pipeline → SIEM | OCSF schema + bridge transport |
+| Customer KMS / HSM | Credential broker / Audit pipeline → KMS | PKCS#11 + KMIP |
+| Customer outbound proxy (Zscaler / Symantec) | Egress trust-edge → customer proxy | chained-proxy contract |
+| Customer DLP-ICAP service | Egress trust-edge → ICAP | RFC 3507 ICAP req-mod + resp-mod |
+| SOAR (incident automation) | Control plane ↔ SOAR | signed webhook + admin API |
+| Admin / Operator (PAM-JIT human) | Operator → Control plane | short-lived SAML-asserted attribute claim; no shared service accounts (NFR-COMP-29) |
+| Transparency log | Audit pipeline → transparency log | RFC 9162 v2 publishing (see §13) |
 
 ## 4. Per-tenant isolation menu
 
