@@ -120,4 +120,8 @@ docs/future-architecture/research/REVIEW-*.md
 docs/future-architecture/research/CROSS-REVIEW-*.md
 docs/future-architecture/research/PLAN-CHECK-*.md
 docs/future-architecture/research/CONTRADICTION-CHECK-*.md
+docs/future-architecture/research/ADVISOR-*.md
+docs/future-architecture/research/NYQUIST-AUDIT-*.md
+docs/future-architecture/research/PATTERN-MAP-*.md
 docs/future-architecture/research/nfr-*.md
+docs/future-architecture/research/layer*.md
