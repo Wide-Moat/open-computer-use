@@ -66,6 +66,58 @@ check() {
       }
     }
   ' "$file" | grep . && fail=1 || true
+
+  # 6. Self-referential CI / doc-rules meta-noise. Reader does not need to be
+  #    told about our line caps, vale lint, banned-vocab list, "diagrams budget"
+  #    inside the doc itself. CLAUDE.md is the rule source; the doc carries
+  #    content, not rules about itself.
+  if grep -nEi '(kept within the [^.]*budget|≤[0-9]+-line (form|cap|budget)|CLAUDE\.md (rules|conventions|line cap|inline-mermaid|Diagrams (budget|rules|inline))|preserve[sd]? .{0,40}(banned-vocab|vale lint)|the surrounding backticks preserve|against (our|the) (project )?banned-vocab)' "$file" > /dev/null; then
+    grep -nEi '(kept within the [^.]*budget|≤[0-9]+-line (form|cap|budget)|CLAUDE\.md (rules|conventions|line cap|inline-mermaid|Diagrams (budget|rules|inline))|preserve[sd]? .{0,40}(banned-vocab|vale lint)|the surrounding backticks preserve|against (our|the) (project )?banned-vocab)' "$file"
+    echo "FAIL: $file contains self-referential CI / doc-rules meta-noise"
+    fail=1
+  fi
+
+  # 7. "Holds in spirit" / "honest about" / "as a binding artifact for" —
+  #    hedge phrasing that adds no factual content.
+  if grep -nEi '(hold[s]? in spirit|honest about (not )?being|the binding artifact for|is what the contract binds)' "$file" > /dev/null; then
+    grep -nEi '(hold[s]? in spirit|honest about (not )?being|the binding artifact for|is what the contract binds)' "$file"
+    echo "FAIL: $file contains hedge / pompous phrasing"
+    fail=1
+  fi
+
+  # 8. "the only X" / "is the only" boastful framing — superlative without a
+  #    measurable referent. CLAUDE.md "no adjectives without measurable
+  #    referent".
+  #    Allowed: "is the only zone" / "is the only path" in legitimate context.
+  #    Banned: "is the only plaintext segments and …" boastful style.
+  if grep -nEi '\b(is|are) the only [a-z]+ (and|listed|that)\b' "$file" > /dev/null; then
+    grep -nEi '\b(is|are) the only [a-z]+ (and|listed|that)\b' "$file"
+    echo "FAIL: $file contains boastful 'the only X' framing"
+    fail=1
+  fi
+
+  # 9. Triple parallel construction "X stay in Y; X' stay in Y'; X'' stay in Y''"
+  #    pattern. AI loves three-clause parallelism. Looks for repeated verb
+  #    three times in one line with semicolons.
+  if grep -nE '([A-Za-z]+) [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in' "$file" > /dev/null; then
+    grep -nE '([A-Za-z]+) [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in' "$file"
+    echo "FAIL: $file has triple-parallel 'X verbs in Y; X' verbs in Y'; …' construction"
+    fail=1
+  fi
+
+  # 10. Triple negation "It does NOT X, it does NOT Y, it does NOT Z" pattern.
+  if grep -nEi 'does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*?' "$file" > /dev/null; then
+    grep -nEi 'does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*?' "$file"
+    echo "FAIL: $file has triple-negation 'It does not X. It does not Y. It does not Z' construction"
+    fail=1
+  fi
+
+  # 11. List-of-three "no X, no Y, no Z" inside parentheses.
+  if grep -nE '\(no [a-z-]+, no [a-z-]+, no [a-z-]+\)' "$file" > /dev/null; then
+    grep -nE '\(no [a-z-]+, no [a-z-]+, no [a-z-]+\)' "$file"
+    echo "FAIL: $file has list-of-three '(no X, no Y, no Z)' construction"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do
