@@ -41,28 +41,62 @@ permissions:
 
 concurrency:
   group: security-${{ github.ref }}
-  cancel-in-progress: true
+  # Do NOT cancel in-progress runs. On 5 quick commits to a PR, cancellation
+  # leaves intermediate commits unscanned by semgrep/trivy/checkov (they
+  # only see the working tree). gitleaks with fetch-depth: 0 catches
+  # history regardless. Letting runs queue is the safer default for
+  # merge-blocking gates.
+  cancel-in-progress: false
 
 jobs:
   secrets-gitleaks:
     name: secrets — gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      # Two-checkout pattern. The PR HEAD provides the source files to scan,
+      # but the gitleaks CONFIG (`.gitleaks.toml`) comes from the BASE ref —
+      # never from the PR head. Without this split, a fork PR can ship a
+      # permissive allowlist (`paths = ['''.*''']`) and the gate passes
+      # green for any secret introduced in that PR. Canonical CI supply-
+      # chain attack against allowlist-based scanners.
+      #
+      # For `push` events (no PR), `github.base_ref` is empty — fall back
+      # to the same ref so the workflow still runs on direct pushes.
+      - name: Checkout PR head (source)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
           persist-credentials: false
+          path: pr-head
+      - name: Checkout base ref (config only)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          ref: ${{ github.base_ref || github.ref }}
+          persist-credentials: false
+          path: base
+          sparse-checkout: |
+            .gitleaks.toml
+          sparse-checkout-cone-mode: false
       - name: Run gitleaks (Docker)
         # The official gitleaks-action requires a paid license for GitHub
         # Organizations. Use the upstream Docker image directly — same
         # detect engine, no license server. Pinned by digest so a future
         # `:latest` push cannot silently change scan behaviour on a
         # merge-blocking gate.
+        #
+        # `:ro` mount + non-root user + `--read-only` container fs are
+        # defence-in-depth against a compromised gitleaks image (which is
+        # mitigated by the digest pin above; this is the second layer).
+        # Config is overlaid from base/ so PR head can never override it.
         run: |
           docker run --rm \
-            -v "${{ github.workspace }}:/repo" \
+            --read-only \
+            --user "$(id -u):$(id -g)" \
+            -v "${{ github.workspace }}/pr-head:/repo:ro" \
+            -v "${{ github.workspace }}/base/.gitleaks.toml:/repo/.gitleaks.toml:ro" \
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            detect --source=/repo --no-banner --redact --exit-code 1
+            detect --source=/repo --no-banner --redact --exit-code 1 \
+            --config=/repo/.gitleaks.toml
 
   secrets-trufflehog:
     name: secrets — trufflehog
@@ -76,23 +110,42 @@ jobs:
         uses: trufflesecurity/trufflehog@0ec3634f6cf66a61912a923fee9d20cc45633a67  # main as of 2026-05-24
         with:
           path: ./
-          # The action passes --fail internally when `fail` is its default;
-          # don't duplicate it in extra_args. `results=` filters output only.
-          extra_args: --results=verified,unknown
+          # `--fail` is explicit — past action versions have shipped defaults
+          # where the binary printed findings but returned exit 0. Don't rely
+          # on action-default semantics for a merge-blocking gate.
+          #
+          # `--no-verification` removes the egress data-exfiltration path:
+          # default `--results=verified` dials AWS/GitHub/Slack/… from the
+          # runner to validate detected patterns. For a bank-targeting CI
+          # we accept the higher false-positive rate over outbound calls.
+          extra_args: --no-verification --fail
 
   sast-semgrep:
     name: SAST — semgrep
     runs-on: ubuntu-latest
     container:
-      image: returntocorp/semgrep:1.163.0@sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03
+      # Org renamed from `returntocorp/semgrep` to `semgrep/semgrep`. Same
+      # image; the old name is mirrored but won't be updated forever.
+      image: semgrep/semgrep:1.163.0@sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
+          # Diff-aware semgrep needs history back to the merge-base.
+          fetch-depth: 0
           persist-credentials: false
       - name: Semgrep CI (community rules)
-        # `semgrep ci` already exits non-zero on findings — no --error flag.
+        env:
+          # Required for diff-aware scanning + PR commenting. Without it,
+          # `semgrep ci` falls back to a full-repo scan and (in some
+          # versions) downgrades to non-blocking behaviour on certain
+          # codepaths. Token is workflow-scoped and short-lived.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `--error` is explicit. Past `semgrep ci` versions have had
+        # config paths where the binary exits 0 with findings printed;
+        # the flag turns any finding into a non-zero exit.
         run: |
           semgrep ci \
+            --error \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
@@ -130,12 +183,37 @@ jobs:
           # log line is the smoking gun. Issue:
           # https://github.com/aquasecurity/trivy-action/issues/309
           limit-severities-for-sarif: true
-      - name: Upload SARIF
+      - name: Upload SARIF (CRITICAL)
         if: always()
         uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+      # Second pass — HIGH severity, NON-blocking (exit-code 0). Without
+      # this the security-exceptions.yml schema and the CLAUDE.md
+      # "HIGH allowed for 14 days with a tracked exception file" rule
+      # both refer to a stream of findings that nothing in this workflow
+      # produces. Uploading HIGH as informational SARIF makes the
+      # exception ledger meaningful and gives a regulator something to
+      # audit against.
+      - name: Trivy filesystem scan (HIGH, informational)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH
+          exit-code: "0"
+          ignore-unfixed: true
+          skip-dirs: "node_modules,.venv,.planning,docs/future-architecture,references"
+          format: sarif
+          output: trivy-fs-high.sarif
+          limit-severities-for-sarif: true
+      - name: Upload SARIF (HIGH)
+        if: always()
+        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
+        with:
+          sarif_file: trivy-fs-high.sarif
+          category: trivy-fs-high
 
   iac-checkov:
     name: IaC — checkov
@@ -171,7 +249,10 @@ jobs:
   conventional-commits:
     name: commits — conventional-commits
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Accept both events. If we ever switch to `pull_request_target` as
+    # mitigation for fork-PR config-injection (see secrets-gitleaks
+    # header), this gate keeps firing instead of silently disabling.
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:

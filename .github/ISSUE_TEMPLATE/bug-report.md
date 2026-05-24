@@ -6,6 +6,17 @@ labels: ["bug"]
 assignees: []
 ---
 
+> ## ⛔ Stop — is this a security issue?
+>
+> Auth bypass, sandbox escape, credential exposure, RCE, or any other
+> finding that could be exploited against a deployment **must NOT be
+> filed here**. Use the private channel:
+>
+> <https://github.com/Wide-Moat/open-computer-use/security/advisories/new>
+>
+> Public bug reports do not get embargoed. Once submitted you cannot
+> un-disclose the finding.
+
 ## What's broken
 
 One sentence stating the observed behaviour. No marketing tone, no preamble.
@@ -29,6 +40,8 @@ What actually happened. Include error output, stack traces, log lines.
 - Branch / version:
 - Deployment (Docker Compose / Helm / direct):
 - OS + arch:
+- Host kernel (`uname -a`):
+- Container runtime (runc / kata / gVisor):
 - Browser (if Computer Use):
 
 ## Notes

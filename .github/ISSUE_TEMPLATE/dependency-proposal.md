@@ -32,6 +32,16 @@ E.g. "identity provider", "secrets store", "egress proxy".
   - [ ] Reproducible build documented
   - [ ] Signed releases (Cosign / Sigstore / equivalent)
   - [ ] Cosign-attested artifacts
+  - Fulcio certificate identity verified against (paste the
+    `--certificate-identity-regexp` you used):
+
+## Maintainer health (CLAUDE.md "Supply-chain gate")
+
+- Named maintainers in the last 12 months (`git shortlog -sne --since=12.months`):
+- Bus factor: how many people merged ≥ 5% of commits? **≥ 2 required.**
+- Last release date and cadence:
+- Open security advisories on the project:
+- Sole-maintainer? **REJECT** unless a foundation owns the namespace.
 
 ## License gate
 

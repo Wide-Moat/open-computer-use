@@ -45,6 +45,14 @@ jobs:
   sbom-attest-sign:
     name: SBOM + sign + attest (${{ matrix.image }})
     runs-on: ubuntu-latest
+    # `environment: production` enforces required-reviewer approval before
+    # this job runs. Without it, any maintainer with workflow_dispatch
+    # access can sign an arbitrary image as the project's Sigstore
+    # identity ("identity laundering"). The Sigstore certificate that
+    # cosign emits carries the workflow ref + repo as the identity, and
+    # that signature lives in Rekor forever — burning the project's
+    # reputation if it was used to attest an attacker-controlled image.
+    environment: production
     # Least-privilege: only this job needs id-token / packages /
     # attestations write — keep them off the workflow-level scope.
     permissions:
@@ -80,15 +88,19 @@ jobs:
 
       - name: Resolve image ref
         id: ref
-        # `DISPATCH_REF` is a workflow_dispatch free-form input. The image
-        # ref pattern is restricted to registry-safe characters (alnum,
-        # `.`, `-`, `_`, `/`, `:`, `@`) to defang shell metacharacters
-        # before the value flows into syft/cosign in later steps.
+        # Two gates on the ref before it flows into syft/cosign:
+        #   1. Character whitelist defangs shell metacharacters that could
+        #      survive workflow_dispatch input.
+        #   2. Prefix anchor to `ghcr.io/${OWNER}/` makes it impossible to
+        #      sign an arbitrary registry/image as the project's Sigstore
+        #      identity. Any dispatch trying to sign
+        #      `registry.example.com/attacker/malware:latest` fails here.
         run: |
+          owner_lower="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             ref="$DISPATCH_REF"
           else
-            ref="ghcr.io/${OWNER}/${IMAGE_NAME}:${REF_NAME}"
+            ref="ghcr.io/${owner_lower}/${IMAGE_NAME}:${REF_NAME}"
           fi
           # Whitelist-only: allowed chars are exactly what a valid OCI ref
           # needs. Reject anything else outright instead of trying to
@@ -96,6 +108,14 @@ jobs:
           case "$ref" in
             *[!A-Za-z0-9._/:@-]*)
               echo "::error::image ref contains disallowed characters: $ref" >&2
+              exit 1
+              ;;
+          esac
+          # Prefix anchor — see header comment above.
+          case "$ref" in
+            ghcr.io/${owner_lower}/*) ;;
+            *)
+              echo "::error::image_ref must start with ghcr.io/${owner_lower}/, got: $ref" >&2
               exit 1
               ;;
           esac
@@ -147,15 +167,34 @@ jobs:
         env:
           IMAGE_REF: ${{ steps.ref.outputs.ref }}
           REPO_FOR_VERIFY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        # Anchored regex on certificate-identity. The unanchored variant
+        # `https://github.com/${REPO_FOR_VERIFY}` matched typosquats
+        # (`-EVIL` suffix) and signatures emitted by any other workflow in
+        # the same repo. We anchor on:
+        #   - protocol + `^`
+        #   - exact repo
+        #   - exact workflow path (`/.github/workflows/supply-chain.yml`)
+        #   - tag-shape ref (`@refs/tags/v…` on tag push; we accept any
+        #     ref on workflow_dispatch via a separate identity).
         run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@refs/tags/${REF_NAME}$"
+          else
+            # workflow_dispatch — signature identity carries the dispatch
+            # ref; accept anything under our workflow path on this repo.
+            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@.+$"
+          fi
+
           cosign verify \
-            --certificate-identity-regexp "https://github.com/${REPO_FOR_VERIFY}" \
+            --certificate-identity-regexp "$cert_id" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$IMAGE_REF"
 
           cosign verify-attestation \
             --type spdxjson \
-            --certificate-identity-regexp "https://github.com/${REPO_FOR_VERIFY}" \
+            --certificate-identity-regexp "$cert_id" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$IMAGE_REF"
 
@@ -166,3 +205,8 @@ jobs:
           path: |
             sbom.spdx.json
             sbom.cdx.json
+          # Default retention is 90 days — too long for SBOMs, which leak
+          # internal package versions to anyone with repo read access.
+          # The canonical signed copies live in Rekor + the registry via
+          # `cosign attest` above; the workflow artifact is a debug aid.
+          retention-days: 7

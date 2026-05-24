@@ -31,7 +31,10 @@ paths = [
   '''.*\.min\.js$''',
   '''computer-use-server/static/xterm.min.js''',
   # Helm chart values examples sometimes contain placeholder secrets.
-  '''helm/.*/values\.example\.yaml''',
+  # Tight match on the canonical chart name only — anything else under
+  # helm/ stays in scope so a real secret in a future chart's
+  # values.example.yaml is not silently allowlisted.
+  '''helm/open-computer-use/values\.example\.yaml''',
   # Legacy buffer — addressed in Layer 13 migration, not by this gate.
   '''docs/future-architecture/.*''',
   # Vendored upstream research repos (kata-containers, firecracker, coder, …).
@@ -44,10 +47,11 @@ paths = [
   '''\.planning/.*''',
 ]
 
-# Stop-words for entropy-based rules (the generic-api-key rule has high
-# false-positive rate on natural language fragments).
-stopwords = [
-  "TwoKeyMap",
-  "FourKeyMap",
-  "construct",
-]
+# Stop-words for entropy-based rules — DELIBERATELY EMPTY.
+#
+# Stopwords silence the generic-api-key rule for ANY string containing the
+# stopword as a substring, repo-wide. That is too blunt a tool: a real
+# secret like `password-construct-12345` would be hidden by the stopword
+# `construct`. If a specific file produces noise, allowlist that file's
+# path under `paths` above instead of the substring globally.
+stopwords = []

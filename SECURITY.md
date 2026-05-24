@@ -27,7 +27,12 @@ We aim for:
 
 - Acknowledgement of receipt: ≤ 3 business days.
 - Initial severity assessment: ≤ 5 business days.
-- Patch + advisory for a confirmed Critical/High: ≤ 30 days from confirmation, faster when feasible.
+- Patch + advisory for a confirmed vulnerability:
+  - Critical with active exploitation: ≤ 30 days from confirmation.
+  - Other Critical / High: ≤ 90 days from confirmation, matching the
+    GitHub Security Advisory default coordinated-disclosure window.
+
+A faster patch is always possible — these are upper bounds, not targets.
 
 ## Supported versions
 
@@ -37,4 +42,4 @@ We patch security issues on `main` and `next/v1`. We do not back-port fixes to t
 
 ## Coordinated disclosure
 
-We follow [coordinated vulnerability disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure). Once a fix is available and customers have had a reasonable window to upgrade, the advisory is made public with credit to the reporter (if requested).
+We follow [coordinated vulnerability disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure). Once a fix is available and customers have had ≥ 30 days to upgrade, the advisory is made public with credit to the reporter (if requested).

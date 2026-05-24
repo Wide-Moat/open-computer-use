@@ -66,3 +66,57 @@
 /NOTICE                                 @Wide-Moat/maintainers @Wide-Moat/security
 /CLAUDE.md                              @Wide-Moat/architects @Wide-Moat/maintainers
 /THIRD-PARTY-LICENSES.md                @Wide-Moat/security
+
+# ---------------------------------------------------------------------------
+# High-risk runtime + deployment surface — security review mandatory.
+# ---------------------------------------------------------------------------
+
+# Sandbox base image; Docker socket; agent runtime — single highest-risk
+# file in the repo.
+/Dockerfile                             @Wide-Moat/security @Wide-Moat/maintainers
+
+# Deployment recipes — anyone landing here is shipping infra changes.
+/docker-compose.yml                     @Wide-Moat/maintainers @Wide-Moat/security
+/docker-compose.webui.yml               @Wide-Moat/maintainers @Wide-Moat/security
+/docker-compose.test.yml                @Wide-Moat/maintainers @Wide-Moat/security
+
+# Supply-chain entry points — dependency churn is a security event.
+/requirements.txt                       @Wide-Moat/security @Wide-Moat/maintainers
+/package.json                           @Wide-Moat/security @Wide-Moat/maintainers
+/package-lock.json                      @Wide-Moat/security @Wide-Moat/maintainers
+/server.json                            @Wide-Moat/security @Wide-Moat/maintainers
+
+# Helm chart — bank deployment substrate, scanned by checkov.
+/helm/                                  @Wide-Moat/maintainers @Wide-Moat/security
+
+# Orchestrator components — they hold the Docker socket.
+/computer-use-server/                   @Wide-Moat/maintainers
+/openwebui/                             @Wide-Moat/maintainers
+/settings-wrapper/                      @Wide-Moat/maintainers
+/skills/                                @Wide-Moat/maintainers
+/sandboxd/                              @Wide-Moat/maintainers
+/cron/                                  @Wide-Moat/maintainers
+
+# Shell scripts outside docs-lint — privileged execution paths.
+/scripts/                               @Wide-Moat/maintainers
+/tests/                                 @Wide-Moat/maintainers
+
+# All build/release/CI workflows — same blast radius as security.yml.
+/.github/workflows/build.yml            @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/release.yml          @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/release-chart.yml    @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/helm.yml             @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/codeql.yml           @Wide-Moat/security
+
+# Dependency-bump automation — security must see every PR.
+/.github/dependabot.yml                 @Wide-Moat/security
+
+# Issue + advisory surface.
+/.github/ISSUE_TEMPLATE/                @Wide-Moat/maintainers @Wide-Moat/architects
+/SECURITY.md                            @Wide-Moat/security
+
+# Secret-scanner allowlist — every edit is a potential gate bypass.
+/.gitleaks.toml                         @Wide-Moat/security
+
+# Release log.
+/CHANGELOG.md                           @Wide-Moat/maintainers
