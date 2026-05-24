@@ -8,9 +8,8 @@
 # "Signed SBOM + SLSA L3 provenance required for every release artifact.
 #  Syft → SPDX, Cosign-signed; CI fails if missing."
 #
-# This workflow fires on the same tag-push event as release.yml. It is
-# kept separate so the existing release workflow remains unchanged and
-# auditable; the supply-chain additions can be reviewed in isolation.
+# Kept separate from release.yml so the additions can be reviewed in
+# isolation and the existing release workflow stays untouched.
 
 name: supply-chain
 
@@ -47,17 +46,31 @@ jobs:
           - open-computer-use-cleanup
           - open-computer-use-webui
 
+    # All `${{ }}` interpolation of context data happens in env-vars; the
+    # `run:` steps only reference `"$VAR"` to defuse shell-injection (CWE-78)
+    # — semgrep rule yaml.github-actions.security.run-shell-injection.
+    env:
+      IMAGE_NAME: ${{ matrix.image }}
+      OWNER: ${{ github.repository_owner }}
+      REPO: ${{ github.repository }}
+      REF_NAME: ${{ github.ref_name }}
+      EVENT_NAME: ${{ github.event_name }}
+      DISPATCH_REF: ${{ inputs.image_ref }}
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve image ref
         id: ref
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "ref=${{ inputs.image_ref }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ref="$DISPATCH_REF"
           else
-            echo "ref=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            ref="ghcr.io/${OWNER}/${IMAGE_NAME}:${REF_NAME}"
           fi
+          # GITHUB_OUTPUT is the canonical write channel — github docs require
+          # using >> "$GITHUB_OUTPUT", not echo into a heredoc.
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.7.0
@@ -65,41 +78,45 @@ jobs:
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0.17.7
 
-      - name: Generate SBOM (SPDX JSON)
+      - name: Generate SBOM (SPDX JSON + CycloneDX JSON)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
         run: |
-          syft "${{ steps.ref.outputs.ref }}" \
+          syft "$IMAGE_REF" \
             -o spdx-json="sbom.spdx.json" \
             -o cyclonedx-json="sbom.cdx.json"
 
       - name: Sign image (keyless via Sigstore)
         env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          cosign sign --yes "${{ steps.ref.outputs.ref }}"
+          cosign sign --yes "$IMAGE_REF"
 
       - name: Attest SBOM (in-toto, SPDX predicate)
         env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign attest --yes \
             --predicate sbom.spdx.json \
             --type spdxjson \
-            "${{ steps.ref.outputs.ref }}"
+            "$IMAGE_REF"
 
       - name: Attest CycloneDX SBOM
         env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign attest --yes \
             --predicate sbom.cdx.json \
             --type cyclonedx \
-            "${{ steps.ref.outputs.ref }}"
+            "$IMAGE_REF"
 
       - name: GitHub-native SBOM attestation
-        # Belt and braces: the GitHub attestation API stores the SBOM in
-        # the repo's attestation log so it's discoverable without Sigstore
-        # tooling. Cosign + Rekor still produces the canonical, verifiable
-        # artifact above.
+        # Belt and braces: the GitHub attestation API stores the SBOM in the
+        # repo's attestation log so it's discoverable without Sigstore
+        # tooling. Cosign + Rekor still produce the canonical artifact above.
         uses: actions/attest-sbom@v2
         with:
           subject-name: ${{ steps.ref.outputs.ref }}
@@ -108,18 +125,20 @@ jobs:
 
       - name: Verify signature + SBOM attestation
         env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+          REPO_FOR_VERIFY: ${{ github.repository }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
           cosign verify \
-            --certificate-identity-regexp "https://github.com/${{ github.repository }}" \
+            --certificate-identity-regexp "https://github.com/${REPO_FOR_VERIFY}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            "${{ steps.ref.outputs.ref }}"
+            "$IMAGE_REF"
 
           cosign verify-attestation \
             --type spdxjson \
-            --certificate-identity-regexp "https://github.com/${{ github.repository }}" \
+            --certificate-identity-regexp "https://github.com/${REPO_FOR_VERIFY}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            "${{ steps.ref.outputs.ref }}"
+            "$IMAGE_REF"
 
       - name: Upload SBOMs as workflow artifacts
         uses: actions/upload-artifact@v4
@@ -145,9 +164,9 @@ jobs:
           - open-computer-use-server
           - open-computer-use-cleanup
           - open-computer-use-webui
-    # SLSA generator-container@v2 is the official slsa-framework artifact
-    # for container images; it builds the provenance, signs it via the
-    # Sigstore Fulcio CA, and pushes it to the registry next to the image.
+    # SLSA generator-container@v2 is the official slsa-framework workflow for
+    # container images; it builds provenance, signs it via Sigstore Fulcio,
+    # and pushes the attestation next to the image in the registry.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
     with:
       image: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
