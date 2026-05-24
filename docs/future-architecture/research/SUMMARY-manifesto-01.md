@@ -152,29 +152,30 @@ on 2027-05-24.
    `arch/modelprovider-scope`.
 ```
 
-File body counted from front-matter through last open question is 76 lines of prose — within the 80-line cap. Banned-vocab check passes: no "comprehensive / robust / seamless / powerful / best-in-class / industry-leading / modern / elegant / battle-tested". Banned-phrase check passes: no "It's worth noting / It is important to / In this section / This document will / Going forward / Please note / Happy coding / delve".
+Draft body inside this synthesis is ~76 lines; the shipped §01 came in at 57 lines after the pre-merge tightening (FDIC/OCC drop, forward-ref removal, component-list trim, persona split, sentence breakup). Within the 80-line cap. Banned-vocab check passes: no "comprehensive / robust / seamless / powerful / best-in-class / industry-leading / modern / elegant / battle-tested". Banned-phrase check passes: no "It's worth noting / It is important to / In this section / This document will / Going forward / Please note / Happy coding / delve".
 
-## Required plan + memory updates (queued for after §01 PR merges)
+### Open-Question reconciliation between this draft and the shipped §01
 
-Queued — do NOT apply until §01 lands on `next/v1`.
+The draft's Open Question 4 was FedRAMP-v1-or-v2; the shipped §01 retargeted it to ModelProvider-scope (embedding/rerank models). FedRAMP-v1-or-v2 deferred to a later compliance section (or `arch/fedramp-v1-or-v2` issue when filed). The shipped §01 also added a fifth Open Question covering public-sector and academic-consortium Additional Permissions edge cases (`arch/additional-permissions-edge-cases`) that did not appear in this draft.
 
-1. **Plan file** `/Users/nick/.claude/plans/users-nick-open-computer-use-sandboxd-v-eventual-allen.md`:
-   - Replace every instance of "EU AI Act high-risk 2 Aug 2026" with "EU AI Act Annex III standalone 2 Dec 2027 / product-embedded 2 Aug 2028 (Digital Omnibus 7 May 2026)".
-   - Add a 2026-05 shock-events row capturing UiPath Automation Suite (5 May) and Anthropic self-hosted sandboxes + MCP tunnels (19 May).
-   - Add SR 26-2 (17 Apr 2026) row: MRM exclusion of gen/agentic AI, and the consequence (TPRM / cyber / op-risk veto path strengthens).
-   - Update verifier coverage map row M-02 to reference the four-clause thesis as the falsifiable claim instead of "in-perimeter only".
+## Required plan + memory updates — COMPLETED 2026-05-24 post-merge
 
-2. **Memory** `project_widemoat_positioning.md`:
-   - Replace the existing thesis paragraph. Quote old wording verbatim in a "superseded" block, then insert the new thesis paragraph from §"Positioning thesis" above.
-   - Update the file's `last-reviewed` line if present.
+All four items below were applied during the PR #143 post-merge follow-up cycle. Kept for audit trail.
 
-3. **Memory** `project_next_v1_layer_0_status.md`:
-   - Add a Layer 1 §01 status entry listing the three research brief paths: `bank-buyer.md`, `enthusiast-audience.md`, `widemoat-thesis-advisor.md`, plus a pointer to this synthesis.
-   - Note the four-clause thesis as the load-bearing decision for §01.
+1. **Plan file** `/Users/nick/.claude/plans/users-nick-open-computer-use-sandboxd-v-eventual-allen.md` — DONE.
+   - Replaced "EU AI Act high-risk 2 Aug 2026" with "Annex III standalone 2 Dec 2027 / product-embedded 2 Aug 2028 (Digital Omnibus 7 May 2026)".
+   - Added 2026-05 shock-events row (UiPath 5 May / Anthropic 19 May).
+   - Added SR 26-2 (17 Apr 2026) row.
+   - Updated verifier coverage map row M-02 to reference the four-clause thesis.
 
-4. **New memory** `reference_2026_regulator_triad.md` (proposed):
-   - Capture the forcing-function triad: NYDFS 21 Oct 2025 + DORA 2026 enforcement + EU AI Act post-Omnibus Annex III 2 Dec 2027.
-   - Single source of truth for "why now" citations across future architecture docs.
+2. **Memory** `project_widemoat_positioning.md` — DONE.
+   - Old "doesn't exist" thesis kept in a SUPERSEDED block; new four-clause thesis inserted as the current statement.
+
+3. **Memory** `project_next_v1_layer_0_status.md` — DONE.
+   - Layer 1 §01 status entry added with the eight research brief paths plus a pointer to this synthesis and the load-bearing decisions.
+
+4. **New memory** `reference_2026_regulator_triad.md` — DONE.
+   - Captures NYDFS 21 Oct 2025 + DORA Art. 28-30 + EU AI Act post-Omnibus + SR 26-2 as the single source of truth for "why now" citations.
 
 ## What §01 deliberately does NOT decide
 
