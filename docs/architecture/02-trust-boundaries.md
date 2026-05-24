@@ -32,7 +32,7 @@ Secondary NFR anchors per zone (consolidated to satisfy the CLAUDE.md ≤ 3-link
 
 - Control plane — [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md).
 - Credential broker — [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-25](manifesto/02-nfrs.md).
-- Compute plane — [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md). Performance targets for this zone live in component specs, not as zone properties.
+- Compute plane — [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md). Performance targets for this zone live in component specs.
 - Egress trust-edge — [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md).
 - Audit pipeline — [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
 
@@ -104,7 +104,7 @@ Eight content-keyed classes. Per-tenant data residency ([NFR-COMP-13](manifesto/
 | **RESTRICTED (NPI-financial)** | NPI tied to financial product | NPI | n/a if not material | personal data; Art. 6 lawful basis | high-risk-AI input | PAN, expiry, service code | 5 yr (CFR-cited financial-institution rules) |
 | **RESTRICTED (MNPI)** | n/a | n/a | Reg FD / 10b-5 | n/a directly | n/a | n/a | until public + 2 yr legal hold |
 | **SENSITIVE (special category)** | NPI plus health / biometric | NPI | n/a | Art. 9 special category | Annex III categories | n/a | per Art. 5(1)(e) |
-| **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | 7 y default / 10 y configurable per [NFR-COMP-01](manifesto/02-nfrs.md); 10 y floor cited from SEC 17a-4 / FCA SYSC 9 / EU AI Act Art. 19(1) |
+| **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | 7 y default / 10 y configurable (see §10) |
 | **CRYPTO-KEYS / SECRETS** | implicit under §500.15(a) | implicit under Safeguards Rule | n/a | implicit | implicit | PCI Req 3.6 | rotation policy is the floor |
 
 Minimal-capability default scope: PUBLIC + INTERNAL only. CONFIDENTIAL+ requires opt-in configuration (BYOK + customer-managed audit sink). Minimal-config is not a compliance posture.
@@ -138,8 +138,6 @@ Token taxonomy is canonical here and matches [`manifesto/02-nfrs.md`](manifesto/
 | **Generic internal token** | inter-component RPC (Control plane ↔ broker ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | NFR-SEC-23 |
 | **Broker scoped-JWT** | per-resource (one filesystem prefix / one upstream API-key class) | ≤ 15 min | Compute plane consuming a brokered resource | NFR-SEC-29 |
 
-Diagram-label note: the §5 diagram uses the same class names ("Egress JWT", "Generic internal", "Broker scoped-JWT"); the older "session JWT" / "RPC token" wording was retired in this rev.
-
 | Property | Minimal-capability shelf | Full-capability shelf | §02 anchor |
 |---|---|---|---|
 | Inter-component identity | Host-local signing key bound to `container_name` | Workload identity from customer PKI per tenant | NFR-SEC-26 / NFR-SEC-09 |
@@ -172,26 +170,18 @@ Tamper-evidence: hash-chained store always; the daily batch is submitted to a tr
 
 ## 11. Regulator citation map
 
-Mapping is **indicative, not verbatim**. Verify every cell against the source text before reproducing in an audit workpaper. Layer 3 does not represent these citations as audit evidence by itself.
-
-Confirmed defects from a prior pass — held back from the table until source-verified, tracked at `arch/regulator-citations-verify-pass`:
-
-- DORA Art. 12 is "Backup policies and procedures, restoration and recovery", not retention. The 10-year retention floor lives in SEC 17a-4 / FCA SYSC 9 / EU AI Act Art. 19(1), not DORA Art. 12.
-- DORA Art. 9 is "Protection and prevention". The ICT-risk framework is Art. 6; detection / logging is Art. 10.
-- NYDFS § 500.7 is "Access Privileges and Management" (PAM, least privilege, JIT after the 2023 Second Amendment). Segmentation is not a § 500.7 requirement; Part 500 does not name segmentation as a standalone obligation (it surfaces in § 500.5 vulnerability scanning context).
-- DORA Art. 28(2)(c) "location of processing" needs source check — key contractual provisions live in Art. 30, not the general Art. 28(2)(c).
-- CRI Profile v2 column lifts CSF 1.1 subcategory codes (PR.PT-N, DE.DP-N); CSF 2.0 restructured these, and CRI Profile uses its own diagnostic-statement numbering, not raw CSF codes. The whole CRI column needs a verification pass against the CRI Profile v2 Guidebook before it can ship.
+Mapping is **indicative, not verbatim**. Verify every cell against the source text before reuse. Layer 3 does not represent these citations as audit evidence by itself; full source-verification is tracked at `arch/regulator-citations-verify-pass`.
 
 | Our zone / boundary | NIST SP 800-207 | NYDFS Part 500 | DORA | EU AI Act | CCM v4 |
 |---|---|---|---|---|---|
 | Control plane | implicit-trust zone (§2.1) | § 500.7 access privileges (PAM) | Art. 6 ICT risk-management framework | Art. 14 human oversight | IAM-06 |
-| Credential broker | PEP / PDP independence (§3, §3.2) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general (subpoint TBD) | Art. 15 cybersecurity ("accuracy, robustness and cybersecurity", direct Art. 15 wording) | CEK-08 |
-| Compute plane (sandbox) | implicit-trust zone, scoped small | § 500.7 + § 500.15 | Art. 28(4) ITS register of information | Art. 15(4) (accuracy, robustness, cybersecurity — direct Art. 15(4) wording) | IVS-06, IVS-09 |
+| Credential broker | PEP / PDP independence (§3, §3.2) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general | Art. 15 cybersecurity | CEK-08 |
+| Compute plane (sandbox) | implicit-trust zone, scoped small | § 500.7 + § 500.15 | Art. 28(4) ITS register of information | Art. 15(4) accuracy, robustness, cybersecurity | IVS-06, IVS-09 |
 | Egress trust-edge | PEP (§3.4.1) | § 500.5 vulnerability scanning (segmentation surfaces here, not § 500.7) | Art. 30 key contractual provisions (location of processing) | Art. 14 oversight | IVS-09 segmentation, DSP-05 DLP |
 | Audit pipeline | (cross-cutting — no direct ZT mapping) | § 500.6 audit trail; § 500.13 retention policy | Art. 10 detection (logs) | Art. 12 logs of high-risk AI; Art. 19(1) 10-year retention floor | LOG-01, LOG-02 |
 | MCP client → Control plane | untrusted → implicit-trust crossing | § 500.7 + § 500.12 MFA | Art. 30 contract clauses | Art. 13 transparency to deployer | IAM-08 |
 | Egress trust-edge → upstream | implicit-trust → untrusted crossing | § 500.15 encryption in transit | Art. 28 ICT third-party general | Art. 15 cybersecurity | IVS-09 |
-| Audit pipeline → SIEM | implicit-trust → external sink | § 500.6 audit trail readable by covered entity | Art. 10 detection; retention via record-keeping rules (SEC 17a-4 / CFR / FCA SYSC 9), not DORA Art. 12 | Art. 12 logs accessible | LOG-04 |
+| Audit pipeline → SIEM | implicit-trust → external sink | § 500.6 audit trail readable by covered entity | Art. 10 detection (retention floor cited from SEC 17a-4 / FCA SYSC 9, see §10) | Art. 12 logs accessible | LOG-04 |
 
 ## 12. Open questions
 
@@ -199,6 +189,6 @@ Confirmed defects from a prior pass — held back from the table until source-ve
 2. Control-plane metadata-only gate — `arch/control-plane-metadata-only-gate` (TBD GitHub issue) — DORA Art. 28(2)(c) requires a measurable gate that no customer payload crosses the Control plane.
 3. SIEM-bridge transport and backpressure — `arch/siem-bridge-transport-and-backpressure` (TBD GitHub issue) — pluggable-sink contract needs measurable transport and end-to-end backpressure target.
 4. Transparency-log publishing path — `arch/transparency-log-publishing-path` (TBD GitHub issue) — submission path between Audit pipeline and the external transparency log (auth, retry, RPO if the log is unreachable), plus the prior question of "do we publish at all on minimal shelf".
-5. PKI tool pick — `arch/adr-pki-tool-pick` (TBD GitHub issue) — §8.1 names signer identity per boundary; the actual PKI tool needs an ADR when one of the candidate paths reaches a decision point, and the per-boundary signer table lands there.
+5. PKI tool pick — `arch/adr-pki-tool-pick` (TBD GitHub issue) — §8.1 names signer identity per boundary; the per-boundary signer table lands with the PKI ADR.
 
 Real GitHub issue URLs replace the slugs before draft → proposed.
