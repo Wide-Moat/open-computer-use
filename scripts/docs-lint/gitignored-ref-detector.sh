@@ -15,12 +15,19 @@
 # paths (anything that looks like `path/to/file.ext`), and fails if any of
 # those paths is gitignored.
 #
-# Allowed exceptions:
-#   - paths under `.planning/` (matched by the planning-docs convention)
-#   - paths that explicitly resolve to URLs (http:// https://)
-#   - paths under `docs/` itself (the docs tree)
-#   - paths in inline `code-spans` that are *commands* not refs
-#     (heuristic: starts with a shell verb)
+# Allowed exceptions (implemented below):
+#   - paths that resolve to URLs (http:// https://)
+#   - absolute non-repo paths (starting with `/`)
+#   - command-fragment heuristic for /dev/null, /proc/*, /tmp/*, /etc/*,
+#     /var/*, /home/*, /usr/* — these are filesystem paths in commands,
+#     not repo references
+#
+# Currently not separately filtered (rely on `git check-ignore` instead):
+#   - paths under `docs/` (docs-tree paths are checked like any other —
+#     if a doc path is gitignored, that is itself a finding)
+#   - paths under `.planning/` (gitignored by repo policy; would correctly
+#     fire here, but `.planning/` is not in the doc roots scanned, so
+#     references to it from inside `docs/` would correctly fail)
 #
 # Run from repo root:  scripts/docs-lint/gitignored-ref-detector.sh
 
