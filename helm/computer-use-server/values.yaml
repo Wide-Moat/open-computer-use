@@ -139,6 +139,9 @@ dind:
   # -- Extra flags appended verbatim to the dockerd command line. Useful for
   # tuning the inner daemon without forking the chart (registry mirrors, MTU,
   # log driver, ...). Each item is rendered as a separate argv element.
+  # Do NOT repeat --host or --storage-driver here — both are pinned by the
+  # chart; a duplicate makes dockerd refuse to start. The values schema
+  # rejects them at install time.
   extraArgs: []
   #   - --registry-mirror=https://mirror.example.com
   #   - --mtu=1450

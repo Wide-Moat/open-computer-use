@@ -52,7 +52,12 @@
         "storageDriver": { "type": "string" },
         "extraArgs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "not": { "pattern": "^--(host|storage-driver)(=|$)" },
+            "$comment": "Must not repeat --host or --storage-driver — those are pinned by the chart; a duplicate makes dockerd refuse to start."
+          },
           "default": [],
           "$comment": "Extra flags appended verbatim to the dockerd argv (e.g. --registry-mirror=..., --mtu=1450)."
         },
