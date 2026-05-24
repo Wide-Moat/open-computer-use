@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: draft
-last-reviewed: 2026-05-24
+status: proposed
+last-reviewed: 2026-05-25
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -67,7 +67,7 @@ Outbound endpoints behind the egress policy — LLM upstream, customer MCP serve
 
 **Multi-tenant agent-execution invariant.** Where the Compute plane runs LLM-issued tool calls / code from more than one tenant on the same node, the substrate MUST be microVM (Compute plane "full-capability shelf" per §2 zone 3). The "non-NPI workloads" framing is not a safety argument — data classification does not change the container-escape attack surface for adversarial AI code. T1 namespace remains valid for single-tenant agent execution or for multi-tenant workloads that do not execute LLM-issued code (admin UIs, read-only dashboards, batch-data jobs).
 
-Higher-isolation tiers (dedicated bare-metal node pool per tenant; customer-owned hardware in customer datacenter) are tracked in open question §12 item 1 (`arch/cross-tenant-isolation-grading`) as candidates for later promotion. Promote when a named workload requires them.
+Higher-isolation tiers (dedicated bare-metal node pool per tenant; customer-owned hardware in customer datacenter) are tracked in open question §12 item 1 ([#148](https://github.com/Wide-Moat/open-computer-use/issues/148)) as candidates for later promotion. Promote when a named workload requires them.
 
 Boundary properties in §5–§11 hold for every tier; the tier picks the substrate, not the invariants. Measurable cross-tenant grading is in the same open question.
 
@@ -154,7 +154,7 @@ Minimal shelf: identity-binding ([NFR-SEC-09](manifesto/02-nfrs.md)) via host-lo
 
 ### 8.1 Signer identity per boundary
 
-Each token class has its own signer; signer identity ties to the workload that issues the token. Minimal-shelf signers are host-local keys; full-shelf signers are workload identities from the customer PKI. The full per-boundary table (six artifacts × four columns) lands with the PKI decision — tracked at §12 item 5 (`arch/adr-pki-tool-pick`).
+Each token class has its own signer; signer identity ties to the workload that issues the token. Minimal-shelf signers are host-local keys; full-shelf signers are workload identities from the customer PKI. The full per-boundary table (six artifacts × four columns) lands with the PKI decision — tracked at §12 item 5 ([#152](https://github.com/Wide-Moat/open-computer-use/issues/152)).
 
 ## 9. Encryption matrix
 
@@ -170,7 +170,7 @@ Tamper-evidence: hash-chained store always; the daily batch is submitted to a tr
 
 ## 11. Regulator citation map
 
-Mapping is **indicative, not verbatim**. Verify every cell against the source text before reuse. Layer 3 does not represent these citations as audit evidence by itself; full source-verification is tracked at `arch/regulator-citations-verify-pass`.
+Mapping is **indicative, not verbatim**. Verify every cell against the source text before reuse. Layer 3 does not represent these citations as audit evidence by itself; full source-verification is tracked at [#153](https://github.com/Wide-Moat/open-computer-use/issues/153).
 
 | Our zone / boundary | NIST SP 800-207 | NYDFS Part 500 | DORA | EU AI Act | CCM v4 |
 |---|---|---|---|---|---|
@@ -185,10 +185,8 @@ Mapping is **indicative, not verbatim**. Verify every cell against the source te
 
 ## 12. Open questions
 
-1. Cross-tenant isolation grading — `arch/cross-tenant-isolation-grading` (TBD GitHub issue) — measurable target ("tenant A cannot observe tenant B side-channel") not yet in §02. Also tracks higher-isolation tiers (dedicated hardware, customer-owned cage) as candidates for promotion when a named workload requires them.
-2. Control-plane metadata-only gate — `arch/control-plane-metadata-only-gate` (TBD GitHub issue) — DORA Art. 28(2)(c) requires a measurable gate that no customer payload crosses the Control plane.
-3. SIEM-bridge transport and backpressure — `arch/siem-bridge-transport-and-backpressure` (TBD GitHub issue) — pluggable-sink contract needs measurable transport and end-to-end backpressure target.
-4. Transparency-log publishing path — `arch/transparency-log-publishing-path` (TBD GitHub issue) — submission path between Audit pipeline and the external transparency log (auth, retry, RPO if the log is unreachable), plus the prior question of "do we publish at all on minimal shelf".
-5. PKI tool pick — `arch/adr-pki-tool-pick` (TBD GitHub issue) — §8.1 names signer identity per boundary; the per-boundary signer table lands with the PKI ADR.
-
-Real GitHub issue URLs replace the slugs before draft → proposed.
+1. Cross-tenant isolation grading — [#148](https://github.com/Wide-Moat/open-computer-use/issues/148) — measurable target ("tenant A cannot observe tenant B side-channel") not yet in §02. Also tracks higher-isolation tiers (dedicated hardware, customer-owned cage) as candidates for promotion when a named workload requires them.
+2. Control-plane metadata-only gate — [#149](https://github.com/Wide-Moat/open-computer-use/issues/149) — DORA Art. 28(2)(c) requires a measurable gate that no customer payload crosses the Control plane.
+3. SIEM-bridge transport and backpressure — [#150](https://github.com/Wide-Moat/open-computer-use/issues/150) — pluggable-sink contract needs measurable transport and end-to-end backpressure target.
+4. Transparency-log publishing path — [#151](https://github.com/Wide-Moat/open-computer-use/issues/151) — submission path between Audit pipeline and the external transparency log (auth, retry, RPO if the log is unreachable), plus the prior question of "do we publish at all on minimal shelf".
+5. PKI tool pick — [#152](https://github.com/Wide-Moat/open-computer-use/issues/152) — §8.1 names signer identity per boundary; the per-boundary signer table lands with the PKI ADR.
