@@ -134,3 +134,4 @@ jobs:
             --offline
             'docs/architecture/**/*.md'
           fail: true
+          failIfEmpty: false
