@@ -177,6 +177,67 @@ else
   err "partial FM wasn't caught"
 fi
 
+# -------- architecture-tree-whitelist --------
+echo "Testing architecture-tree-whitelist.sh:"
+
+# Run against an isolated fixture tree so we don't disturb the real
+# docs/architecture/. Invoke the same fnmatch logic the linter uses.
+tree_root="$TMP/atree/docs/architecture"
+mkdir -p "$tree_root/adr" "$tree_root/diagrams" "$tree_root/components"
+
+# Allowed files.
+touch "$tree_root/README.md"
+touch "$tree_root/adr/0001-foo.md"
+touch "$tree_root/diagrams/c4.mmd"
+touch "$tree_root/components/01-control-plane.md"
+
+# Disallowed files.
+touch "$tree_root/notes.txt"                       # stray scratch note
+touch "$tree_root/LAYER-0-VERIFICATION.md"         # AI snapshot
+touch "$tree_root/diagrams/screenshot.png"         # binary in diagrams
+
+allow_list=(
+  "README.md"
+  "adr/[0-9][0-9][0-9][0-9]-*.md"
+  "diagrams/*.mmd"
+  "components/[0-9][0-9]-*.md"
+)
+violations=$(
+  cd "$TMP/atree" && python3 - "${allow_list[@]}" <<'PY'
+import fnmatch, pathlib, sys
+allow = sys.argv[1:]
+root = pathlib.Path("docs/architecture")
+bad = []
+for p in root.rglob("*"):
+    if not p.is_file():
+        continue
+    rel = p.relative_to(root).as_posix()
+    if not any(fnmatch.fnmatchcase(rel, g) for g in allow):
+        bad.append(rel)
+print("\n".join(sorted(bad)))
+PY
+)
+
+want_bad=("LAYER-0-VERIFICATION.md" "diagrams/screenshot.png" "notes.txt")
+all_caught=1
+for needle in "${want_bad[@]}"; do
+  if ! grep -qxF "$needle" <<<"$violations"; then
+    all_caught=0
+    err "tree-whitelist missed expected violation: $needle"
+  fi
+done
+if (( all_caught )); then
+  ok "tree-whitelist catches stray notes, AI snapshots, and binaries"
+fi
+
+# Allowed files must NOT appear in violations.
+for needle in "README.md" "adr/0001-foo.md" "diagrams/c4.mmd" "components/01-control-plane.md"; do
+  if grep -qxF "$needle" <<<"$violations"; then
+    err "tree-whitelist false-positive on legitimate file: $needle"
+  fi
+done
+ok "tree-whitelist accepts files that match allowed patterns"
+
 # -------- Summary --------
 echo
 echo "Linter self-test: $pass passed, $fail failed."
