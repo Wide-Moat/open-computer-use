@@ -53,30 +53,43 @@ jobs:
     name: secrets — gitleaks
     runs-on: ubuntu-latest
     steps:
-      # Two-checkout pattern. The PR HEAD provides the source files to scan,
-      # but the gitleaks CONFIG (`.gitleaks.toml`) comes from the BASE ref —
-      # never from the PR head. Without this split, a fork PR can ship a
-      # permissive allowlist (`paths = ['''.*''']`) and the gate passes
-      # green for any secret introduced in that PR. Canonical CI supply-
-      # chain attack against allowlist-based scanners.
+      # Fork-PR-safe two-source pattern. The PR HEAD provides the source
+      # files to scan, but the gitleaks CONFIG comes from the BASE ref —
+      # never from the PR head. Without this split, a fork PR could ship
+      # a permissive allowlist (`paths = ['''.*''']`) and the gate would
+      # pass green for any secret introduced in that PR. Canonical CI
+      # supply-chain attack against allowlist-based scanners.
       #
-      # For `push` events (no PR), `github.base_ref` is empty — fall back
-      # to the same ref so the workflow still runs on direct pushes.
+      # We fetch the base-ref config directly via `gh api` rather than
+      # checking out the base branch. sparse-checkout has long-standing
+      # quirks with non-cone single-file patterns in actions/checkout@v4
+      # and silently produces an empty working tree, which would re-open
+      # the fork-bypass hole.
       - name: Checkout PR head (source)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
           persist-credentials: false
           path: pr-head
-      - name: Checkout base ref (config only)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-        with:
-          ref: ${{ github.base_ref || github.ref }}
-          persist-credentials: false
-          path: base
-          sparse-checkout: |
-            .gitleaks.toml
-          sparse-checkout-cone-mode: false
+      - name: Fetch base-ref .gitleaks.toml via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref || github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p config
+          gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
+            --jq '.content' \
+            | base64 -d > config/.gitleaks.toml
+          # Sanity-check: gh api emits an empty file on a 404; reject that
+          # rather than silently scanning with an empty allowlist (a real
+          # secret in the PR with no upstream toml would still be caught,
+          # but a missing config is a config bug — surface it).
+          if [ ! -s config/.gitleaks.toml ]; then
+            echo "::error::base-ref .gitleaks.toml is empty or missing" >&2
+            exit 1
+          fi
+          echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
       - name: Run gitleaks (Docker)
         # The official gitleaks-action requires a paid license for GitHub
         # Organizations. Use the upstream Docker image directly — same
@@ -98,7 +111,7 @@ jobs:
             --read-only \
             --user "$(id -u):$(id -g)" \
             -v "${{ github.workspace }}/pr-head:/repo:ro" \
-            -v "${{ github.workspace }}/base:/config:ro" \
+            -v "${{ github.workspace }}/config:/config:ro" \
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --no-banner --redact --exit-code 1 \
             --config=/config/.gitleaks.toml
