@@ -98,15 +98,21 @@ jobs:
           severity: CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-          # `references/` is the vendored research buffer (upstream repos like
-          # kata-containers, firecracker, cloud-hypervisor, coder, sysbox).
-          # Same status as `docs/future-architecture/`: research-only, never
-          # part of any release artifact, never imported as a dependency.
-          # CVEs there are not our supply-chain risk and would block every
-          # PR on third-party churn.
+          # `references/` is the vendored upstream research buffer (kata,
+          # firecracker, cloud-hypervisor, coder, sysbox, …) — same status
+          # as `docs/future-architecture/`: research-only, never part of any
+          # release artifact, never imported as a dependency.
           skip-dirs: "node_modules,.venv,.planning,docs/future-architecture,references"
           format: sarif
           output: trivy-fs.sarif
+          # Without this, trivy-action drops `severity: CRITICAL` whenever
+          # `format: sarif` is set (entrypoint.sh unsets TRIVY_SEVERITY), so
+          # trivy scans for HIGH/MEDIUM/LOW too and exits 1 on the first
+          # finding — even though SARIF upload filters back to CRITICAL on
+          # the GitHub side. The "Building SARIF report with all severities"
+          # log line is the smoking gun. Issue:
+          # https://github.com/aquasecurity/trivy-action/issues/309
+          limit-severities-for-sarif: true
       - name: Upload SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
