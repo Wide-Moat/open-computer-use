@@ -118,6 +118,26 @@ check() {
     echo "FAIL: $file has list-of-three '(no X, no Y, no Z)' construction"
     fail=1
   fi
+
+  # 12. "Reviewers copy this … workpapers" / "verbatim, not paraphrased"
+  #     pompous audit-evidence framing. A draft doc cannot represent itself
+  #     as a verbatim regulator-citation source. If a citation table needs
+  #     to claim verbatim accuracy, the doc must back it with a verification
+  #     trail; until then, the table is indicative.
+  if grep -nEi '(copy [^.]{0,40}workpapers|verbatim, not paraphrased|cite[^.]{0,40}verbatim)' "$file" > /dev/null; then
+    grep -nEi '(copy [^.]{0,40}workpapers|verbatim, not paraphrased|cite[^.]{0,40}verbatim)' "$file"
+    echo "FAIL: $file claims verbatim regulator-citation accuracy without a verification trail"
+    fail=1
+  fi
+
+  # 13. "is the only" / "is unique in" superlatives without measurable
+  #     evidence in the same sentence. Match the "X is the only Y" /
+  #     "X is unique among Y" patterns.
+  if grep -nEi '\bis (the only|unique (among|in)) [a-z]+\b' "$file" > /dev/null; then
+    grep -nEi '\bis (the only|unique (among|in)) [a-z]+\b' "$file"
+    echo "FAIL: $file uses superlative 'is the only / unique' without measurable referent"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do
