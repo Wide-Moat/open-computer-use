@@ -24,11 +24,12 @@ MD024:
 # leakage into real ADRs is caught by ai-slop-detector and reviewer eyes.
 MD033: false
 
-# MD003 — heading-style. Force ATX (`# Title`); markdownlint sometimes
-# auto-detects setext from accidentally-similar lines and flags every ATX
-# heading in the file as a violation.
-MD003:
-  style: atx
+# MD003 — heading-style. Disabled. markdownlint-cli2 doesn't understand
+# YAML front-matter and parses the closing `---` delimiter as a setext H2
+# underline, then flags the first ATX heading in the file as a violation
+# of "setext style" (which was never the file's actual style). Front-matter
+# is mandatory in our docs, so this rule cannot work as-is.
+MD003: false
 
 # MD022 — blanks-around-headings. Disabled — markdownlint mis-parses the
 # YAML front-matter delimiter (`---`) as a setext H2 underline and then
