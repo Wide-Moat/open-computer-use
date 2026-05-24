@@ -14,6 +14,8 @@ The zoning map. Audience per `manifesto/01-audience-and-buyer.md`: InfoSec revie
 
 Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → egress (proxy + credential broker)`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
 
+Ownership per row is named in `02-nfrs.md` §Scope-ownership: DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). Layer 3 is consistent with the corrected scope; the §02 catalogue still carries the old wording at the named IDs until its next revision.
+
 Product invariant from NFR-SEC-16: the distributed configuration ships no outbound paths to vendor-controlled endpoints. On-prem deployments use only outbound paths the customer enabled.
 
 Measurable targets are in `02-nfrs.md`; component internals are in `components/*.md`; threat content is Layer 7.

@@ -44,6 +44,26 @@ Three short-lived token classes carry three different lifetimes by design:
 
 Tighter scope = shorter TTL. The three numbers are independent commitments, not contradictions.
 
+## Scope ownership
+
+Every NFR row sits in one of three ownership classes. Layer 3 (`docs/architecture/02-trust-boundaries.md`) draws the boundary; this section names what we deliver vs. what we make possible.
+
+- **DELIVER** — we ship the code, we are accountable for the measurable target. Failure = our defect. Example: sandbox escape (NFR-SEC-02), egress proxy (NFR-SEC-05), credential broker (NFR-SEC-23/29), audit pipeline (NFR-SEC-03 reframed for tx-log submission), RTO/RPO of our planes (NFR-REL-01/02/03), encryption defaults (NFR-SEC-33).
+- **ENABLE** — we publish the contract, the telemetry, or the integration point; the customer is the principal and owns the policy/content. Failure of the surrounding posture = customer's gap, not ours. Example: DORA major-incident timeline (NFR-COMP-04 — we emit telemetry, customer classifies); NYDFS § 500.17 notification (NFR-COMP-05); IdP posture (NFR-FLEX-03 — we are the relying party).
+- **REVISIT** — flagged for re-scoping in the next §02 revision. Either claims more than our scope or names a responsibility that belongs to the customer's AI gateway / data-controller / regulator-facing process. Current list (to be re-cut, not re-justified):
+  - NFR-FS-03 — "LLM-request byte-identical round-trip for cached request shapes": we do not proxy LLM requests, we route them through the egress trust-edge; no request cache lives in our platform.
+  - NFR-REL-04 — "LLM upstream failover ≤5 min unhealthy → secondary": failover between LLM endpoints is the customer's AI gateway (LiteLLM, Lakera, etc.), not ours.
+  - NFR-SEC-21 — "EU AI Act Art. 15(5) candidate test suite … data poisoning, model poisoning, adversarial examples, confidentiality attacks": these are model-level threats. We are not the model.
+  - NFR-COMP-09 — "Post-market monitoring data flow (EU AI Act Art. 72)": Art. 72 is the deployer's monitoring obligation. We ENABLE (telemetry hooks), we don't OWN.
+  - NFR-COMP-10 — "DPIA / FRIA refresh": data controller does the DPIA. We supply sub-processor + data-flow inputs, we don't refresh the assessment.
+  - NFR-COMP-14 — "EU AI Act Art. 15 accuracy declaration": accuracy of the AI system. The customer's model, not ours.
+  - NFR-COMP-18 — "ISO/IEC 42001:2023 AI Management System conformance": 42001 binds the organisation deploying the AI system. We ENABLE the customer's 42001 evidence; we are not conformance-ed.
+  - NFR-COMP-25 — "ZDR contractual-clause checklist per supported managed LLM upstream": the customer contracts ZDR with the upstream. We surface upstream ZDR posture in docs (NFR-FLEX-01) but don't represent it.
+  - NFR-COMP-26 — "Configurable prompt-redaction filter": AI-guardrail policy belongs to the customer's AI gateway (LiteLLM, Lakera, in-perimeter model with its own guardrails). We route + audit, we don't redact prompts.
+  - NFR-SEC-03 Merkle-head wording — currently "Merkle head signed via HSM" implies we sign the chain head. We submit batches to a transparency log of the customer's choice; the log operator signs the head, we sign only the submission envelope.
+
+REVISIT rows stay in this catalogue at their existing IDs until the next §02 rev; Layer 3 already takes the corrected position.
+
 ## 1. Functional Suitability
 
 Scope: determinism, replay, and reproducibility properties of the agent loop. Functional behaviour of individual components lives in the respective component specs.
