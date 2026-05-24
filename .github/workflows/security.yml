@@ -84,19 +84,24 @@ jobs:
         # `:latest` push cannot silently change scan behaviour on a
         # merge-blocking gate.
         #
-        # `:ro` mount + non-root user + `--read-only` container fs are
-        # defence-in-depth against a compromised gitleaks image (which is
-        # mitigated by the digest pin above; this is the second layer).
-        # Config is overlaid from base/ so PR head can never override it.
+        # Two separate mounts under /work, never overlaying a file inside
+        # a read-only mount (docker refuses that on --read-only containers).
+        # The base-ref config is passed to gitleaks via --config; the PR
+        # head's own .gitleaks.toml (if any) is ignored because we do not
+        # point gitleaks at it.
+        #
+        # :ro mounts + non-root user + --read-only container fs are
+        # defence-in-depth against a compromised gitleaks image (digest
+        # pin above is the first layer).
         run: |
           docker run --rm \
             --read-only \
             --user "$(id -u):$(id -g)" \
             -v "${{ github.workspace }}/pr-head:/repo:ro" \
-            -v "${{ github.workspace }}/base/.gitleaks.toml:/repo/.gitleaks.toml:ro" \
+            -v "${{ github.workspace }}/base:/config:ro" \
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --no-banner --redact --exit-code 1 \
-            --config=/repo/.gitleaks.toml
+            --config=/config/.gitleaks.toml
 
   secrets-trufflehog:
     name: secrets — trufflehog
@@ -110,15 +115,14 @@ jobs:
         uses: trufflesecurity/trufflehog@0ec3634f6cf66a61912a923fee9d20cc45633a67  # main as of 2026-05-24
         with:
           path: ./
-          # `--fail` is explicit — past action versions have shipped defaults
-          # where the binary printed findings but returned exit 0. Don't rely
-          # on action-default semantics for a merge-blocking gate.
+          # `--fail` is appended by the action's entrypoint — passing it
+          # here a second time triggers "flag 'fail' cannot be repeated".
           #
           # `--no-verification` removes the egress data-exfiltration path:
           # default `--results=verified` dials AWS/GitHub/Slack/… from the
           # runner to validate detected patterns. For a bank-targeting CI
           # we accept the higher false-positive rate over outbound calls.
-          extra_args: --no-verification --fail
+          extra_args: --no-verification
 
   sast-semgrep:
     name: SAST — semgrep
@@ -136,16 +140,16 @@ jobs:
       - name: Semgrep CI (community rules)
         env:
           # Required for diff-aware scanning + PR commenting. Without it,
-          # `semgrep ci` falls back to a full-repo scan and (in some
-          # versions) downgrades to non-blocking behaviour on certain
-          # codepaths. Token is workflow-scoped and short-lived.
+          # `semgrep ci` falls back to a full-repo scan. Token is
+          # workflow-scoped and short-lived.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # `--error` is explicit. Past `semgrep ci` versions have had
-        # config paths where the binary exits 0 with findings printed;
-        # the flag turns any finding into a non-zero exit.
+          # `semgrep ci` exits non-zero on findings by default. The
+          # `--suppress-errors` flag has the inverse meaning — DON'T set
+          # it. We pin it to false explicitly so a future runner-level
+          # env override can't silently downgrade the gate.
+          SEMGREP_SUPPRESS_ERRORS: "false"
         run: |
           semgrep ci \
-            --error \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
