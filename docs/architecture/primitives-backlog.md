@@ -16,18 +16,9 @@ Architectural primitives surfaced during research that Wide-Moat will need. Each
 - **`ModelProvider` abstraction enforced in CI** — no code path may import a provider SDK directly; all generation goes through the abstraction. Lint rule + integration test fails the build otherwise. Locks in model-neutrality before any one provider's roadmap warps the codebase — surfaced in `widemoat-thesis-advisor.md`; lands in §03 (non-negotiable) + component spec for AI orchestration.
 - **DORA Art. 28 RoI field-level traceability in BoM** — every dependency in `manifesto/05-licensing-posture.md` BoM table carries 7 required RoI fields: name, country, sub-contracting depth, function criticality, exit strategy, audit rights, data-residency. Reject-list captures dependencies that cannot supply these fields — surfaced in `reference_2026_regulator_triad`; lands in §05 (BoM rule).
 - **EU AI Act Annex III conformity checklist in release pipeline** — each GA release tags the Annex III risk categories it is configured for and blocks release if controls (logging, human oversight, accuracy metrics, post-market monitoring hooks) are missing — surfaced in `widemoat-thesis-advisor.md`; lands in release-pipeline ADR + §02 (NFR).
-- **MCP server allow-list as first-class customer config** — customer InfoSec controls which MCP servers the platform may reach; gateway enforces. Defends against the "Anthropic ships MCP tunnels, we lose differentiation" risk by making the policy boundary our artifact, not the transport — surfaced in `widemoat-thesis-advisor.md`; lands in §03 (non-negotiable) + egress-proxy component spec.
-- **Kill switch ≤30s SLA** — per-session + global kill switch with ≤30s wall-clock SLA, callable from SOAR webhook + admin API + CLI; documented in component spec — surfaced in legacy research (carried forward from `docs/future-architecture/research/` digests); lands in control-plane component spec + §02 (NFR with measurable target).
-- **Per-session replay bundle (CDP + DOM + tool trace + LLM prompt + FS diff)** — built-in primitive, not add-on; satisfies EU AI Act Annex III Art. 12 record-keeping and supports incident-response forensics — surfaced in legacy research; lands in §02 (NFR) + L1-guest-agent component spec.
-- **Tamper-evident audit log** — hash-chained append-only log with HSM-signed daily Merkle root published to a transparency log (RFC 9162 / Rekor-style) — surfaced in legacy research; lands in §03 (non-negotiable) + audit-pipeline component spec.
-- **MITM-friendly egress with customer-CA trust** — single configurable forward proxy, customer-supplied CA chain injected at runtime, ext_authz hook to OPA; supports ICAP/DLP hook — surfaced in legacy research; lands in egress-proxy component spec + §03 (non-negotiable).
-- **BYOK / HYOK via PKCS#11 + KMIP** — envelope encryption; keys never stored in the control plane; FIPS 140-3 mode available — surfaced in legacy research; lands in key-management component spec + §03 (non-negotiable).
-- **Identity = SPIFFE workload + SAML/OIDC human + SCIM lifecycle** — no exceptions — surfaced in legacy research; lands in IdP-integration component spec + §03 (non-negotiable).
-- **WORM audit retention 7y default / 10y configurable** — S3 Object Lock Compliance mode; per-tenant retention policy — surfaced in legacy research; lands in audit-pipeline component spec + §02 (NFR).
 - **Air-gap installer as CI artifact on every release** — tested in build; no phone-home — surfaced in legacy research; lands in deployment component spec + §03 (non-negotiable).
 - **`SkillProvider` abstraction (TBD)** — v1 ships zero default skills bundled; the contract stays TBD until proved; customers mount their own skill packs — surfaced in `project_widemoat_positioning`; lands in §04 (non-goal: skill registry deferred) + skill-host component spec stub.
-- **Anthropic `srt` (`sandbox-runtime`) as secondary in-microVM defence** — Apache-2.0, adopted as BoM dep (not vendored, not rebuilt). Five reusable patterns: HTTP/SOCKS5 proxy + filter-callback (`http-proxy.ts:29-110`), mandatory-deny path list (`sandbox-utils.ts:11-21`), seccomp BPF + nested-namespace (`vendor/seccomp-src/`), MitM ephemeral CA (`mitm-ca.ts`), Zod-validated config (`sandbox-config.ts`) — surfaced in `proof-anthropic-sandbox-runtime-vs-ours.md`; lands in §05 (BoM entry) + microVM-guest component spec.
-- **FSL `LICENSE-ADDITIONAL-PERMISSIONS.md` instrument** — published at repo root, irrevocable, 7 clauses (affiliates via 50% control test, JVs, outsourced operators, single-tenant managed, internal white-label, Competing Use reaffirmed, Apache-2.0 conversion). First FSL adopter to publish such an instrument — surfaced in `advisor-fsl-internal-use.md`; lands in repo root + §05 (licensing-posture).
+- **FSL `LICENSE-ADDITIONAL-PERMISSIONS.md` instrument** — published at repo root, irrevocable, 7 clauses (affiliates via 50% control test, JVs, outsourced operators, single-tenant managed, internal white-label, Competing Use reaffirmed, Apache-2.0 conversion) — surfaced in `advisor-fsl-internal-use.md`; lands in repo root + §05 (licensing-posture).
 
 ## Promotion rules
 
@@ -40,3 +31,16 @@ A primitive leaves this backlog when it appears either as:
 - A tracked GitHub issue when scope exceeds one line.
 
 When promoted, delete the entry from this file in the same PR that lands the destination artifact. The backlog shrinks monotonically.
+
+## Recently drained (2026-05-24)
+
+Removed because the primitive landed in §02 with a measurable target:
+
+- Kill switch ≤30s → NFR-SEC-01.
+- Per-session replay bundle → NFR-SEC-06.
+- Tamper-evident audit log → NFR-SEC-03.
+- WORM audit retention 7y/10y → NFR-COMP-01.
+- BYOK / HYOK via PKCS#11 + KMIP → NFR-SEC-04 + NFR-FLEX-04.
+- Identity = SPIFFE workload + SAML/OIDC + SCIM → NFR-SEC-09 + NFR-FLEX-03.
+- MITM-friendly egress with customer-CA trust → NFR-SEC-05.
+- MCP server allow-list → NFR-SEC-08.

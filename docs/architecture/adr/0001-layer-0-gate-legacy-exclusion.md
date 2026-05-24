@@ -62,6 +62,8 @@ None directly. The legacy code's threats (root containers, XXE, SSRF via `urllib
 
 ## Amendments
 
+Each amendment names the discovery commit and the affected exclusion entries.
+
 ### 2026-05-24 — initial exclusion-list completion
 
 The first version of `.semgrepignore` shipped in commit `709db53` missed three legacy areas that the SAST gate scans:

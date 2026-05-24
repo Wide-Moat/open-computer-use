@@ -66,6 +66,98 @@ check() {
       }
     }
   ' "$file" | grep . && fail=1 || true
+
+  # 6. Self-referential CI / doc-rules meta-noise. Reader does not need to be
+  #    told about our line caps, vale lint, banned-vocab list, "diagrams budget"
+  #    inside the doc itself. CLAUDE.md is the rule source; the doc carries
+  #    content, not rules about itself.
+  if grep -nEi '(kept within the [^.]*budget|≤[0-9]+-line (form|cap|budget)|CLAUDE\.md (rules|conventions|line cap|inline-mermaid|Diagrams (budget|rules|inline))|preserve[sd]? .{0,40}(banned-vocab|vale lint)|the surrounding backticks preserve|against (our|the) (project )?banned-vocab)' "$file" > /dev/null; then
+    grep -nEi '(kept within the [^.]*budget|≤[0-9]+-line (form|cap|budget)|CLAUDE\.md (rules|conventions|line cap|inline-mermaid|Diagrams (budget|rules|inline))|preserve[sd]? .{0,40}(banned-vocab|vale lint)|the surrounding backticks preserve|against (our|the) (project )?banned-vocab)' "$file"
+    echo "FAIL: $file contains self-referential CI / doc-rules meta-noise"
+    fail=1
+  fi
+
+  # 7. "Holds in spirit" / "honest about" / "as a binding artifact for" —
+  #    hedge phrasing that adds no factual content.
+  if grep -nEi '(hold[s]? in spirit|honest about (not )?being|the binding artifact for|is what the contract binds)' "$file" > /dev/null; then
+    grep -nEi '(hold[s]? in spirit|honest about (not )?being|the binding artifact for|is what the contract binds)' "$file"
+    echo "FAIL: $file contains hedge / pompous phrasing"
+    fail=1
+  fi
+
+  # 8. "the only X" / "is the only" boastful framing — superlative without a
+  #    measurable referent. CLAUDE.md "no adjectives without measurable
+  #    referent".
+  #    Allowed: "is the only zone" / "is the only path" in legitimate context.
+  #    Banned: "is the only plaintext segments and …" boastful style.
+  if grep -nEi '\b(is|are) the only [a-z]+ (and|listed|that)\b' "$file" > /dev/null; then
+    grep -nEi '\b(is|are) the only [a-z]+ (and|listed|that)\b' "$file"
+    echo "FAIL: $file contains boastful 'the only X' framing"
+    fail=1
+  fi
+
+  # 9. Triple parallel construction "X stay in Y; X' stay in Y'; X'' stay in Y''"
+  #    pattern. AI loves three-clause parallelism. Looks for repeated verb
+  #    three times in one line with semicolons.
+  if grep -nE '([A-Za-z]+) [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in' "$file" > /dev/null; then
+    grep -nE '([A-Za-z]+) [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in [^;]+; [A-Za-z]+ \1 [a-z]+ in' "$file"
+    echo "FAIL: $file has triple-parallel 'X verbs in Y; X' verbs in Y'; …' construction"
+    fail=1
+  fi
+
+  # 10. Triple negation "It does NOT X, it does NOT Y, it does NOT Z" pattern.
+  if grep -nEi 'does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*?' "$file" > /dev/null; then
+    grep -nEi 'does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*? [^.]+\. (it|It) does \*?\*?not\*?\*?' "$file"
+    echo "FAIL: $file has triple-negation 'It does not X. It does not Y. It does not Z' construction"
+    fail=1
+  fi
+
+  # 11. List-of-three "no X, no Y, no Z" inside parentheses.
+  if grep -nE '\(no [a-z-]+, no [a-z-]+, no [a-z-]+\)' "$file" > /dev/null; then
+    grep -nE '\(no [a-z-]+, no [a-z-]+, no [a-z-]+\)' "$file"
+    echo "FAIL: $file has list-of-three '(no X, no Y, no Z)' construction"
+    fail=1
+  fi
+
+  # 12. "Reviewers copy this … workpapers" / "verbatim, not paraphrased"
+  #     pompous audit-evidence framing. A draft doc cannot represent itself
+  #     as a verbatim regulator-citation source. If a citation table needs
+  #     to claim verbatim accuracy, the doc must back it with a verification
+  #     trail; until then, the table is indicative.
+  if grep -nEi '(copy [^.]{0,40}workpapers|verbatim, not paraphrased|cite[^.]{0,40}verbatim)' "$file" > /dev/null; then
+    grep -nEi '(copy [^.]{0,40}workpapers|verbatim, not paraphrased|cite[^.]{0,40}verbatim)' "$file"
+    echo "FAIL: $file claims verbatim regulator-citation accuracy without a verification trail"
+    fail=1
+  fi
+
+  # 13. "is the only" / "is unique in" superlatives without measurable
+  #     evidence in the same sentence. Match the "X is the only Y" /
+  #     "X is unique among Y" patterns.
+  if grep -nEi '\bis (the only|unique (among|in)) [a-z]+\b' "$file" > /dev/null; then
+    grep -nEi '\bis (the only|unique (among|in)) [a-z]+\b' "$file"
+    echo "FAIL: $file uses superlative 'is the only / unique' without measurable referent"
+    fail=1
+  fi
+
+  # 14. Internal research-artifact leakage. The architecture set must not
+  #     load-bear on (or even mention) internal observation of third-party
+  #     code — naming a vendor's internal binary / module / source-file as
+  #     a "primitive we surfaced" reads as reverse-engineering, even when
+  #     the upstream is permissive-licensed. The research-buffer is the
+  #     right home for those notes; the canonical tree is not.
+  #
+  #     Banned phrasings (case-insensitive):
+  #       - "Anthropic `srt`" / "Anthropic srt"
+  #       - "sandbox-runtime" as a third-party-product reference
+  #       - "process_api_re" (legacy reverse-engineering slug)
+  #       - "reverse-engineered" / "reverse engineering"
+  #       - "Anthropic-observed" / "as observed in Anthropic"
+  #       - reference to `sandboxd/` paths (gitignored by policy)
+  if grep -nEi '(anthropic[[:space:]]+`?srt|`sandbox-runtime`|process_api_re|reverse[ -]engineer(ed|ing)?|anthropic-observed|as observed in anthropic|sandboxd/)' "$file" > /dev/null; then
+    grep -nEi '(anthropic[[:space:]]+`?srt|`sandbox-runtime`|process_api_re|reverse[ -]engineer(ed|ing)?|anthropic-observed|as observed in anthropic|sandboxd/)' "$file"
+    echo "FAIL: $file leaks internal research-artifact phrasing (Anthropic-srt / sandbox-runtime / sandboxd path / reverse-engineering wording)"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do
