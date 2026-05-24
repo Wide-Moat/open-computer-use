@@ -103,3 +103,21 @@ tests/integration/_tmp/
 .pytest_cache/
 sandboxd/
 references/
+
+# Translations / disposable readability copies — not for the repo
+*-ru.md
+*-ru-tmp.md
+docs/architecture/manifesto/02-nfrs-ru.md
+
+# Phase-research / review artefacts under docs/future-architecture/research/
+# These are the working buffer the architect-loop produces while drafting
+# canonical artefacts under docs/architecture/. They cite gitignored paths
+# (sandboxd/) and carry phrases we don't want in committed prose
+# ("reverse-engineered", "Anthropic-observed"). The canonical work in
+# docs/architecture/ is the deliverable; these files stay local.
+docs/future-architecture/research/SUMMARY-*.md
+docs/future-architecture/research/REVIEW-*.md
+docs/future-architecture/research/CROSS-REVIEW-*.md
+docs/future-architecture/research/PLAN-CHECK-*.md
+docs/future-architecture/research/CONTRADICTION-CHECK-*.md
+docs/future-architecture/research/nfr-*.md
