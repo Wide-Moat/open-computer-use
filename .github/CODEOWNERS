@@ -108,15 +108,19 @@
 /.github/workflows/helm.yml             @Wide-Moat/security @Wide-Moat/maintainers
 /.github/workflows/codeql.yml           @Wide-Moat/security
 
-# Dependency-bump automation — security must see every PR.
-/.github/dependabot.yml                 @Wide-Moat/security
+# Dependency-bump automation — security + maintainers. Dependency bumps
+# break lockfiles, not just SBOMs, so build needs to sign off too.
+/.github/dependabot.yml                 @Wide-Moat/security @Wide-Moat/maintainers
 
 # Issue + advisory surface.
 /.github/ISSUE_TEMPLATE/                @Wide-Moat/maintainers @Wide-Moat/architects
-/SECURITY.md                            @Wide-Moat/security
+# Dual-team on SECURITY.md so an out-of-office on one side does not
+# block a security policy edit.
+/SECURITY.md                            @Wide-Moat/security @Wide-Moat/maintainers
 
 # Secret-scanner allowlist — every edit is a potential gate bypass.
-/.gitleaks.toml                         @Wide-Moat/security
+# Dual-team for the same out-of-office reason.
+/.gitleaks.toml                         @Wide-Moat/security @Wide-Moat/maintainers
 
 # Release log.
 /CHANGELOG.md                           @Wide-Moat/maintainers

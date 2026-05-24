@@ -38,7 +38,7 @@ A faster patch is always possible — these are upper bounds, not targets.
 
 Each release of the Software is licensed under FSL-1.1-Apache-2.0 and automatically converts to Apache-2.0 two years after publication.
 
-We patch security issues on `main` and `next/v1`. We do not back-port fixes to tagged releases older than the most recent minor.
+We patch security issues on `main` and `next/v1`. We may back-port fixes for confirmed Critical/High to the two most recent minor releases at maintainer discretion. Older minors are best-effort and not contractually supported.
 
 ## Coordinated disclosure
 
