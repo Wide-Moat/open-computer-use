@@ -72,24 +72,23 @@ The boundary properties below (§5–§11) hold for every tier; the tier picks t
 ## 5. Trust-zone diagram
 
 ```mermaid
-%%{init: {"flowchart": {"defaultRenderer": "elk"}} }%%
 flowchart LR
-    EXT[external actors:<br/>MCP client · IdP · LLM upstream<br/>SIEM · KMS · object store<br/>customer proxy · DLP-ICAP · SOAR<br/>operator · transparency log]
+    EXT[external actors]
     CP[Control plane]
     BR[Credential broker]
     VM[Compute plane]
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "Ed25519 JWT WS" --> VM
-    BR -- "scoped JWT vsock/UDS" --> VM
-    VM -- "single outbound path" --> EDGE
+    CP -- "Ed25519 JWT" --> VM
+    BR -- "scoped JWT" --> VM
+    VM -- "single egress" --> EDGE
     EDGE --> EXT
-    CP & BR & VM & EDGE -- "OCSF events" --> AUDIT
+    CP & BR & VM & EDGE -- "OCSF" --> AUDIT
     AUDIT --> EXT
 ```
 
-The canonical Mermaid source is at `docs/architecture/diagrams/02-trust-boundaries.mmd` and renders every zone, every actor, and every labelled arrow at full fidelity. The inline form above is the ≤15-line readable summary per `CLAUDE.md` Diagrams rules.
+The canonical Mermaid source is at `docs/architecture/diagrams/02-trust-boundaries.mmd` and renders every zone, every actor, and every labelled arrow at full fidelity (including the elk-renderer init directive, the 11 named external actors, and the optional-marking dashed strokes). The inline form above is the readable summary kept within the `CLAUDE.md` Diagrams inline-mermaid budget.
 
 Optional configurations on the canonical diagram are rendered with `(optional)` in the node label and dashed strokes on the relevant subgraph border. The convention: solid border = always present; dashed border = optional configuration.
 
