@@ -1,0 +1,82 @@
+%% SPDX-License-Identifier: FSL-1.1-Apache-2.0
+%% Copyright (c) 2025 Open Computer Use Contributors
+%% Canonical Layer 3 trust-zone diagram. Referenced from docs/architecture/02-trust-boundaries.md §5.
+%% Convention: solid subgraph border = always present; dashed border = optional configuration.
+%% Palette per DoD ZTRA: red untrusted / amber semi-trusted / green trusted / blue isolated.
+
+%%{init: {"flowchart": {"defaultRenderer": "elk"}, "theme": "neutral"} }%%
+flowchart LR
+
+    %% ─── external actors (untrusted; rendered as plain nodes, not subgraphs) ───
+    MCPC[MCP client<br/>external actor]:::ext
+    IDP[Customer IdP<br/>SAML / OIDC]:::ext
+    LLM[LLM upstream<br/>Anthropic / Bedrock / Vertex / vLLM / Ollama]:::ext
+    OBJ[Customer object store<br/>S3 / S3-compat]:::ext
+    CPROXY[Customer outbound proxy<br/>Zscaler / Symantec]:::ext
+    ICAP[Customer DLP-ICAP service]:::extOpt
+    SIEM[Customer SIEM<br/>Splunk / Chronicle / Elastic / QRadar / Sentinel]:::extOpt
+    KMS[Customer KMS / HSM<br/>PKCS#11 / KMIP]:::extOpt
+    SOAR[SOAR<br/>signed webhook + admin API]:::ext
+    OPER[Admin / Operator<br/>PAM-JIT human]:::ext
+    TLOG[Transparency log<br/>RFC 9162 v2]:::extOpt
+
+    %% ─── our zones ───
+    subgraph CP[Control plane]
+        ORCH[orchestrator + RPC<br/>MCP server<br/>session lifecycle<br/>LLM-upstream proxy]
+    end
+
+    subgraph BROKER[Credential broker]
+        BR[per-VM secrets-injection<br/>HOST-side<br/>loopback / vsock / UDS<br/>no master key full-capability]
+    end
+
+    subgraph COMPUTE[Compute plane]
+        VM[session sandbox<br/>guest agent PID 1<br/>container minimal · microVM full<br/>one per session · ephemeral]
+    end
+
+    subgraph EDGE[Egress trust-edge]
+        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA optional<br/>DLP-ICAP optional<br/>default-deny to Wide-Moat<br/>NFR-SEC-08 MCP allow-list]
+    end
+
+    subgraph AUDIT[Audit pipeline]
+        BUS[durable bus + hash-chained store<br/>OCSF v1.x events<br/>software-signed Merkle default<br/>HSM-signed Merkle full<br/>compute-time metering]
+    end
+
+    %% ─── inbound edges ───
+    MCPC -->|"MCP authz spec<br/>audience-validated"| ORCH
+    IDP -->|SAML / OIDC| ORCH
+    OPER -->|PAM-JIT SAML attr<br/>NFR-COMP-29| ORCH
+    SOAR <-->|signed webhook + admin API| ORCH
+
+    %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
+    ORCH -->|"Ed25519 JWT on WS<br/>bound to container_name"| VM
+    BR -->|"scoped JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
+
+    %% ─── egress edges ───
+    VM -->|"single outbound path<br/>network-bound identity<br/>NFR-SEC-27"| PROXY
+    PROXY -->|"strict TLS validation<br/>fail-closed"| LLM
+    PROXY -->|"strict TLS validation<br/>broker-issued token"| OBJ
+    PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
+    PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
+
+    %% ─── audit edges (every named zone emits OCSF events) ───
+    ORCH -->|OCSF events| BUS
+    BR -->|OCSF events| BUS
+    VM -->|OCSF events| BUS
+    PROXY -->|OCSF events| BUS
+
+    %% ─── audit egress ───
+    BUS -.->|"OCSF bridge<br/>optional"| SIEM
+    BUS -.->|"daily Merkle head<br/>RFC 9162 v2"| TLOG
+
+    %% ─── KMS path (optional) ───
+    BR -.->|"PKCS#11 / KMIP"| KMS
+    BUS -.->|"PKCS#11 / KMIP<br/>Merkle signing full-capability"| KMS
+
+    %% ─── styling (DoD ZTRA palette) ───
+    classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
+    classDef extOpt fill:#fdecea,stroke:#c0392b,stroke-dasharray: 5 5;
+    style CP fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
+    style BROKER fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
+    style COMPUTE fill:#e3f2fd,stroke:#0d47a1,stroke-width:3px;
+    style EDGE fill:#fff4e5,stroke:#b8860b,stroke-width:1px;
+    style AUDIT fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
