@@ -10,11 +10,12 @@ applies-to: next/v1
 
 How to add new architectural content. Pacing rule: discuss → stub → draft → revise → commit. One artifact per PR. No bulk-generation.
 
-## Adding a component (3 steps)
+## Adding a component (4 steps)
 
 1. Open an issue titled `Component proposal: <name>`. State the component's purpose, its boundaries (inputs/outputs/owned state), and why it exists now (not later).
 2. On a feature branch, create `components/<NN>-<name>.md` from the component-spec template (front-matter + `## Purpose` line, nothing more).
 3. Open a PR against `next/v1`. Discuss. Don't add content beyond the stub until the boundaries are agreed.
+4. **Inherit Layer 0 gates.** Remove this component's path from `.semgrepignore` (and any other gate-exclusion file) in the same PR that introduces source code for the component. CI must pass without the legacy exclusion. New code is never excluded — the exclusion list shrinks monotonically. Policy: [ADR-0001](adr/0001-layer-0-gate-legacy-exclusion.md).
 
 ## Adding an ADR (3 steps)
 
