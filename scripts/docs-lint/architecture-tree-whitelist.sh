@@ -37,6 +37,12 @@ ALLOWED=(
   "PROCESS.md"
   "primitives-backlog.md"
 
+  # Top-level numbered cross-cutting artifacts (scope cuts across the whole
+  # tree, cited by every component spec — e.g. trust boundaries, C4 context,
+  # deployment topologies). Per PROCESS.md, these live at the top level rather
+  # than under `manifesto/` or `components/`.
+  "[0-9][0-9]-*.md"
+
   # ADRs.
   "adr/README.md"
   "adr/0000-template.md"
