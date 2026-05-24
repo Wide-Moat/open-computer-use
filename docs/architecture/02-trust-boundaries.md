@@ -30,7 +30,7 @@ Measurable targets are in [`02-nfrs.md`](manifesto/02-nfrs.md); component intern
 
 **Skill registry boundary** is reserved as a TBD-stub per CLAUDE.md §v1-non-goals.
 
-Cross-component encryption-in-transit invariant per [NFR-SEC-37](manifesto/02-nfrs.md): every inter-zone arrow is encrypted in transit. The two carve-outs (MITM proxy when MITM-inspecting mode is active; DLP-ICAP hook) are listed in §7.
+Cross-component encryption-in-transit invariant per [NFR-SEC-37](manifesto/02-nfrs.md): inter-zone traffic between Wide-Moat components is encrypted in transit. Two carve-outs apply, both decrypted by design and re-encrypted on the upstream leg: (a) the Egress trust-edge inspection point when MITM-inspecting mode is active (see §7); (b) the DLP-ICAP hook inside that mode.
 
 ## 3. External actors
 
@@ -147,7 +147,7 @@ Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-cha
 
 The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (see §12 Open question 3).
 
-Tamper-evidence: hash-chained store always; the daily batch is submitted to a transparency log of the customer's choice. The transparency log operator signs the Merkle head; we sign only the submission envelope. [NFR-SEC-03](manifesto/02-nfrs.md) to be revisited in §02 to match this split.
+Tamper-evidence: hash-chained store always; the daily batch is submitted to a transparency log of the customer's choice. The transparency log operator signs the Merkle head; we sign only the submission envelope ([NFR-SEC-03](manifesto/02-nfrs.md)).
 
 ## 11. Regulator citation map
 

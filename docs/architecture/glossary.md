@@ -20,7 +20,7 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 The session sandbox zone — one sandbox per session, lifecycle bound to the session, guest agent as PID 1. Substrate is container on the minimal-capability shelf, microVM on the full-capability shelf. Cross-session network reachability disabled.
 
-Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) (formerly named `data-plane` in some §02 rows; converging on "Compute plane").
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
 ## Credential broker
 
@@ -89,7 +89,7 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §5 / §10, [`mani
 
 ## Transparency log
 
-External append-only log that the customer chooses (public Sigstore Rekor, a customer-private Rekor, or a CT-log instance). The Audit pipeline submits the daily Merkle head of the hash-chained audit store; the log operator signs the Merkle head, we sign only the submission envelope. Provides tamper-evidence the customer can verify against an operator they trust.
+External append-only log that the customer chooses (public, customer-private, or a Certificate-Transparency-style instance). The Audit pipeline submits the daily Merkle head of the hash-chained audit store; the log operator signs the Merkle head, we sign only the submission envelope. Provides tamper-evidence the customer can verify against an operator they trust.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §3 / §8.1 / §10 / §12, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-03.
 

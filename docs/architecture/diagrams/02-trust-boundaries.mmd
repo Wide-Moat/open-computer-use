@@ -12,11 +12,11 @@ flowchart LR
     IDP[Customer IdP<br/>SAML / OIDC]:::ext
     LLM[LLM upstream]:::endpoint
     OBJ[Customer object store]:::endpoint
-    CPROXY[Customer outbound proxy]:::ext
+    CPROXY[Customer outbound proxy]:::extOpt
     ICAP[Customer DLP-ICAP service]:::extOpt
     SIEM[Customer SIEM]:::extOpt
     KMS[Customer KMS / HSM]:::extOpt
-    SOAR[SOAR<br/>signed webhook + admin API]:::ext
+    SOAR[SOAR<br/>signed webhook + admin API]:::extOpt
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
     TLOG[Transparency log]:::extOpt
 

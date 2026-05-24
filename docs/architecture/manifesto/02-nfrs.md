@@ -14,7 +14,7 @@ Categories follow ISO/IEC 25010:2023 plus two inserted sections (Compliance, Cos
 
 ## Trust boundaries
 
-Five zones meet around the Compute plane: Control plane, Credential broker, Compute plane, Egress trust-edge, Audit pipeline. The trust-zone diagram is canonical in [`../02-trust-boundaries.md`](../02-trust-boundaries.md) §5 (source: [`../diagrams/02-trust-boundaries.mmd`](../diagrams/02-trust-boundaries.mmd)). Every NFR below sits on one of those zones.
+Five zones interact: Control plane, Credential broker, Compute plane, Egress trust-edge, Audit pipeline. The trust-zone diagram is canonical in [`../02-trust-boundaries.md`](../02-trust-boundaries.md) §5 (source: [`../diagrams/02-trust-boundaries.mmd`](../diagrams/02-trust-boundaries.mmd)). Every NFR below sits on one of those zones.
 
 Three identity primitives carry the inter-zone calls: a session JWT bound to `container_name` (Control plane → Compute plane, TTL ≤ 4 h), a scoped JWT via the Credential broker bound to the resource (TTL ≤ 15 min), and a network-bound egress identity (Compute plane → Egress trust-edge: the fact that traffic arrived from the sandbox at all is the identity). Component skeletons land under [`../components/`](../components/) when each component spec opens (see [PROCESS.md](../PROCESS.md)).
 
@@ -37,16 +37,15 @@ Every NFR row sits in one of three ownership classes. Layer 3 (`docs/architectur
 - **DELIVER** — we ship the code, we are accountable for the measurable target. Failure = our defect. Example: sandbox escape (NFR-SEC-02), egress proxy (NFR-SEC-05), credential broker (NFR-SEC-23/29), audit pipeline (NFR-SEC-03 reframed for tx-log submission), RTO/RPO of our planes (NFR-REL-01/02/03), encryption defaults (NFR-SEC-33).
 - **ENABLE** — we publish the contract, the telemetry, or the integration point; the customer is the principal and owns the policy/content. Failure of the surrounding posture = customer's gap, not ours. Example: DORA major-incident timeline (NFR-COMP-04 — we emit telemetry, customer classifies); NYDFS § 500.17 notification (NFR-COMP-05); IdP posture (NFR-FLEX-03 — we are the relying party).
 - **REVISIT** — flagged for re-scoping in the next §02 revision. Either claims more than our scope or names a responsibility that belongs to the customer's AI gateway / data-controller / regulator-facing process. Current list (to be re-cut, not re-justified):
-  - NFR-FS-03 — "LLM-request byte-identical round-trip for cached request shapes": we do not proxy LLM requests, we route them through the egress trust-edge; no request cache lives in our platform.
-  - NFR-REL-04 — "LLM upstream failover ≤5 min unhealthy → secondary": failover between LLM endpoints is the customer's AI gateway (LiteLLM, Lakera, etc.), not ours.
+  - NFR-FS-03 — "LLM-request byte-identical round-trip for cached request shapes": we do not proxy LLM requests, we route them through the Egress trust-edge; no request cache lives in our platform.
+  - NFR-REL-04 — "LLM upstream failover ≤5 min unhealthy → secondary": failover between LLM endpoints is the customer's AI gateway, not ours.
   - NFR-SEC-21 — "EU AI Act Art. 15(5) candidate test suite … data poisoning, model poisoning, adversarial examples, confidentiality attacks": these are model-level threats. We are not the model.
   - NFR-COMP-09 — "Post-market monitoring data flow (EU AI Act Art. 72)": Art. 72 is the deployer's monitoring obligation. We ENABLE (telemetry hooks), we don't OWN.
   - NFR-COMP-10 — "DPIA / FRIA refresh": data controller does the DPIA. We supply sub-processor + data-flow inputs, we don't refresh the assessment.
   - NFR-COMP-14 — "EU AI Act Art. 15 accuracy declaration": accuracy of the AI system. The customer's model, not ours.
   - NFR-COMP-18 — "ISO/IEC 42001:2023 AI Management System conformance": 42001 binds the organisation deploying the AI system. We ENABLE the customer's 42001 evidence; we are not conformance-ed.
   - NFR-COMP-25 — "ZDR contractual-clause checklist per supported managed LLM upstream": the customer contracts ZDR with the upstream. We surface upstream ZDR posture in docs (NFR-FLEX-01) but don't represent it.
-  - NFR-COMP-26 — "Configurable prompt-redaction filter": AI-guardrail policy belongs to the customer's AI gateway (LiteLLM, Lakera, in-perimeter model with its own guardrails). We route + audit, we don't redact prompts.
-  - NFR-SEC-03 Merkle-head wording — currently "Merkle head signed via HSM" implies we sign the chain head. We submit batches to a transparency log of the customer's choice; the log operator signs the head, we sign only the submission envelope.
+  - NFR-COMP-26 — "Configurable prompt-redaction filter": AI-guardrail policy belongs to the customer's AI gateway (commercial AI-gateway product or in-perimeter model with its own guardrails). We route + audit, we don't redact prompts.
 
 REVISIT rows stay in this catalogue at their existing IDs until the next §02 rev; Layer 3 already takes the corrected position.
 
@@ -70,9 +69,9 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | NFR-PERF-04 | Exec orchestration overhead p99 | ≤50 ms | k6 perf gate | [`10-observability.md`](../../future-architecture/architecture/10-observability.md) §SLO |
 | NFR-PERF-05 | CDP frame rate | ≥10 fps | Playwright golden-path | [`10-observability.md`](../../future-architecture/architecture/10-observability.md) §SLO |
 | NFR-PERF-06 | Egress-proxy latency p99 | ≤100 ms | k6 perf gate | [`10-observability.md`](../../future-architecture/architecture/10-observability.md) §SLO |
-| NFR-PERF-07 | Cold-start runc tier p99 (dev / PoC only — not GA acceptance path) | ≤200 ms | k6 perf gate | dev-tier baseline |
-| NFR-PERF-08 | Cold-start gVisor tier p99 | ≤400 ms | k6 perf gate | gVisor published benchmarks |
-| NFR-PERF-09 | Cold-start kata-fc tier p99 | ≤1500 ms baseline; pilot data may tighten to ≤800 ms | k6 perf gate | Firecracker Lambda baseline |
+| NFR-PERF-07 | Cold-start container-substrate p99 (dev / PoC only — not GA acceptance path) | ≤200 ms | k6 perf gate | dev-tier baseline |
+| NFR-PERF-08 | Cold-start user-space-kernel substrate p99 | ≤400 ms | k6 perf gate | published user-space-kernel benchmarks |
+| NFR-PERF-09 | Cold-start microVM substrate p99 | ≤1500 ms baseline; pilot data may tighten to ≤800 ms | k6 perf gate | Firecracker-Lambda public baseline |
 | NFR-PERF-10 | Audit-pipeline backpressure | ≥10× peak; zero chain breaks; no silent drop | chaos test | RFC-9162 + EU AI Act Art. 12 |
 | NFR-PERF-11 | Egress trust-edge throughput ceiling | `tbd` (`arch/egress-throughput-ceiling`) | — | open |
 | NFR-PERF-12 | Concurrent sandbox count per node per tier | `tbd` (`arch/sandbox-density-per-node`) | — | open |
@@ -180,7 +179,7 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | NFR-FLEX-07b | Standard installer — internet egress permitted at install time; ≤5 documented run-time egress endpoints per deployment | documented endpoint list per release; one-click solo install preserves Compose path | release pipeline + Compose smoke test | one-click invariant + [`gaps.md`](../../future-architecture/gaps.md) H |
 | NFR-FLEX-08 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` + custom CA bundle injection per component | integration test | release pipeline | [`gaps.md`](../../future-architecture/gaps.md) H |
 | NFR-FLEX-09 | Substrate independence — identical sandbox image runs on ≥3 substrates (Kata+RKE2 / bare-VM Firecracker / foreign-cloud k8s); CI matrix passes on Docker Compose AND target k8s per release | matrix green | cross-substrate CI matrix | [`01-layers.md`](../../future-architecture/architecture/01-layers.md) §substrate independence |
-| NFR-FLEX-10 | Decoupled control plane vs compute — orchestrator does not depend on runtime details; guest builds itself given network + credentials | architecture audit | release review | [`01-layers.md`](../../future-architecture/architecture/01-layers.md) §control vs compute |
+| NFR-FLEX-10 | Decoupled Control plane vs Compute plane — orchestrator does not depend on runtime details; guest builds itself given network + credentials | architecture audit | release review | [`01-layers.md`](../../future-architecture/architecture/01-layers.md) §control vs compute |
 | NFR-FLEX-11 | Image tier portability (slim → max; arbitrary OCI; flexible limits; optional GPU passthrough) | tiers buildable from same Dockerfile pipeline | release inventory | [`09-templates.md`](../../future-architecture/architecture/09-templates.md) §tiers |
 | NFR-FLEX-12 | Customer-tenant Compute plane as first-class deployment shape — Control plane carries metadata only; Compute plane (compute + storage + logs) runs in customer tenant | customer-hosted Compute plane option green per release | per-release integration | primitives-backlog (customer-tenant Compute plane) |
 | NFR-FLEX-13 | k8s-distro portability — Helm chart on any conformant k8s ≥1.28 without flavor glue; CI matrix tests kind + EKS + RKE2 per release | CI matrix | release pipeline | future ADR (`arch/adr-k8s-distros`) |
