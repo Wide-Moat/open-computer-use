@@ -12,6 +12,8 @@ contract: null
 adr: []
 ---
 
+Template for a component specification, used by `next/v1` engineers when adding a new component to the architecture.
+
 # Component-NN: <name>
 
 ## Purpose

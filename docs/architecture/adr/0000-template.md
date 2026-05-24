@@ -13,6 +13,8 @@ license-impact: none
 threat-mitigation-link: null
 ---
 
+Template for an Architecture Decision Record, used by `next/v1` engineers to capture decisions that are load-bearing, hard to reverse, or cross at least two components.
+
 # ADR-NNNN: <title>
 
 ## Status
