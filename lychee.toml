@@ -3,16 +3,13 @@
 #
 # lychee — broken link checker.
 # Reference: https://lychee.cli.rs/usage/config/
+#
+# Inputs (which files/dirs to scan) are passed as positional CLI args by the
+# workflow, not as a config-file key. This file only carries flags and
+# exclusions.
 
-# Documents to scan.
-include = [
-  "docs/architecture/**/*.md",
-  "CLAUDE.md",
-  "README.md",
-  "CONTRIBUTING.md",
-]
-
-# Don't follow links from these (legacy buffer, will be migrated).
+# Skip these paths when expanding globs — legacy buffer (will be migrated)
+# and common noisy directories.
 exclude_path = [
   "docs/future-architecture",
   "node_modules",
@@ -20,13 +17,8 @@ exclude_path = [
   ".planning",
 ]
 
-# Skip checking external URLs by default — CI shouldn't fail because GitHub
-# is rate-limiting us. Internal/relative links are what matter for the
-# forward-reference rule.
-exclude_all_private = true
-
-# Match the forward-reference rule: a relative path that doesn't resolve
-# on disk is a broken link, period.
+# Match the forward-reference rule: a relative path that doesn't resolve on
+# disk is a broken link, period.
 include_fragments = true
 
 # Patterns to allow without HTTP checking (anchor-only refs, mailto, etc.).
@@ -35,6 +27,10 @@ exclude = [
   '^tel:',
 ]
 
-# Fail CI on first broken link.
+# External URLs are not what we're guarding against (forward-reference rule).
+# Skip them to avoid CI failing on rate-limited or transiently-down upstreams.
+exclude_all_private = false
+offline = false
+
 no_progress = true
 verbose = "info"
