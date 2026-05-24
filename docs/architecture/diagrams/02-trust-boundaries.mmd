@@ -9,7 +9,7 @@ flowchart LR
 
     %% ─── external actors (untrusted; rendered as plain nodes, not subgraphs) ───
     MCPC[MCP client<br/>external actor]:::ext
-    IDP[Customer IdP<br/>SAML / OIDC]:::ext
+    IDP[Customer IdP<br/>SAML / OIDC]:::extOpt
     LLM[LLM upstream]:::endpoint
     OBJ[Customer object store]:::endpoint
     CPROXY[Customer outbound proxy]:::extOpt
@@ -26,7 +26,7 @@ flowchart LR
     end
 
     subgraph BROKER[Credential broker]
-        BR[per-VM secrets-injection<br/>HOST-side<br/>loopback / vsock / UDS<br/>no master key full-capability]
+        BR[per-VM secrets-injection<br/>HOST-side<br/>loopback / vsock / UDS<br/>delegated STS on full shelf]
     end
 
     subgraph COMPUTE[Compute plane]
@@ -34,7 +34,7 @@ flowchart LR
     end
 
     subgraph EDGE[Egress trust-edge]
-        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>NFR-SEC-08 MCP allow-list]
+        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>MCP allow-list enforcement]
     end
 
     subgraph AUDIT[Audit pipeline]
