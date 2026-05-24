@@ -72,24 +72,32 @@ jobs:
           persist-credentials: false
           path: pr-head
       - name: Fetch base-ref .gitleaks.toml via GitHub API
+        id: base-config
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref || github.ref_name }}
           REPO: ${{ github.repository }}
+        # If `.gitleaks.toml` exists on the base ref, write it to
+        # config/.gitleaks.toml — the docker run below will overlay it
+        # and the PR's allowlist is ignored. If the base ref has no
+        # `.gitleaks.toml` (e.g. the PR that introduces the file in the
+        # first place), the script writes nothing and we fall back to
+        # the upstream gitleaks default ruleset — no PR-supplied
+        # allowlist is ever honoured. That keeps the fork-PR injection
+        # attack closed in both states.
         run: |
           mkdir -p config
-          gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
-            --jq '.content' \
-            | base64 -d > config/.gitleaks.toml
-          # Sanity-check: gh api emits an empty file on a 404; reject that
-          # rather than silently scanning with an empty allowlist (a real
-          # secret in the PR with no upstream toml would still be caught,
-          # but a missing config is a config bug — surface it).
-          if [ ! -s config/.gitleaks.toml ]; then
-            echo "::error::base-ref .gitleaks.toml is empty or missing" >&2
-            exit 1
+          if gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
+              --jq '.content' 2>/dev/null \
+              | base64 -d > config/.gitleaks.toml 2>/dev/null && \
+              [ -s config/.gitleaks.toml ]; then
+            echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
+            echo "have_config=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f config/.gitleaks.toml
+            echo "No .gitleaks.toml on base ref ${BASE_REF} — falling back to gitleaks defaults."
+            echo "have_config=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
       - name: Run gitleaks (Docker)
         # The official gitleaks-action requires a paid license for GitHub
         # Organizations. Use the upstream Docker image directly — same
@@ -106,15 +114,28 @@ jobs:
         # :ro mounts + non-root user + --read-only container fs are
         # defence-in-depth against a compromised gitleaks image (digest
         # pin above is the first layer).
+        env:
+          HAVE_CONFIG: ${{ steps.base-config.outputs.have_config }}
         run: |
+          # Build the config flag conditionally: with a base-ref config
+          # we overlay it via -v /config; without one, gitleaks falls back
+          # to its built-in defaults (which is still the bank-grade rule
+          # set — we only LOSE our project-specific allowlist, never the
+          # detection rules themselves).
+          config_args=()
+          mount_args=()
+          if [ "$HAVE_CONFIG" = "true" ]; then
+            config_args=(--config=/config/.gitleaks.toml)
+            mount_args=(-v "${{ github.workspace }}/config:/config:ro")
+          fi
           docker run --rm \
             --read-only \
             --user "$(id -u):$(id -g)" \
             -v "${{ github.workspace }}/pr-head:/repo:ro" \
-            -v "${{ github.workspace }}/config:/config:ro" \
+            "${mount_args[@]}" \
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --no-banner --redact --exit-code 1 \
-            --config=/config/.gitleaks.toml
+            "${config_args[@]}"
 
   secrets-trufflehog:
     name: secrets — trufflehog
