@@ -12,7 +12,7 @@ applies-to: next/v1
 
 Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → Egress trust-edge + Credential broker`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
 
-Ownership per row is named in [`02-nfrs.md`](manifesto/02-nfrs.md) §Scope-ownership: DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). Layer 3 is consistent with the corrected scope; the §02 catalogue still carries the old wording at the named IDs until its next revision.
+Ownership per row is named in [`02-nfrs.md`](manifesto/02-nfrs.md) §"Scope ownership": DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). §02 marks each REVISIT row inline as `[REVISIT — non-gating]` so CI and verifier passes do not enforce it; the substantive re-cut of those rows lands in a follow-up PR.
 
 Product invariant from [NFR-SEC-16](manifesto/02-nfrs.md): the distributed configuration ships no outbound paths to vendor-controlled endpoints. On-prem deployments use only outbound paths the customer enabled.
 
@@ -22,11 +22,19 @@ Measurable targets are in [`02-nfrs.md`](manifesto/02-nfrs.md); component intern
 
 | # | Zone | One-line role | §02 anchor |
 |---|---|---|---|
-| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Outbound to LLM and any other upstream goes through the Egress trust-edge like any other request; the Control plane is not a model proxy. | [NFR-IC-04](manifesto/02-nfrs.md), [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md) |
-| 2 | **Credential broker** | Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS. Holds real upstream creds; guest never does. | [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-25](manifesto/02-nfrs.md) |
-| 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM substrate on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md), [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md), [NFR-PERF-02](manifesto/02-nfrs.md), [NFR-PERF-03](manifesto/02-nfrs.md) |
-| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer CA opt-in (DLP-ICAP is a configuration of MITM, not a third mode). MCP allow-list enforcement ([NFR-SEC-08](manifesto/02-nfrs.md)) sits here. AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md), [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md) |
-| 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from Control plane, so it is its own zone. Compute-time metering ([NFR-COST-05](manifesto/02-nfrs.md)) emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md), [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
+| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Holds no outbound path to upstream; all upstream traffic originates in the Compute plane and traverses the Egress trust-edge. The Control plane is not a model proxy. | [NFR-IC-04](manifesto/02-nfrs.md) |
+| 2 | **Credential broker** | Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS. Holds real upstream creds; guest never does. | [NFR-SEC-23](manifesto/02-nfrs.md) |
+| 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM substrate on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md) |
+| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer CA opt-in (DLP-ICAP is a configuration of MITM, not a third mode). MCP allow-list enforcement sits here. AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md) |
+| 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from Control plane, so it is its own zone. Compute-time metering emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md) |
+
+Secondary NFR anchors per zone (consolidated to satisfy the CLAUDE.md ≤ 3-links-per-H2 rule):
+
+- Control plane — [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md).
+- Credential broker — [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-25](manifesto/02-nfrs.md).
+- Compute plane — [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md). Performance targets for this zone live in component specs, not as zone properties.
+- Egress trust-edge — [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md).
+- Audit pipeline — [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
 
 **Skill registry boundary** is reserved as a TBD-stub per CLAUDE.md §v1-non-goals.
 
@@ -74,7 +82,7 @@ flowchart LR
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "Egress JWT (≤4h) + Generic internal (≤60min)" --> VM
+    CP -- "Egress JWT (≤4h)" --> VM
     BR -- "Broker scoped-JWT (≤15min)" --> VM
     VM -- "single egress" --> EDGE
     EDGE --> EXT
@@ -126,21 +134,23 @@ Token taxonomy is canonical here and matches [`manifesto/02-nfrs.md`](manifesto/
 
 | Token class | Scope | TTL | Consumer | §02 anchor |
 |---|---|---|---|---|
-| **Egress JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 4 h | Compute plane (guest agent) | [NFR-SEC-10](manifesto/02-nfrs.md) |
-| **Generic internal token** | inter-component RPC (Control plane ↔ broker ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | [NFR-SEC-23](manifesto/02-nfrs.md) |
-| **Broker scoped-JWT** | per-resource (one filesystem prefix / one upstream API-key class) | ≤ 15 min | Compute plane consuming a brokered resource | [NFR-SEC-29](manifesto/02-nfrs.md) |
+| **Egress JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 4 h | Compute plane (guest agent) | NFR-SEC-10 |
+| **Generic internal token** | inter-component RPC (Control plane ↔ broker ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | NFR-SEC-23 |
+| **Broker scoped-JWT** | per-resource (one filesystem prefix / one upstream API-key class) | ≤ 15 min | Compute plane consuming a brokered resource | NFR-SEC-29 |
 
 Diagram-label note: the §5 diagram uses the same class names ("Egress JWT", "Generic internal", "Broker scoped-JWT"); the older "session JWT" / "RPC token" wording was retired in this rev.
 
 | Property | Minimal-capability shelf | Full-capability shelf | §02 anchor |
 |---|---|---|---|
-| Inter-component identity | Host-local signing key bound to `container_name` | Workload identity from customer PKI per tenant | [NFR-SEC-26](manifesto/02-nfrs.md) (minimal), [NFR-SEC-09](manifesto/02-nfrs.md) (full) |
-| Identity trust root | host-local signing key | HSM-rooted, FIPS 140-3 L3 | [NFR-FLEX-04](manifesto/02-nfrs.md) |
-| Tenant DEK rotation | ≤90 d | ≤90 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
-| Tenant KEK rotation | ≤365 d | ≤365 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
-| Revoke latency | ≤5 min | ≤5 min | [NFR-SEC-04](manifesto/02-nfrs.md) |
+| Inter-component identity | Host-local signing key bound to `container_name` | Workload identity from customer PKI per tenant | NFR-SEC-26 / NFR-SEC-09 |
+| Identity trust root | host-local signing key | HSM-rooted, FIPS 140-3 L3 | NFR-FLEX-04 |
+| Tenant DEK rotation | ≤90 d | ≤90 d | NFR-SEC-04 |
+| Tenant KEK rotation | ≤365 d | ≤365 d | NFR-SEC-04 |
+| Revoke latency | ≤5 min | ≤5 min | NFR-SEC-04 |
 | Per-tenant trust domain | n/a (single-tenant) | per-tenant trust domain | open question §12 item 1 |
-| Internal mTLS substrate | TLS 1.3 enforced at the deployment overlay (substrate choice is a component-spec decision) | same, customer-CA-rooted | [NFR-SEC-37](manifesto/02-nfrs.md) |
+| Internal mTLS substrate | TLS 1.3 enforced at the deployment overlay (substrate choice is a component-spec decision) | same, customer-CA-rooted | NFR-SEC-37 |
+
+NFR anchors for §8 (consolidated): see [NFR-SEC-04](manifesto/02-nfrs.md), [NFR-SEC-09](manifesto/02-nfrs.md), [NFR-SEC-10](manifesto/02-nfrs.md), [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-26](manifesto/02-nfrs.md), [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-37](manifesto/02-nfrs.md), [NFR-FLEX-04](manifesto/02-nfrs.md).
 
 Minimal shelf: identity-binding ([NFR-SEC-09](manifesto/02-nfrs.md)) via host-local signing key on JWT ([NFR-SEC-26](manifesto/02-nfrs.md)); egress trust-store ([NFR-SEC-05](manifesto/02-nfrs.md)) via auto-generated self-signed CA. Full shelf: workload identities from customer PKI + customer-rooted CA.
 
