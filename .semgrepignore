@@ -51,9 +51,11 @@ cleanup/
 
 # Bundled-skills PoC code — defused-xml gaps, file-perms issues. v1 ships
 # zero default skills (per manifesto/04-non-goals.md); SkillProvider stays
-# TBD. These directories will be deleted, not refactored. Both
-# `skills/public/` and `skills/examples/` are out of scope: v1 GA does
-# not bundle any skill, the directories die together.
+# TBD. These directories will be deleted, not refactored. Three specific
+# `skills/public/` subdirectories trip SAST today; the whole
+# `skills/examples/` tree is excluded because every example carries the
+# same upstream patterns. All three subtrees die together when v1 GA
+# locks in "zero bundled skills".
 skills/public/pptx/
 skills/public/docx/
 skills/public/webapp-testing/
@@ -65,9 +67,11 @@ skills/examples/
 .github/workflows/release-chart.yml
 
 # Main-line test code — stdlib XML parsing in PoC test fixtures. New
-# components ship their own tests under each component's directory;
-# this top-level `tests/` tree dies as the legacy code does.
-tests/
+# components ship their own tests under each component's directory.
+# The pattern is root-anchored (`/tests/`, not `tests/`) so it matches
+# only the top-level legacy tree, not nested `tests/` directories that
+# future components will own.
+/tests/
 
 # --- Not legacy, just out of scope for SAST ---------------------------------
 
