@@ -18,14 +18,23 @@ MD013: false
 MD024:
   siblings_only: true
 
-# MD033 — inline HTML. We use <!-- ... --> comments for SPDX headers above
-# YAML front-matter, and occasional <details> blocks.
-MD033:
-  allowed_elements:
-    - "!--"
-    - "details"
-    - "summary"
-    - "br"
+# MD033 — inline HTML. We use HTML comments for SPDX headers above YAML
+# front-matter, <details>/<summary> blocks, and angle-bracket placeholders
+# in templates (e.g. "# ADR-NNNN: <title>"). Disable entirely; placeholder
+# leakage into real ADRs is caught by ai-slop-detector and reviewer eyes.
+MD033: false
+
+# MD003 — heading-style. Force ATX (`# Title`); markdownlint sometimes
+# auto-detects setext from accidentally-similar lines and flags every ATX
+# heading in the file as a violation.
+MD003:
+  style: atx
+
+# MD022 — blanks-around-headings. Disabled — markdownlint mis-parses the
+# YAML front-matter delimiter (`---`) as a setext H2 underline and then
+# treats the line above it ("status: proposed") as a heading that needs
+# blank lines around it. False positive specific to our front-matter shape.
+MD022: false
 
 # MD041 — first line in file should be a top-level heading. Our docs lead
 # with an HTML license comment then YAML front-matter, so disable this.
