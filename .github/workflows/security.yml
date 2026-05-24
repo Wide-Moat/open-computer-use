@@ -6,12 +6,21 @@
 #
 #   1. Secrets scan blocks merge (gitleaks + trufflehog).
 #   2. SAST/SCA CRITICAL blocks merge (Semgrep + Trivy).
-#   3. IaC scan HIGH+ blocks merge on Helm/Dockerfile/Compose/K8s (Checkov).
+#   3. IaC scan (Checkov) — CRITICAL on Helm blocks merge (HIGH currently
+#      soft-fail during bootstrap; tightened once the baseline cleanup PR
+#      lands and Dockerfile/Compose/K8s scopes are added back in).
 #
-# Signed SBOM + SLSA-3 provenance for release artifacts lives in
+# Signed SBOM + Cosign attestations for release artifacts live in
 # supply-chain.yml; this file covers the commit-time / PR-time gates.
 #
 # Per-rule "HIGH exception" file: .github/security-exceptions.yml.
+#
+# Pinning policy (mandatory for every `uses:` and container `image:`):
+#   - Third-party actions pinned to a 40-char commit SHA, never to a
+#     movable tag (zizmor `unpinned-uses` would block merge on its own).
+#   - Container images pinned to `name:tag@sha256:<digest>`.
+#   - Every actions/checkout call sets `persist-credentials: false`
+#     (zizmor `artipacked`).
 
 name: security
 
@@ -39,28 +48,32 @@ jobs:
     name: secrets — gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Run gitleaks (Docker)
         # The official gitleaks-action requires a paid license for GitHub
         # Organizations. Use the upstream Docker image directly — same
-        # detect engine, no license server.
+        # detect engine, no license server. Pinned by digest so a future
+        # `:latest` push cannot silently change scan behaviour on a
+        # merge-blocking gate.
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/repo" \
-            zricethezav/gitleaks:latest \
+            zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --no-banner --redact --exit-code 1
 
   secrets-trufflehog:
     name: secrets — trufflehog
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Run trufflehog
-        uses: trufflesecurity/trufflehog@main
+        uses: trufflesecurity/trufflehog@0ec3634f6cf66a61912a923fee9d20cc45633a67  # main as of 2026-05-24
         with:
           path: ./
           # The action passes --fail internally when `fail` is its default;
@@ -71,9 +84,11 @@ jobs:
     name: SAST — semgrep
     runs-on: ubuntu-latest
     container:
-      image: returntocorp/semgrep
+      image: returntocorp/semgrep:1.163.0@sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
       - name: Semgrep CI (community rules)
         # `semgrep ci` already exits non-zero on findings — no --error flag.
         run: |
@@ -87,9 +102,11 @@ jobs:
     name: SCA — trivy (filesystem)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -115,7 +132,7 @@ jobs:
           limit-severities-for-sarif: true
       - name: Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -124,23 +141,25 @@ jobs:
     name: IaC — checkov
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
       - name: Install checkov
         run: pip install checkov==3.2.314
       - name: Run checkov
-        # Scope: only Helm (the next/v1 deployment substrate) and new
-        # GitHub Actions workflows from chore/ci-security-gates onwards.
-        # The legacy Dockerfile + older workflows have pre-existing
-        # findings that belong in a separate cleanup PR — they are not
-        # the subject of this gate.
+        # Scope: only Helm (the next/v1 deployment substrate). The legacy
+        # Dockerfile + older workflows have pre-existing findings that
+        # belong in a separate cleanup PR — they are not the subject of
+        # this gate.
         #
-        # --soft-fail-on LOW,MEDIUM,HIGH means only CRITICAL blocks merge
-        # for the bootstrap phase. We tighten to HIGH+ in a follow-up
-        # once the baseline cleanup PR lands.
+        # `--soft-fail-on LOW,MEDIUM,HIGH` means only CRITICAL Helm findings
+        # block merge for the bootstrap phase. We tighten to HIGH+ in a
+        # follow-up once the baseline cleanup PR lands, and we extend the
+        # framework list to dockerfile/compose/k8s at the same time.
         run: |
           checkov \
             -d helm/ \
@@ -154,11 +173,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Validate PR title
-        uses: amannn/action-semantic-pull-request@v5
+        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825  # v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
