@@ -12,15 +12,16 @@ Names who Wide-Moat is built for, who can stop a deployment from happening, and 
 
 ## Audience
 
-Wide-Moat is built for any organisation that needs in-perimeter agentic AI. The capability ceiling targets the requirements of a tier-1 US or EU bank — the most demanding envelope of security, compliance, and operational scale we know — so smaller and less-regulated organisations fit beneath it on the same artifact. Primary commercial focus and trust anchor are tier-1 banks; the product is one product, not a tiered SKU.
+Wide-Moat is built for any organisation that needs in-perimeter agentic AI. The capability ceiling targets the requirements of a tier-1 US or EU bank — the most demanding envelope of security, compliance, and operational scale we know — so smaller and less-regulated organisations fit beneath it on the same artifact. Primary commercial focus and trust anchor are tier-1 banks; the product is one product, not a tiered SKU. The 2026 use-cases that close at this tier are KYC/AML investigator assistance, internal IT-helpdesk automation, sandboxed developer productivity, and compliance-evidence collection.
 
-Wide-Moat is not sold as a single component. The commercial unit is the in-perimeter ecosystem subscription — Computer Use harness, workflow orchestration, presentation surfaces, audit pipeline, identity integration, egress controls, sandbox runtime, key management — assembled, integrated, and supported as one deployable platform. Enablement and certification are sold alongside.
+Wide-Moat is sold as an in-perimeter ecosystem subscription — a single integrated platform with enablement and certification, not as separable components.
 
-The platform serves three coexisting personas inside the customer organisation:
+The platform serves two human personas inside the customer organisation:
 
 1. **Business users** consume agents through chat surfaces, workflows, and dashboards. They never see the platform plumbing.
-2. **Agents themselves** are first-class users from an architectural perspective — they call tools, execute browser sessions, and emit audit events through stable contracts (MCP, ModelProvider, sandbox runtime API, replay bundle schema).
-3. **Builder and platform engineers** inside the customer create skills, MCP servers, n8n workflows, observability dashboards, and eval suites. They are the customer's internal multipliers; the training and enablement Wide-Moat sells is for them.
+2. **Builder and platform engineers** inside the customer create skills, MCP servers, n8n workflows, observability dashboards, and eval suites. They are the customer's internal multipliers; the training and enablement Wide-Moat sells is for them.
+
+Agents are treated as a first-class architectural concern below the human personas — they call tools, execute browser sessions, and emit audit events through stable contracts (MCP, ModelProvider, sandbox runtime API, replay bundle schema). They are a design constraint, not a buyer.
 
 A solo enthusiast audience exists as a downstream consequence of the FSL-1.1-Apache-2.0 licence (see [§05](./05-licensing-posture.md)), not as a co-equal persona. Anyone may self-host, fork, and modify the platform. Expected contribution channels are evaluation submissions, hardening reports, MCP server and skill contributions, and public engineering writeups. Security primitives ship in the open artifact; the commercial moat is operational, not capability.
 
@@ -33,7 +34,7 @@ A purchase requires alignment across four parallel chains, each with veto power:
 3. **Gatekeeper stack** — CISO, Chief Risk Officer, Chief Compliance Officer, Data Protection Officer; any one of them can stop the deal in InfoSec or third-party-risk review.
 4. **Procurement and Legal** — runs the third-party-risk-management intake and the licence redline.
 
-The top deal-killer in 2026 is the third-party-risk-management (TPRM) function. NYDFS Industry Letter of 21 October 2025 added contractual requirements on third-party AI use, training-data limits, sub-processor disclosure, and exit obligations; FDIC FIL-44-2025 and OCC Bulletin 2025-17 added US-federal requirements on AI inventory, audit rights, and model-drift control. DORA Articles 28–30 (EU) mandate a Register of Information with seven required fields per ICT provider and explicit concentration-risk management. Supervisory Letter SR 26-2 (17 April 2026) excludes generative and agentic AI from Model Risk Management scope; the veto moves from model-risk reviewers to TPRM, operational-risk, and cyber reviewers. The platform must satisfy that group, not the first.
+The top deal-killer in 2026 is the third-party-risk-management (TPRM) function. NYDFS Industry Letter of 21 October 2025 binds covered entities to AI-specific contractual requirements on third-party AI use, training-data limits, sub-processor disclosure, and exit obligations. DORA Articles 28–30 (EU) mandate a Register of Information with seven required fields per ICT provider plus explicit concentration-risk management. Supervisory Letter SR 26-2 (17 April 2026) excludes generative and agentic AI from Model Risk Management scope; the veto moves from model-risk reviewers to TPRM, operational-risk, and cyber reviewers. The platform must satisfy that group, not the first.
 
 ## Why now
 
@@ -41,9 +42,9 @@ Four forcing functions converge in 2026. DORA enforcement has been active in the
 
 ## Positioning thesis
 
-Wide-Moat assembles an in-perimeter agentic AI ecosystem and sells it as a deployable subscription with enablement and certification. Every component runs entirely inside the customer's perimeter (including the agent loop, the context store, and the recovery logic — not only the tool-execution sandbox). The platform is model-agnostic by construction (MCP-first, no hosted loop); SOC 2 Type II, ISO 27001, DORA Article 28–30, and EU AI Act Annex III evidence ships as first-class build artifacts on every release. The licence is FSL-1.1-Apache-2.0 with a published `LICENSE-ADDITIONAL-PERMISSIONS.md` instrument (see [§05](./05-licensing-posture.md)) enumerating internal-use scope for affiliates, joint ventures, outsourced operators, single-tenant managed deployments, and internal white-labelling; reselling as a competing multi-tenant SaaS remains forbidden, including by Wide-Moat itself.
+Wide-Moat assembles an in-perimeter agentic AI ecosystem and sells it as a deployable subscription with enablement and certification. Every component runs entirely inside the customer's perimeter (including the agent loop, the context store, and the recovery logic — not only the tool-execution sandbox). The platform is model-agnostic by construction (MCP-first, no hosted loop); SOC 2 Type II, ISO 27001, DORA Article 28–30, and EU AI Act Annex III evidence ships as first-class build artifacts on every release. The licence is FSL-1.1-Apache-2.0 with a planned `LICENSE-ADDITIONAL-PERMISSIONS.md` instrument (tracked in issue `arch/additional-permissions-instrument`, drafted in [`advisor-fsl-internal-use.md`](../../future-architecture/research/advisor-fsl-internal-use.md), lands in [§05](./05-licensing-posture.md)) enumerating internal-use scope for affiliates, joint ventures, outsourced operators, single-tenant managed deployments, and internal white-labelling; reselling as a competing multi-tenant SaaS remains forbidden during the FSL term (including by Wide-Moat itself), with each release converting to Apache 2.0 two years after publication per the License's Future License Grant.
 
-In-perimeter deployment alone is no longer a moat. UiPath Automation Suite shipped on-prem agentic AI on 5 May 2026 under a commercial closed-source EULA; Anthropic shipped self-hosted sandboxes on 19 May 2026 with the agent loop, context, and model weights kept on Anthropic infrastructure. Neither closes the four-clause intersection: model-neutral, source-available, fully in-perimeter (loop included), with per-release compliance evidence. That intersection is the remaining moat and re-evaluates on 2027-05-24.
+In-perimeter deployment alone is no longer a moat. UiPath Automation Suite shipped on-prem agentic AI on 5 May 2026 under a commercial closed-source EULA; Anthropic shipped self-hosted sandboxes on 19 May 2026 with the agent loop, context, and model weights kept on Anthropic infrastructure. The remaining moat is the intersection of: model-neutral, source-available, fully in-perimeter (loop included), and per-release compliance evidence. Re-evaluates on 2027-05-24.
 
 ## Open questions
 
