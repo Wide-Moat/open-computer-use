@@ -179,15 +179,18 @@ jobs:
           # env override can't silently downgrade the gate.
           SEMGREP_SUPPRESS_ERRORS: "false"
         run: |
+          # Verified registry packs as of 2026-05-24: p/bash and p/yaml
+          # do not exist on semgrep.dev (HTTP 404) — do not add them
+          # without first probing /c/p/<name>. Bash-in-YAML coverage
+          # comes from p/security-audit + p/github-actions; Docker
+          # socket misuse from p/dockerfile.
           semgrep ci \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
             --config "p/javascript" \
-            --config "p/bash" \
             --config "p/dockerfile" \
-            --config "p/github-actions" \
-            --config "p/yaml"
+            --config "p/github-actions"
 
   sca-trivy-fs:
     name: SCA — trivy (filesystem)
