@@ -138,6 +138,26 @@ check() {
     echo "FAIL: $file uses superlative 'is the only / unique' without measurable referent"
     fail=1
   fi
+
+  # 14. Internal research-artifact leakage. The architecture set must not
+  #     load-bear on (or even mention) internal observation of third-party
+  #     code — naming a vendor's internal binary / module / source-file as
+  #     a "primitive we surfaced" reads as reverse-engineering, even when
+  #     the upstream is permissive-licensed. The research-buffer is the
+  #     right home for those notes; the canonical tree is not.
+  #
+  #     Banned phrasings (case-insensitive):
+  #       - "Anthropic `srt`" / "Anthropic srt"
+  #       - "sandbox-runtime" as a third-party-product reference
+  #       - "process_api_re" (legacy reverse-engineering slug)
+  #       - "reverse-engineered" / "reverse engineering"
+  #       - "Anthropic-observed" / "as observed in Anthropic"
+  #       - reference to `sandboxd/` paths (gitignored by policy)
+  if grep -nEi '(anthropic[[:space:]]+`?srt|`sandbox-runtime`|process_api_re|reverse[ -]engineer(ed|ing)?|anthropic-observed|as observed in anthropic|sandboxd/)' "$file" > /dev/null; then
+    grep -nEi '(anthropic[[:space:]]+`?srt|`sandbox-runtime`|process_api_re|reverse[ -]engineer(ed|ing)?|anthropic-observed|as observed in anthropic|sandboxd/)' "$file"
+    echo "FAIL: $file leaks internal research-artifact phrasing (Anthropic-srt / sandbox-runtime / sandboxd path / reverse-engineering wording)"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do

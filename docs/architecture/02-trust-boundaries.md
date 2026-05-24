@@ -10,58 +10,56 @@ applies-to: next/v1
 
 ## 1. Purpose and scope
 
-Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → egress (proxy + credential broker)`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
+Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → Egress trust-edge + Credential broker`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
 
-Ownership per row is named in `02-nfrs.md` §Scope-ownership: DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). Layer 3 is consistent with the corrected scope; the §02 catalogue still carries the old wording at the named IDs until its next revision.
+Ownership per row is named in [`02-nfrs.md`](manifesto/02-nfrs.md) §Scope-ownership: DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). Layer 3 is consistent with the corrected scope; the §02 catalogue still carries the old wording at the named IDs until its next revision.
 
 Product invariant from [NFR-SEC-16](manifesto/02-nfrs.md): the distributed configuration ships no outbound paths to vendor-controlled endpoints. On-prem deployments use only outbound paths the customer enabled.
 
-Measurable targets are in `02-nfrs.md`; component internals are in `components/*.md`; threat content is Layer 7.
+Measurable targets are in [`02-nfrs.md`](manifesto/02-nfrs.md); component internals are in [`components/`](./components/); threat content is out of scope here and lands when the threat-model artifact opens.
 
 ## 2. Drawn zones
 
-Bridge to §02 wording: Compute plane = `data-plane` / `VM`. Egress trust-edge = `egress-proxy`.
-
 | # | Zone | One-line role | §02 anchor |
 |---|---|---|---|
-| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Outbound to LLM and any other upstream goes through Egress trust-edge like any other request; the Control plane is not a model proxy. | [NFR-IC-04](manifesto/02-nfrs.md), [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md) |
+| 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Outbound to LLM and any other upstream goes through the Egress trust-edge like any other request; the Control plane is not a model proxy. | [NFR-IC-04](manifesto/02-nfrs.md), [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md) |
 | 2 | **Credential broker** | Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS. Holds real upstream creds; guest never does. | [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-25](manifesto/02-nfrs.md) |
-| 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM (Kata-FC / Kata-CH) on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md), [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md), [NFR-PERF-02/03](manifesto/02-nfrs.md) |
-| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer-CA opt-in; DLP-ICAP a separate opt-in. MCP allow-list enforcement ([NFR-SEC-08](manifesto/02-nfrs.md)) sits here. AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md), [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md) |
-| 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from control plane, so it is its own zone. Compute-time metering ([NFR-COST-05](manifesto/02-nfrs.md)) emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md), [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
+| 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM substrate on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md), [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md), [NFR-PERF-02](manifesto/02-nfrs.md), [NFR-PERF-03](manifesto/02-nfrs.md) |
+| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer CA opt-in (DLP-ICAP is a configuration of MITM, not a third mode). MCP allow-list enforcement ([NFR-SEC-08](manifesto/02-nfrs.md)) sits here. AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md), [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md) |
+| 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from Control plane, so it is its own zone. Compute-time metering ([NFR-COST-05](manifesto/02-nfrs.md)) emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md), [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
 
-**Skill registry boundary** is reserved as a TBD-stub per `MANIFESTO.md` non-goals.
+**Skill registry boundary** is reserved as a TBD-stub per CLAUDE.md §v1-non-goals.
 
-Cross-component encryption-in-transit invariant per [NFR-SEC-37](manifesto/02-nfrs.md): every inter-zone arrow is encrypted in transit. The two carve-outs (MITM-proxy when MITM-tier active; DLP-ICAP hook) are listed in §7.
+Cross-component encryption-in-transit invariant per [NFR-SEC-37](manifesto/02-nfrs.md): every inter-zone arrow is encrypted in transit. The two carve-outs (MITM proxy when MITM-inspecting mode is active; DLP-ICAP hook) are listed in §7.
 
 ## 3. External actors
 
-Outbound endpoints behind the egress policy (LLM, customer MCP servers, object stores, internal APIs) are not actors — the egress policy gates them and the credential broker selects the scoped token.
+Outbound endpoints behind the egress policy — LLM upstream, customer MCP servers, object stores, internal APIs — are drawn in the diagram for visual orientation only. They are not actors against our contracts: the Egress trust-edge gates them and the Credential broker selects the scoped token.
 
-| Actor | Boundary it crosses | Contract |
-|---|---|---|
-| MCP client (the thing that calls our MCP server) | client → Control plane | MCP authorization spec, audience-validated tokens |
-| Customer IdP (SAML / OIDC) | IdP → Control plane | relying-party (we are RP) |
-| Customer SIEM (Splunk / Chronicle / Elastic / QRadar / Sentinel) | Audit pipeline → SIEM | OCSF schema + bridge transport |
-| Customer KMS / HSM | Credential broker / Audit pipeline → KMS | PKCS#11 + KMIP |
-| Customer outbound proxy (Zscaler / Symantec) | Egress trust-edge → customer proxy | chained-proxy contract |
-| Customer DLP-ICAP service | Egress trust-edge → ICAP | RFC 3507 ICAP req-mod + resp-mod |
-| SOAR (incident automation) | Control plane ↔ SOAR | signed webhook + admin API |
-| Admin / Operator (PAM-JIT human) | Operator → Control plane | short-lived SAML-asserted attribute claim; no shared service accounts ([NFR-COMP-29](manifesto/02-nfrs.md)) |
-| Transparency log | Audit pipeline → transparency log | RFC 9162 v2 publishing (see §12.4) |
+| Actor | Boundary it crosses | Contract | Optional? |
+|---|---|---|---|
+| MCP client (the thing that calls our MCP server) | client → Control plane | MCP authorization spec, audience-validated tokens | required |
+| Customer IdP (SAML / OIDC) | IdP → Control plane | relying-party (we are RP) | required on full shelf |
+| Customer SIEM | Audit pipeline → SIEM | OCSF schema + bridge transport (transports per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md)) | optional bridge — file-system sink on minimal shelf |
+| Customer KMS / HSM | Credential broker / Audit pipeline → KMS | PKCS#11 + KMIP | optional — full shelf only; minimal shelf uses host-local keys |
+| Customer outbound proxy | Egress trust-edge → customer proxy | chained-proxy contract | optional |
+| Customer DLP-ICAP service | Egress trust-edge → ICAP | ICAP req-mod + resp-mod | optional — engaged only in MITM-inspecting mode |
+| SOAR (incident automation) | Control plane ↔ SOAR | signed webhook + admin API | optional |
+| Admin / Operator (PAM-JIT human) | Operator → Control plane | short-lived SAML-asserted attribute claim; no shared service accounts ([NFR-COMP-29](manifesto/02-nfrs.md)) | required |
+| Transparency log | Audit pipeline → transparency log | submission envelope; log operator signs the Merkle head (§12 Open question 4) | optional — choose public or customer-private |
 
 ## 4. Per-tenant isolation menu
 
 | Tier | Mechanism | Cross-tenant boundary | Where it sits |
 |---|---|---|---|
 | T0 logical | row-level filter; tenant_id column + app-side check | shared kernel, shared substrate | dev / single-tenant minimal-capability |
-| T1 namespace | Kubernetes namespace + NetworkPolicy + RBAC + ResourceQuota | shared kernel, shared control plane | non-NPI workloads |
+| T1 namespace | namespace + network policy + role-based access control + resource quota | shared kernel, shared control plane | non-NPI workloads |
 | T2 VPC / VNet | per-tenant VPC, no peering | shared substrate, separate network | NPI baseline |
-| T3 dedicated cluster | dedicated control plane per tenant | separate control plane, shared substrate | full-capability default for DORA-CIF workloads |
-| T4 dedicated hardware | bare-metal node pool per tenant | no shared kernel | trading / settlement |
-| T5 dedicated cage | customer-owned hardware in customer datacenter | customer-supplied substrate | defense / sovereign workloads |
+| T3 dedicated cluster | dedicated control plane per tenant | separate control plane, shared substrate | common deployment shape for DORA-CIF workloads |
 
-Boundary properties in §5–§11 hold for every tier; the tier picks the substrate, not the invariants. Measurable cross-tenant grading: §12.1.
+Higher-isolation tiers (dedicated bare-metal node pool per tenant; customer-owned hardware in customer datacenter) are tracked in open question §12 item 1 (`arch/cross-tenant-isolation-grading`) as candidates for later promotion. Promote when a named workload requires them.
+
+Boundary properties in §5–§11 hold for every tier; the tier picks the substrate, not the invariants. Measurable cross-tenant grading is in the same open question.
 
 ## 5. Trust-zone diagram
 
@@ -74,7 +72,7 @@ flowchart LR
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "Ed25519 JWT (session ≤4h + RPC ≤60min)" --> VM
+    CP -- "session JWT (≤4h) + RPC token (≤60min)" --> VM
     BR -- "scoped JWT (≤15min)" --> VM
     VM -- "single egress" --> EDGE
     EDGE --> EXT
@@ -82,7 +80,7 @@ flowchart LR
     AUDIT --> EXT
 ```
 
-Canonical source: `docs/architecture/diagrams/02-trust-boundaries.mmd`. Convention: solid border = always present; dashed border = optional configuration.
+Canonical source: [`docs/architecture/diagrams/02-trust-boundaries.mmd`](./diagrams/02-trust-boundaries.mmd). Convention: solid border = always present; dashed border = optional configuration.
 
 ## 6. Data classification taxonomy
 
@@ -101,76 +99,55 @@ Eight content-keyed classes. Per-tenant data residency ([NFR-COMP-13](manifesto/
 
 Minimal-capability default scope: PUBLIC + INTERNAL only. CONFIDENTIAL+ requires opt-in configuration (BYOK + customer-managed audit sink). Minimal-config is not a compliance posture.
 
-Prompt content filtering, redaction, and AI-guardrail policy (PII masking, prompt-injection detection, jailbreak detection) are not our scope — that responsibility lives with the customer's chosen AI gateway (LiteLLM, Lakera, Lasso, in-perimeter model with its own guardrails, etc.). Layer 3 just routes the traffic and audits the egress event; what the gateway does with the prompt is its contract, not ours. [NFR-COMP-26](manifesto/02-nfrs.md) to be revisited in §02.
+Prompt content filtering, redaction, and AI-guardrail policy (PII masking, prompt-injection detection, jailbreak detection) are not our scope — that responsibility lives with the customer's AI gateway (commercial AI-gateway product or in-perimeter model with its own guardrails). Layer 3 routes the traffic and audits the egress event; what the gateway does with the prompt is its contract, not ours. [NFR-COMP-26](manifesto/02-nfrs.md) to be revisited in §02.
 
-## 7. Egress posture — three modes
+## 7. Egress posture — two modes
 
-Three modes on the same binary, switched by configuration ([NFR-FLEX-15](manifesto/02-nfrs.md)).
+Two modes on the same binary, switched by configuration ([NFR-FLEX-15](manifesto/02-nfrs.md)).
 
-| Mode | Default? | TLS termination | Customer-CA in sandbox trust store | DLP-ICAP hook | Plaintext carve-out ([NFR-SEC-37](manifesto/02-nfrs.md)) |
-|---|---|---|---|---|---|
-| **Transparent pass-through** | yes (minimal default) | none — proxy is in path, does not terminate | no | no | none |
-| **MITM-inspecting** | opt-in | terminated at proxy, re-encrypted upstream | yes | no | proxy decrypt / re-encrypt segment |
-| **DLP-ICAP** | opt-in (secondary configuration on MITM) | terminated at proxy, ICAP-inspected, re-encrypted | yes | yes — block-or-redact per tenant | ICAP req-mod / resp-mod segment |
+| Mode | Default? | TLS termination | Customer CA in sandbox trust store | Plaintext carve-out ([NFR-SEC-37](manifesto/02-nfrs.md)) |
+|---|---|---|---|---|
+| **Transparent pass-through** | yes (minimal default; one-click solo install path) | none — proxy is in path, does not terminate | no | none |
+| **MITM-inspecting** | opt-in | terminated at proxy, re-encrypted upstream | yes | proxy decrypt / re-encrypt segment |
+
+DLP-ICAP ([NFR-COMP-28](manifesto/02-nfrs.md)) is a configuration of the MITM-inspecting mode, not a third mode: it adds an ICAP req-mod / resp-mod inspection hook between the decrypt and re-encrypt steps, with a corresponding plaintext segment at the ICAP wire.
 
 Fail-closed: if the egress proxy is unreachable, the Compute plane drops outbound traffic, never bypasses the proxy. Same property on the IdP → Control plane path: IdP unreachable → new sessions denied; in-flight sessions continue under their existing token until TTL expiry.
 
-Component-spec wiring lives in `components/<egress-proxy>.md`.
+Component-spec wiring lands under [`components/`](./components/) per [PROCESS.md](./PROCESS.md) when the egress-proxy spec opens.
 
 ## 8. Workload-identity floor
 
 | Property | Minimal-capability shelf | Full-capability shelf | §02 anchor |
 |---|---|---|---|
-| Inter-component identity | Ed25519 JWT bound to `container_name` | SPIFFE SVID per workload | [NFR-SEC-26](manifesto/02-nfrs.md) (minimal), [NFR-SEC-09](manifesto/02-nfrs.md) (full) |
+| Inter-component identity | Host-local signing key bound to `container_name` | Workload identity from customer PKI per tenant | [NFR-SEC-26](manifesto/02-nfrs.md) (minimal), [NFR-SEC-09](manifesto/02-nfrs.md) (full) |
 | Token TTL — egress JWT | ≤4 h | ≤4 h | [NFR-SEC-10](manifesto/02-nfrs.md) |
 | Token TTL — generic internal | ≤60 min | ≤60 min | [NFR-SEC-23](manifesto/02-nfrs.md) |
 | Token TTL — broker scoped-JWT | ≤15 min | ≤15 min | [NFR-SEC-29](manifesto/02-nfrs.md) |
-| Identity trust root | host-local Ed25519 key | HSM-rooted, FIPS 140-3 L3 | [NFR-FLEX-04](manifesto/02-nfrs.md) |
+| Identity trust root | host-local signing key | HSM-rooted, FIPS 140-3 L3 | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | Tenant DEK rotation | ≤90 d | ≤90 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
 | Tenant KEK rotation | ≤365 d | ≤365 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
 | Revoke latency | ≤5 min | ≤5 min | [NFR-SEC-04](manifesto/02-nfrs.md) |
-| Per-tenant trust domain | n/a (single-tenant) | per-tenant SPIFFE trust domain | open question §12.1 |
-| Internal mTLS substrate | TLS 1.3 on Compose internal network / k8s service-mesh / microVM vsock per substrate | same, customer-CA-rooted | [NFR-SEC-37](manifesto/02-nfrs.md) |
+| Per-tenant trust domain | n/a (single-tenant) | per-tenant trust domain | open question §12 item 1 |
+| Internal mTLS substrate | TLS 1.3 enforced at the deployment overlay (substrate choice is a component-spec decision) | same, customer-CA-rooted | [NFR-SEC-37](manifesto/02-nfrs.md) |
 
-Minimal shelf: identity-binding ([NFR-SEC-09](manifesto/02-nfrs.md)) via Ed25519 JWT ([NFR-SEC-26](manifesto/02-nfrs.md)); egress trust-store ([NFR-SEC-05](manifesto/02-nfrs.md)) via auto-generated self-signed CA. Full shelf: SPIFFE SVIDs + customer-rooted CA.
+Minimal shelf: identity-binding ([NFR-SEC-09](manifesto/02-nfrs.md)) via host-local signing key on JWT ([NFR-SEC-26](manifesto/02-nfrs.md)); egress trust-store ([NFR-SEC-05](manifesto/02-nfrs.md)) via auto-generated self-signed CA. Full shelf: workload identities from customer PKI + customer-rooted CA.
 
 ### 8.1 Signer identity per boundary
 
-Tool pick (cert-manager + Vault vs OpenBao PKI vs SPIRE upstream vs smallstep step-ca) is deferred to §12.5 ADR.
-
-| Artifact | Signer identity (minimal) | Signer identity (full) | Rotation |
-|---|---|---|---|
-| Egress JWT (per-session, ≤4 h) | Control-plane host-local Ed25519 key | Per-tenant SPIRE-issued workload SVID rooted in customer PKI | ≤90 d signing-key rotation; 24 h overlap; `kid` ([NFR-SEC-11](manifesto/02-nfrs.md)) |
-| Internal RPC token (≤60 min) | Same Control-plane Ed25519 key | Same per-tenant SPIRE workload SVID | [NFR-SEC-11](manifesto/02-nfrs.md) |
-| Broker scoped-JWT (≤15 min) | Credential-broker host-local Ed25519 key | Broker workload SVID; broker holds no master key in compliance-bearing tiers per [NFR-SEC-29](manifesto/02-nfrs.md) (delegated STS) | [NFR-SEC-11](manifesto/02-nfrs.md) |
-| MITM cert (egress) | Auto-generated self-signed CA at first boot; CA injected into sandbox trust store at sandbox build time | Customer-CA (customer PKI root); injected per [NFR-SEC-05](manifesto/02-nfrs.md); per-tenant intermediate | per customer PKI policy |
-| Audit batch submission to transparency log | Control-plane host-local Ed25519 key (signs the submit envelope only; the log itself signs Merkle heads) | Same; the customer chooses which transparency log to publish to (public Sigstore Rekor, customer-private Rekor, customer's CT log instance) | per submission |
-| Container / image admission | Cosign signature verified against Sigstore Rekor (SLSA L3 per release rules) | Same; key pinned per customer policy | per release |
-
-Customer IdP signing keys (OIDC `kid` rotation, SAML metadata) are out of scope here — they live with the customer per §3.
+Each token class has its own signer; signer identity ties to the workload that issues the token. Minimal-shelf signers are host-local keys; full-shelf signers are workload identities from the customer PKI. The full per-boundary table (six artifacts × four columns) lands with the PKI decision — tracked at §12 item 5 (`arch/adr-pki-tool-pick`).
 
 ## 9. Encryption matrix
 
-| Boundary | TLS | At-rest | Key custody (minimal) | Key custody (full) |
-|---|---|---|---|---|
-| MCP client → Control plane | TLS 1.3 (1.2 opt-in disable) | n/a — request only | host-local | customer-CA root |
-| Control plane → Compute plane | TLS 1.3 with Ed25519 JWT on WebSocket | n/a — request only | host-local | per-tenant trust domain |
-| Credential broker → Compute plane | TLS 1.3 over loopback / vsock / UDS | n/a — token only | host-local | per-tenant trust domain |
-| Compute plane → Egress trust-edge | TLS 1.3 | n/a — request only | host-local | customer-CA root |
-| Egress trust-edge → LLM upstream | TLS 1.3 strict validation | n/a | upstream-controlled | upstream-controlled |
-| Control plane / broker / proxy → Audit pipeline | TLS 1.3 | hash-chained at-rest | host-local | HSM-rooted ([NFR-FLEX-04](manifesto/02-nfrs.md)) |
-| Audit pipeline → customer SIEM | TLS 1.3 per bridge | n/a | n/a | customer-controlled |
-| Audit pipeline → transparency log | TLS 1.3 strict validation | n/a — append-only out | host-local Ed25519 | HSM-rooted |
-| Tenant DEK / KEK ↔ KMS | TLS 1.3 | AES-256-GCM ([NFR-SEC-33](manifesto/02-nfrs.md)) | host-local | PKCS#11 / KMIP / BYOK |
-| Per-tenant region pinning (compute + storage + logs) | n/a — network policy | n/a | host-local per-tenant tag | per-tenant region tag enforced at Control plane scheduling and Audit pipeline routing ([NFR-COMP-13](manifesto/02-nfrs.md)) |
+Single invariant: inter-component traffic between Wide-Moat components is encrypted in transit ([NFR-SEC-37](manifesto/02-nfrs.md)). Tenant data at rest uses authenticated AES ([NFR-SEC-33](manifesto/02-nfrs.md)). Key custody on the minimal shelf is host-local; on the full shelf, HSM-rooted via PKCS#11 / KMIP per [NFR-FLEX-04](manifesto/02-nfrs.md). Per-tenant data residency ([NFR-COMP-13](manifesto/02-nfrs.md)) is enforced at Control-plane scheduling and Audit-pipeline routing — not an encryption boundary. The full per-boundary matrix (TLS version, at-rest cipher, key custody, rotation cadence) is component-spec material; it lands with each component spec.
 
 ## 10. Audit zone — mandatory in code, pluggable in sinks
 
-Audit-pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) 7-year minimum retention). Sinks are pluggable: file-system at the minimal-capability shelf; OCSF v1.x JSON bridges to customer SIEM (Splunk, Chronicle, Elastic, QRadar, Sentinel, Kafka, S3, syslog) as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
+Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) 7-year minimum retention). Sinks are pluggable: file-system at the minimal-capability shelf; OCSF v1.x JSON bridges to customer SIEM as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
 
-The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (§12.3).
+The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (see §12 Open question 3).
 
-Tamper-evidence: hash-chained store always; the daily batch is published to a transparency log of the customer's choice (public Sigstore Rekor, customer-private Rekor, CT log instance). The transparency log operator signs the Merkle head; we sign only the submission envelope. [NFR-SEC-03](manifesto/02-nfrs.md) to be revisited in §02 to match this split.
+Tamper-evidence: hash-chained store always; the daily batch is submitted to a transparency log of the customer's choice. The transparency log operator signs the Merkle head; we sign only the submission envelope. [NFR-SEC-03](manifesto/02-nfrs.md) to be revisited in §02 to match this split.
 
 ## 11. Regulator citation map
 
@@ -187,20 +164,20 @@ Confirmed defects from a prior pass — held back from the table until source-ve
 | Our zone / boundary | NIST SP 800-207 | NYDFS Part 500 | DORA | EU AI Act | CCM v4 |
 |---|---|---|---|---|---|
 | Control plane | implicit-trust zone (§2.1) | § 500.7 access privileges (PAM) | Art. 6 ICT risk-management framework | Art. 14 human oversight | IAM-06 |
-| Credential broker | PEP / PDP independence (§3, §3.2) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general (subpoint TBD) | Art. 15 cybersecurity ("accuracy, `robustness` and cybersecurity") | CEK-08 |
-| Compute plane (sandbox) | implicit-trust zone, scoped small | § 500.7 + § 500.15 | Art. 28(4) ITS register of information | Art. 15(4) (accuracy, `robustness`, cybersecurity) | IVS-06, IVS-09 |
+| Credential broker | PEP / PDP independence (§3, §3.2) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general (subpoint TBD) | Art. 15 cybersecurity ("accuracy, robustness and cybersecurity", direct Art. 15 wording) | CEK-08 |
+| Compute plane (sandbox) | implicit-trust zone, scoped small | § 500.7 + § 500.15 | Art. 28(4) ITS register of information | Art. 15(4) (accuracy, robustness, cybersecurity — direct Art. 15(4) wording) | IVS-06, IVS-09 |
 | Egress trust-edge | PEP (§3.4.1) | § 500.5 vulnerability scanning (segmentation surfaces here, not § 500.7) | Art. 30 key contractual provisions (location of processing) | Art. 14 oversight | IVS-09 segmentation, DSP-05 DLP |
 | Audit pipeline | (cross-cutting — no direct ZT mapping) | § 500.6 audit trail; § 500.13 retention policy | Art. 10 detection (logs) | Art. 12 logs of high-risk AI; Art. 19(1) 10-year retention floor | LOG-01, LOG-02 |
 | MCP client → Control plane | untrusted → implicit-trust crossing | § 500.7 + § 500.12 MFA | Art. 30 contract clauses | Art. 13 transparency to deployer | IAM-08 |
-| Egress trust-edge → upstream | implicit-trust → untrusted crossing | § 500.15 encryption in transit | Art. 28 ICT third-party general | Art. 15 (`robustness`) | IVS-09 |
+| Egress trust-edge → upstream | implicit-trust → untrusted crossing | § 500.15 encryption in transit | Art. 28 ICT third-party general | Art. 15 cybersecurity | IVS-09 |
 | Audit pipeline → SIEM | implicit-trust → external sink | § 500.6 audit trail readable by covered entity | Art. 10 detection; retention via record-keeping rules (SEC 17a-4 / CFR / FCA SYSC 9), not DORA Art. 12 | Art. 12 logs accessible | LOG-04 |
 
 ## 12. Open questions
 
-1. Cross-tenant isolation grading — `arch/cross-tenant-isolation-grading` (TBD GitHub issue) — measurable target ("tenant A cannot observe tenant B side-channel") not yet in §02.
-2. Control-plane metadata-only gate — `arch/control-plane-metadata-only-gate` (TBD GitHub issue) — DORA Art. 28(2)(c) requires a measurable gate that no customer payload crosses the control plane.
+1. Cross-tenant isolation grading — `arch/cross-tenant-isolation-grading` (TBD GitHub issue) — measurable target ("tenant A cannot observe tenant B side-channel") not yet in §02. Also tracks higher-isolation tiers (dedicated hardware, customer-owned cage) as candidates for promotion when a named workload requires them.
+2. Control-plane metadata-only gate — `arch/control-plane-metadata-only-gate` (TBD GitHub issue) — DORA Art. 28(2)(c) requires a measurable gate that no customer payload crosses the Control plane.
 3. SIEM-bridge transport and backpressure — `arch/siem-bridge-transport-and-backpressure` (TBD GitHub issue) — pluggable-sink contract needs measurable transport and end-to-end backpressure target.
-4. Transparency-log publishing path — `arch/transparency-log-publishing-path` (TBD GitHub issue) — RFC 9162 v2 publishing path between Audit pipeline and the external transparency log (auth, retry, RPO if the log is unreachable).
-5. PKI tool pick — `arch/adr-pki-tool-pick` (TBD GitHub issue) — §8.1 names signer identity per boundary; the actual PKI tool needs an ADR.
+4. Transparency-log publishing path — `arch/transparency-log-publishing-path` (TBD GitHub issue) — submission path between Audit pipeline and the external transparency log (auth, retry, RPO if the log is unreachable), plus the prior question of "do we publish at all on minimal shelf".
+5. PKI tool pick — `arch/adr-pki-tool-pick` (TBD GitHub issue) — §8.1 names signer identity per boundary; the actual PKI tool needs an ADR when one of the candidate paths reaches a decision point, and the per-boundary signer table lands there.
 
 Real GitHub issue URLs replace the slugs before draft → proposed.

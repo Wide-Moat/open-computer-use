@@ -10,19 +10,19 @@ flowchart LR
     %% ─── external actors (untrusted; rendered as plain nodes, not subgraphs) ───
     MCPC[MCP client<br/>external actor]:::ext
     IDP[Customer IdP<br/>SAML / OIDC]:::ext
-    LLM[LLM upstream<br/>Anthropic / Bedrock / Vertex / vLLM / Ollama]:::ext
-    OBJ[Customer object store<br/>S3 / S3-compat]:::ext
-    CPROXY[Customer outbound proxy<br/>Zscaler / Symantec]:::ext
+    LLM[LLM upstream]:::endpoint
+    OBJ[Customer object store]:::endpoint
+    CPROXY[Customer outbound proxy]:::ext
     ICAP[Customer DLP-ICAP service]:::extOpt
-    SIEM[Customer SIEM<br/>Splunk / Chronicle / Elastic / QRadar / Sentinel]:::extOpt
-    KMS[Customer KMS / HSM<br/>PKCS#11 / KMIP]:::extOpt
+    SIEM[Customer SIEM]:::extOpt
+    KMS[Customer KMS / HSM]:::extOpt
     SOAR[SOAR<br/>signed webhook + admin API]:::ext
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
-    TLOG[Transparency log<br/>RFC 9162 v2]:::extOpt
+    TLOG[Transparency log]:::extOpt
 
     %% ─── our zones ───
     subgraph CP[Control plane]
-        ORCH[orchestrator + RPC<br/>MCP server<br/>session lifecycle<br/>LLM-upstream proxy]
+        ORCH[orchestrator + RPC<br/>MCP server<br/>session lifecycle]
     end
 
     subgraph BROKER[Credential broker]
@@ -34,11 +34,11 @@ flowchart LR
     end
 
     subgraph EDGE[Egress trust-edge]
-        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA optional<br/>DLP-ICAP optional<br/>default-deny to Wide-Moat<br/>NFR-SEC-08 MCP allow-list]
+        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>NFR-SEC-08 MCP allow-list]
     end
 
     subgraph AUDIT[Audit pipeline]
-        BUS[durable bus + hash-chained store<br/>OCSF v1.x events<br/>software-signed Merkle default<br/>HSM-signed Merkle full<br/>compute-time metering]
+        BUS[durable bus + hash-chained store<br/>OCSF v1.x events<br/>host-local signing on minimal shelf<br/>HSM-rooted on full shelf<br/>compute-time metering]
     end
 
     %% ─── inbound edges ───
@@ -48,7 +48,7 @@ flowchart LR
     SOAR <-->|signed webhook + admin API| ORCH
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
-    ORCH -->|"Ed25519 JWT on WS<br/>bound to container_name"| VM
+    ORCH -->|"session JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
     BR -->|"scoped JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
 
     %% ─── egress edges ───
@@ -66,15 +66,16 @@ flowchart LR
 
     %% ─── audit egress ───
     BUS -.->|"OCSF bridge<br/>optional"| SIEM
-    BUS -.->|"daily Merkle head<br/>RFC 9162 v2"| TLOG
+    BUS -.->|"daily Merkle head<br/>submission envelope"| TLOG
 
-    %% ─── KMS path (optional) ───
+    %% ─── KMS path (optional, full-capability shelf only) ───
     BR -.->|"PKCS#11 / KMIP"| KMS
-    BUS -.->|"PKCS#11 / KMIP<br/>Merkle signing full-capability"| KMS
+    BUS -.->|"PKCS#11 / KMIP<br/>signing on full shelf"| KMS
 
     %% ─── styling (DoD ZTRA palette) ───
     classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
     classDef extOpt fill:#fdecea,stroke:#c0392b,stroke-dasharray: 5 5;
+    classDef endpoint fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 2 2;
     style CP fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
     style BROKER fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
     style COMPUTE fill:#e3f2fd,stroke:#0d47a1,stroke-width:3px;
