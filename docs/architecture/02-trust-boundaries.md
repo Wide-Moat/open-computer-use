@@ -27,7 +27,7 @@ Compute plane in this doc is `data-plane` in §02 (NFR-FLEX-12, NFR-MAINT-02) an
 | 1 | **Control plane** | Orchestrator + RPC surface + session lifecycle + MCP server. Single instance per deployment. Outbound to LLM and any other upstream goes through Egress trust-edge like any other request; the Control plane is not a model proxy. | NFR-IC-04, NFR-FLEX-14, NFR-REL-01 |
 | 2 | **Credential broker** | Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS. Holds real upstream creds; guest never does. | NFR-SEC-23, NFR-SEC-29, NFR-SEC-25 |
 | 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Container substrate on the minimal-capability shelf; microVM (Kata-FC / Kata-CH) on the full-capability shelf. Guest agent is PID 1. Cross-session network reachability disabled per NFR-SEC-22; per-tenant network isolation is a deployment property of this zone. | NFR-SEC-02, NFR-SEC-14, NFR-SEC-22, NFR-FLEX-02, NFR-PERF-02/03 |
-| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per NFR-SEC-27 — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer-CA opt-in; DLP-ICAP a separate opt-in. MCP allow-list enforcement (NFR-SEC-08) sits here. | NFR-SEC-05, NFR-SEC-08, NFR-SEC-17, NFR-SEC-27, NFR-FLEX-15, NFR-COMP-26, NFR-COMP-28 |
+| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per NFR-SEC-27 — request arrival from the sandbox is the identity. Transparent pass-through by default; MITM with customer-CA opt-in; DLP-ICAP a separate opt-in. MCP allow-list enforcement (NFR-SEC-08) sits here. AI-guardrail / prompt-content policy is customer's own AI gateway, not ours (NFR-COMP-26 revisit). | NFR-SEC-05, NFR-SEC-08, NFR-SEC-17, NFR-SEC-27, NFR-FLEX-15, NFR-COMP-28 |
 | 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from control plane, so it is its own zone. Compute-time metering (NFR-COST-05) emits as audit events on this pipeline. | NFR-SEC-03, NFR-REL-12, NFR-REL-03, NFR-COMP-01, NFR-COST-05, NFR-MAINT-AUDIT-SCHEMA |
 
 **Skill registry boundary** is reserved as a TBD-stub per `MANIFESTO.md` non-goals.
@@ -101,7 +101,7 @@ Eight content-keyed classes. Per-tenant data residency (NFR-COMP-13) constrains 
 
 Minimal-capability default scope: PUBLIC + INTERNAL only. CONFIDENTIAL+ requires opt-in configuration (BYOK + customer-managed audit sink). Minimal-config is not a compliance posture.
 
-Prompt-redaction at the Egress trust-edge before the LLM upstream call is a configurable filter per NFR-COMP-26; redaction events are audited.
+Prompt content filtering, redaction, and AI-guardrail policy (PII masking, prompt-injection detection, jailbreak detection) are not our scope — that responsibility lives with the customer's chosen AI gateway (LiteLLM, Lakera, Lasso, in-perimeter model with its own guardrails, etc.). Layer 3 just routes the traffic and audits the egress event; what the gateway does with the prompt is its contract, not ours. NFR-COMP-26 to be revisited in §02.
 
 ## 7. Egress posture — three modes
 
@@ -144,7 +144,7 @@ Tool pick (cert-manager + Vault vs OpenBao PKI vs SPIRE upstream vs smallstep st
 | Internal RPC token (≤60 min) | Same Control-plane Ed25519 key | Same per-tenant SPIRE workload SVID | NFR-SEC-11 |
 | Broker scoped-JWT (≤15 min) | Credential-broker host-local Ed25519 key | Broker workload SVID; broker holds no master key in compliance-bearing tiers per NFR-SEC-29 (delegated STS) | NFR-SEC-11 |
 | MITM cert (egress) | Auto-generated self-signed CA at first boot; CA injected into sandbox trust store at sandbox build time | Customer-CA (customer PKI root); injected per NFR-SEC-05; per-tenant intermediate | per customer PKI policy |
-| Merkle head (audit) | Host-local Ed25519 signing key (software-signed per NFR-SEC-03 default) | HSM-rooted (PKCS#11 / KMIP per NFR-FLEX-04) | NFR-SEC-04 |
+| Audit batch submission to transparency log | Control-plane host-local Ed25519 key (signs the submit envelope only; the log itself signs Merkle heads) | Same; the customer chooses which transparency log to publish to (public Sigstore Rekor, customer-private Rekor, customer's CT log instance) | per submission |
 | Container / image admission | Cosign signature verified against Sigstore Rekor (SLSA L3 per release rules) | Same; key pinned per customer policy | per release |
 
 Customer IdP signing keys (OIDC `kid` rotation, SAML metadata) are out of scope here — they live with the customer per §3.
@@ -170,7 +170,7 @@ Audit-pipeline is mandatory in code (NFR-SEC-03 hash-chained; NFR-REL-12 durable
 
 The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (§13.3).
 
-Tamper-evidence: hash-chained store always; daily Merkle head software-signed by default; HSM-signed Merkle head at the full-capability shelf per NFR-SEC-03. Signing identity per §8.1.
+Tamper-evidence: hash-chained store always; the daily batch is published to a transparency log of the customer's choice (public Sigstore Rekor, customer-private Rekor, CT log instance). The transparency log operator signs the Merkle head; we sign only the submission envelope. NFR-SEC-03 to be revisited in §02 to match this split.
 
 ## 11. Regulator citation map
 
