@@ -8,12 +8,12 @@
 flowchart LR
 
     %% ─── inbound peers (any MCP-speaking caller; REST is a fallback) ───
-    PEER[MCP-speaking peer<br/>n8n · Open WebUI · LLM upstream · custom<br/>REST fallback]:::ext
+    PEER[MCP-speaking peer<br/>n8n · Open WebUI · custom MCP client]:::ext
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
 
     %% ─── the system under design ───
     subgraph OCU[Open Computer Use]
-        BOX[uniform in-perimeter sandbox<br/>skill library + MCP interface<br/>see Layer 6 for internals]
+        BOX[Open Computer Use<br/>in-perimeter agent-execution platform]
     end
 
     %% ─── customer infrastructure (required on the full-capability shelf) ───
@@ -28,11 +28,11 @@ flowchart LR
     TLOG[Transparency log]:::extOpt
 
     %% ─── edges ───
-    PEER -->|"MCP authz spec<br/>(REST fallback)"| OCU
-    OPER -->|PAM-JIT SAML attr| OCU
+    PEER -->|"MCP authz spec<br/>audience-validated"| OCU
+    OPER -->|"PAM-JIT SAML attr<br/>NFR-COMP-29"| OCU
     SOAR <-->|signed webhook + admin API| OCU
     IDP -->|SAML / OIDC| OCU
-    OCU -->|"OCSF v1.x"| SIEM
+    OCU -.->|"OCSF v1.x bridge<br/>optional"| SIEM
     OCU -.->|"PKCS#11 / KMIP<br/>full-capability shelf"| KMS
     OCU -.->|"chained-proxy contract<br/>optional"| CPROXY
     OCU -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
