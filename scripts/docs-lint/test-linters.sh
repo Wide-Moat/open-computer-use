@@ -181,44 +181,66 @@ fi
 echo "Testing architecture-tree-whitelist.sh:"
 
 # Run against an isolated fixture tree so we don't disturb the real
-# docs/architecture/. Invoke the same fnmatch logic the linter uses.
+# docs/architecture/. Invoke the same segment-aware matcher the linter
+# uses, so a future regression that swaps it back for plain fnmatch
+# (which lets `*` cross `/`) is caught here.
 tree_root="$TMP/atree/docs/architecture"
-mkdir -p "$tree_root/adr" "$tree_root/diagrams" "$tree_root/components"
+mkdir -p "$tree_root/adr" "$tree_root/diagrams" "$tree_root/components" \
+         "$tree_root/compliance/sub"
 
 # Allowed files.
 touch "$tree_root/README.md"
 touch "$tree_root/adr/0001-foo.md"
 touch "$tree_root/diagrams/c4.mmd"
 touch "$tree_root/components/01-control-plane.md"
+touch "$tree_root/compliance/soc2-mapping.md"
 
 # Disallowed files.
-touch "$tree_root/notes.txt"                       # stray scratch note
-touch "$tree_root/LAYER-0-VERIFICATION.md"         # AI snapshot
-touch "$tree_root/diagrams/screenshot.png"         # binary in diagrams
+touch "$tree_root/notes.txt"                          # stray scratch note
+touch "$tree_root/LAYER-0-VERIFICATION.md"            # AI snapshot
+touch "$tree_root/diagrams/screenshot.png"            # binary in diagrams
+touch "$tree_root/compliance/sub/x-mapping.md"        # nested-path edge case:
+                                                       # plain fnmatch would
+                                                       # accept this under
+                                                       # compliance/*-mapping.md
 
 allow_list=(
   "README.md"
   "adr/[0-9][0-9][0-9][0-9]-*.md"
   "diagrams/*.mmd"
   "components/[0-9][0-9]-*.md"
+  "compliance/*-mapping.md"
 )
 violations=$(
   cd "$TMP/atree" && python3 - "${allow_list[@]}" <<'PY'
 import fnmatch, pathlib, sys
 allow = sys.argv[1:]
 root = pathlib.Path("docs/architecture")
+
+def match(rel: str, pat: str) -> bool:
+    rp = rel.split("/")
+    pp = pat.split("/")
+    if len(rp) != len(pp):
+        return False
+    return all(fnmatch.fnmatchcase(r, p) for r, p in zip(rp, pp))
+
 bad = []
 for p in root.rglob("*"):
     if not p.is_file():
         continue
     rel = p.relative_to(root).as_posix()
-    if not any(fnmatch.fnmatchcase(rel, g) for g in allow):
+    if not any(match(rel, g) for g in allow):
         bad.append(rel)
 print("\n".join(sorted(bad)))
 PY
 )
 
-want_bad=("LAYER-0-VERIFICATION.md" "diagrams/screenshot.png" "notes.txt")
+want_bad=(
+  "LAYER-0-VERIFICATION.md"
+  "compliance/sub/x-mapping.md"
+  "diagrams/screenshot.png"
+  "notes.txt"
+)
 all_caught=1
 for needle in "${want_bad[@]}"; do
   if ! grep -qxF "$needle" <<<"$violations"; then
@@ -227,11 +249,17 @@ for needle in "${want_bad[@]}"; do
   fi
 done
 if (( all_caught )); then
-  ok "tree-whitelist catches stray notes, AI snapshots, and binaries"
+  ok "tree-whitelist catches stray notes, AI snapshots, binaries, nested-path edge case"
 fi
 
 # Allowed files must NOT appear in violations.
-for needle in "README.md" "adr/0001-foo.md" "diagrams/c4.mmd" "components/01-control-plane.md"; do
+for needle in \
+  "README.md" \
+  "adr/0001-foo.md" \
+  "diagrams/c4.mmd" \
+  "components/01-control-plane.md" \
+  "compliance/soc2-mapping.md"
+do
   if grep -qxF "$needle" <<<"$violations"; then
     err "tree-whitelist false-positive on legitimate file: $needle"
   fi

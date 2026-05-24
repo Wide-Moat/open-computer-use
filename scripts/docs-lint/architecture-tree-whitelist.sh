@@ -86,12 +86,26 @@ import fnmatch, pathlib, sys
 allowed_globs = sys.argv[1:]
 root = pathlib.Path("docs/architecture")
 
+def match_pattern(rel: str, pattern: str) -> bool:
+    """Segment-aware glob match. `*` never crosses `/`.
+
+    Plain `fnmatch.fnmatchcase` treats `/` as a normal character, so
+    `compliance/*-mapping.md` would silently accept
+    `compliance/sub/evil-mapping.md`. We split on `/` and require equal
+    depth + per-segment match instead.
+    """
+    rel_parts = rel.split("/")
+    pat_parts = pattern.split("/")
+    if len(rel_parts) != len(pat_parts):
+        return False
+    return all(fnmatch.fnmatchcase(r, p) for r, p in zip(rel_parts, pat_parts))
+
 fail = False
 for path in root.rglob("*"):
     if not path.is_file():
         continue
     rel = path.relative_to(root).as_posix()
-    if not any(fnmatch.fnmatchcase(rel, g) for g in allowed_globs):
+    if not any(match_pattern(rel, g) for g in allowed_globs):
         print(f"FAIL: docs/architecture/{rel} — file not on the whitelist")
         fail = True
 
