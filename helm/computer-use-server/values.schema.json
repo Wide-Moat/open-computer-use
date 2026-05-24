@@ -50,6 +50,12 @@
           }
         },
         "storageDriver": { "type": "string" },
+        "extraArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "$comment": "Extra flags appended verbatim to the dockerd argv (e.g. --registry-mirror=..., --mtu=1450)."
+        },
         "privileged": {
           "type": ["boolean", "null"],
           "$comment": "null => privileged auto-derived from runtimeClassName (legacy). Set true for Kata, false to force unprivileged."
@@ -104,7 +110,7 @@
             "sizeLimit": { "type": "string" },
             "persistentVolume": {
               "type": "object",
-              "$comment": "Block-mode PVC for /var/lib/docker (the Kata default). Disable only for the runc fallback.",
+              "$comment": "Block-mode PVC for /var/lib/docker (the Kata default). Disable only for the runc fallback. WARNING: dind.kataInit formats the underlying device as ext4 on first boot (skipped only if blkid already detects a filesystem); do NOT point existingClaim at a Block PVC that holds unrelated data.",
               "properties": {
                 "enabled": { "type": "boolean" },
                 "size": { "type": "string" },
