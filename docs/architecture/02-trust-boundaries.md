@@ -53,9 +53,11 @@ Outbound endpoints behind the egress policy — LLM upstream, customer MCP serve
 | Tier | Mechanism | Cross-tenant boundary | Where it sits |
 |---|---|---|---|
 | T0 logical | row-level filter; tenant_id column + app-side check | shared kernel, shared substrate | dev / single-tenant minimal-capability |
-| T1 namespace | namespace + network policy + role-based access control + resource quota | shared kernel, shared control plane | non-NPI workloads |
+| T1 namespace | namespace + network policy + role-based access control + resource quota | shared kernel, shared control plane | single-tenant agent execution, OR multi-tenant for non-agent-execution workloads only |
 | T2 VPC / VNet | per-tenant VPC, no peering | shared substrate, separate network | NPI baseline |
 | T3 dedicated cluster | dedicated control plane per tenant | separate control plane, shared substrate | common deployment shape for DORA-CIF workloads |
+
+**Multi-tenant agent-execution invariant.** Where the Compute plane runs LLM-issued tool calls / code from more than one tenant on the same node, the substrate MUST be microVM (Compute plane "full-capability shelf" per §2 zone 3). The "non-NPI workloads" framing is not a safety argument — data classification does not change the container-escape attack surface for adversarial AI code. T1 namespace remains valid for single-tenant agent execution or for multi-tenant workloads that do not execute LLM-issued code (admin UIs, read-only dashboards, batch-data jobs).
 
 Higher-isolation tiers (dedicated bare-metal node pool per tenant; customer-owned hardware in customer datacenter) are tracked in open question §12 item 1 (`arch/cross-tenant-isolation-grading`) as candidates for later promotion. Promote when a named workload requires them.
 
@@ -72,15 +74,15 @@ flowchart LR
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "session JWT (≤4h) + RPC token (≤60min)" --> VM
-    BR -- "scoped JWT (≤15min)" --> VM
+    CP -- "Egress JWT (≤4h) + Generic internal (≤60min)" --> VM
+    BR -- "Broker scoped-JWT (≤15min)" --> VM
     VM -- "single egress" --> EDGE
     EDGE --> EXT
     CP & BR & VM & EDGE -- "OCSF" --> AUDIT
     AUDIT --> EXT
 ```
 
-Canonical source: [`docs/architecture/diagrams/02-trust-boundaries.mmd`](./diagrams/02-trust-boundaries.mmd). Convention: solid border = always present; dashed border = optional configuration.
+Canonical source: [`docs/architecture/diagrams/02-trust-boundaries.mmd`](./diagrams/02-trust-boundaries.mmd) — the canonical file encodes the convention "solid border = always present; dashed border = optional configuration" (CPROXY, SOAR, ICAP, SIEM, KMS, TLOG drawn dashed). The inline block above is a simplified overview that does not encode dashed-vs-solid; for the optional-vs-required reading, use the canonical file or §3 actor table.
 
 ## 6. Data classification taxonomy
 
@@ -94,7 +96,7 @@ Eight content-keyed classes. Per-tenant data residency ([NFR-COMP-13](manifesto/
 | **RESTRICTED (NPI-financial)** | NPI tied to financial product | NPI | n/a if not material | personal data; Art. 6 lawful basis | high-risk-AI input | PAN, expiry, service code | 5 yr (CFR-cited financial-institution rules) |
 | **RESTRICTED (MNPI)** | n/a | n/a | Reg FD / 10b-5 | n/a directly | n/a | n/a | until public + 2 yr legal hold |
 | **SENSITIVE (special category)** | NPI plus health / biometric | NPI | n/a | Art. 9 special category | Annex III categories | n/a | per Art. 5(1)(e) |
-| **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | DORA Art. 12(2) 10 yr for critical functions |
+| **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | 7 y default / 10 y configurable per [NFR-COMP-01](manifesto/02-nfrs.md); 10 y floor cited from SEC 17a-4 / FCA SYSC 9 / EU AI Act Art. 19(1) |
 | **CRYPTO-KEYS / SECRETS** | implicit under §500.15(a) | implicit under Safeguards Rule | n/a | implicit | implicit | PCI Req 3.6 | rotation policy is the floor |
 
 Minimal-capability default scope: PUBLIC + INTERNAL only. CONFIDENTIAL+ requires opt-in configuration (BYOK + customer-managed audit sink). Minimal-config is not a compliance posture.
@@ -112,18 +114,27 @@ Two modes on the same binary, switched by configuration ([NFR-FLEX-15](manifesto
 
 DLP-ICAP ([NFR-COMP-28](manifesto/02-nfrs.md)) is a configuration of the MITM-inspecting mode, not a third mode: it adds an ICAP req-mod / resp-mod inspection hook between the decrypt and re-encrypt steps, with a corresponding plaintext segment at the ICAP wire.
 
-Fail-closed: if the egress proxy is unreachable, the Compute plane drops outbound traffic, never bypasses the proxy. Same property on the IdP → Control plane path: IdP unreachable → new sessions denied; in-flight sessions continue under their existing token until TTL expiry.
+Fail-closed: if the egress proxy is unreachable, the Compute plane drops outbound traffic, never bypasses the proxy. Same property on the IdP → Control plane path: IdP unreachable → new sessions denied; in-flight sessions continue under their existing token until either TTL expiry or an explicit revoke event.
+
+Revoke is independent of IdP reachability. The Control plane holds a session denylist (kill-switch state) checked on every Compute-plane RPC and on every Egress trust-edge request via the Credential broker token; revoke propagation target is ≤5 min platform-wide per [NFR-SEC-04](manifesto/02-nfrs.md), independently of whether the customer IdP is reachable at revoke time. Kill switch ([NFR-SEC-01](manifesto/02-nfrs.md)) shares the same denylist and the same ≤30 s p99 SLA. The IdP participates in token issue, not in revoke — that is why ≤5 min revoke holds even during an IdP outage, which is the incident the target exists for.
 
 Component-spec wiring lands under [`components/`](./components/) per [PROCESS.md](./PROCESS.md) when the egress-proxy spec opens.
 
 ## 8. Workload-identity floor
 
+Token taxonomy is canonical here and matches [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md) §"Token TTL taxonomy" verbatim. Three classes, each named, each with its own scope, TTL, signer, and consumer.
+
+| Token class | Scope | TTL | Consumer | §02 anchor |
+|---|---|---|---|---|
+| **Egress JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 4 h | Compute plane (guest agent) | [NFR-SEC-10](manifesto/02-nfrs.md) |
+| **Generic internal token** | inter-component RPC (Control plane ↔ broker ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | [NFR-SEC-23](manifesto/02-nfrs.md) |
+| **Broker scoped-JWT** | per-resource (one filesystem prefix / one upstream API-key class) | ≤ 15 min | Compute plane consuming a brokered resource | [NFR-SEC-29](manifesto/02-nfrs.md) |
+
+Diagram-label note: the §5 diagram uses the same class names ("Egress JWT", "Generic internal", "Broker scoped-JWT"); the older "session JWT" / "RPC token" wording was retired in this rev.
+
 | Property | Minimal-capability shelf | Full-capability shelf | §02 anchor |
 |---|---|---|---|
 | Inter-component identity | Host-local signing key bound to `container_name` | Workload identity from customer PKI per tenant | [NFR-SEC-26](manifesto/02-nfrs.md) (minimal), [NFR-SEC-09](manifesto/02-nfrs.md) (full) |
-| Token TTL — egress JWT | ≤4 h | ≤4 h | [NFR-SEC-10](manifesto/02-nfrs.md) |
-| Token TTL — generic internal | ≤60 min | ≤60 min | [NFR-SEC-23](manifesto/02-nfrs.md) |
-| Token TTL — broker scoped-JWT | ≤15 min | ≤15 min | [NFR-SEC-29](manifesto/02-nfrs.md) |
 | Identity trust root | host-local signing key | HSM-rooted, FIPS 140-3 L3 | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | Tenant DEK rotation | ≤90 d | ≤90 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
 | Tenant KEK rotation | ≤365 d | ≤365 d | [NFR-SEC-04](manifesto/02-nfrs.md) |
@@ -143,7 +154,7 @@ Single invariant: inter-component traffic between Wide-Moat components is encryp
 
 ## 10. Audit zone — mandatory in code, pluggable in sinks
 
-Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) 7-year minimum retention). Sinks are pluggable: file-system at the minimal-capability shelf; OCSF v1.x JSON bridges to customer SIEM as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
+Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) retention floor — 7 y default, 10 y configurable, machine-enforced by the Audit pipeline retention policy). Sinks are pluggable: file-system at the minimal-capability shelf; OCSF v1.x JSON bridges to customer SIEM as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
 
 The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (see §12 Open question 3).
 

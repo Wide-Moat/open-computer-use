@@ -48,8 +48,8 @@ flowchart LR
     SOAR <-->|signed webhook + admin API| ORCH
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
-    ORCH -->|"session JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
-    BR -->|"scoped JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
+    ORCH -->|"Egress JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
+    BR -->|"Broker scoped-JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
 
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>network-bound identity<br/>NFR-SEC-27"| PROXY
