@@ -42,7 +42,7 @@ What actually happened. Include error output, stack traces, log lines.
 - OS + arch:
 - Host kernel (`uname -a`):
 - Container runtime (runc / kata / gVisor):
-- Browser (if Computer Use):
+- Browser (if reporting an Open WebUI / Computer Use UI bug):
 
 ## Notes
 

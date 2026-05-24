@@ -30,11 +30,11 @@ regexes = [
 paths = [
   '''.*\.min\.js$''',
   '''computer-use-server/static/xterm.min.js''',
-  # Helm chart values examples sometimes contain placeholder secrets.
-  # Tight match on the canonical chart name only — anything else under
-  # helm/ stays in scope so a real secret in a future chart's
-  # values.example.yaml is not silently allowlisted.
-  '''helm/open-computer-use/values\.example\.yaml''',
+  # No Helm chart `values.example.yaml` allowlist today — the only
+  # chart is helm/computer-use-server/ and it has no example values
+  # file. If one ever lands, add a tight per-chart entry here so a
+  # future renaming or new chart cannot accidentally activate this
+  # allowlist.
   # Legacy buffer — addressed in Layer 13 migration, not by this gate.
   '''docs/future-architecture/.*''',
   # Vendored upstream research repos (kata-containers, firecracker, coder, …).

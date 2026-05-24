@@ -72,31 +72,40 @@ jobs:
           persist-credentials: false
           path: pr-head
       - name: Fetch base-ref .gitleaks.toml via GitHub API
-        id: base-config
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref || github.ref_name }}
           REPO: ${{ github.repository }}
-        # If `.gitleaks.toml` exists on the base ref, write it to
-        # config/.gitleaks.toml — the docker run below will overlay it
-        # and the PR's allowlist is ignored. If the base ref has no
-        # `.gitleaks.toml` (e.g. the PR that introduces the file in the
-        # first place), the script writes nothing and we fall back to
-        # the upstream gitleaks default ruleset — no PR-supplied
-        # allowlist is ever honoured. That keeps the fork-PR injection
-        # attack closed in both states.
+        # Always produce config/.gitleaks.toml. Two paths:
+        #
+        # 1. Base ref has a real .gitleaks.toml — fetch and use it.
+        # 2. Base ref has no .gitleaks.toml (bootstrap PRs, or any feature
+        #    branch off a base that hasn't merged the file yet) — write a
+        #    tiny stub that says "use the upstream default ruleset".
+        #
+        # Without this stub, the docker step would have to omit `--config`,
+        # and gitleaks falls back to autoload `/repo/.gitleaks.toml` per
+        # its documented config precedence (step 4 in `gitleaks detect
+        # --help`). `/repo` is the PR head, so a fork PR shipping a
+        # permissive allowlist (`paths = ['''.*''']`) would silently
+        # bypass the gate — the canonical attack the two-source pattern
+        # is supposed to close. Writing the stub keeps `--config` always
+        # on the command line and pins precedence to step 1.
+        #
+        # An explicit `gh api` `--jq` type check guards against the case
+        # where the URL resolves to a directory listing rather than a
+        # file — in that scenario `.content` is null and would produce a
+        # zero-byte file that gitleaks would silently accept.
         run: |
           mkdir -p config
-          if gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
-              --jq '.content' 2>/dev/null \
-              | base64 -d > config/.gitleaks.toml 2>/dev/null && \
-              [ -s config/.gitleaks.toml ]; then
+          content="$(gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
+            --jq '.content // empty' 2>/dev/null || true)"
+          if [ -n "$content" ]; then
+            printf '%s' "$content" | base64 -d > config/.gitleaks.toml
             echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
-            echo "have_config=true" >> "$GITHUB_OUTPUT"
           else
-            rm -f config/.gitleaks.toml
-            echo "No .gitleaks.toml on base ref ${BASE_REF} — falling back to gitleaks defaults."
-            echo "have_config=false" >> "$GITHUB_OUTPUT"
+            printf '[extend]\nuseDefault = true\n' > config/.gitleaks.toml
+            echo "No .gitleaks.toml on base ref ${BASE_REF} — wrote useDefault stub."
           fi
       - name: Run gitleaks (Docker)
         # The official gitleaks-action requires a paid license for GitHub
@@ -105,37 +114,24 @@ jobs:
         # `:latest` push cannot silently change scan behaviour on a
         # merge-blocking gate.
         #
-        # Two separate mounts under /work, never overlaying a file inside
-        # a read-only mount (docker refuses that on --read-only containers).
-        # The base-ref config is passed to gitleaks via --config; the PR
-        # head's own .gitleaks.toml (if any) is ignored because we do not
-        # point gitleaks at it.
+        # Two separate mounts: /repo for source (PR head), /config for
+        # the gitleaks config (always populated by the previous step —
+        # either the real base-ref file or a useDefault stub). `--config`
+        # is always passed so gitleaks cannot autoload
+        # `/repo/.gitleaks.toml`.
         #
         # :ro mounts + non-root user + --read-only container fs are
         # defence-in-depth against a compromised gitleaks image (digest
         # pin above is the first layer).
-        env:
-          HAVE_CONFIG: ${{ steps.base-config.outputs.have_config }}
         run: |
-          # Build the config flag conditionally: with a base-ref config
-          # we overlay it via -v /config; without one, gitleaks falls back
-          # to its built-in defaults (which is still the bank-grade rule
-          # set — we only LOSE our project-specific allowlist, never the
-          # detection rules themselves).
-          config_args=()
-          mount_args=()
-          if [ "$HAVE_CONFIG" = "true" ]; then
-            config_args=(--config=/config/.gitleaks.toml)
-            mount_args=(-v "${{ github.workspace }}/config:/config:ro")
-          fi
           docker run --rm \
             --read-only \
             --user "$(id -u):$(id -g)" \
             -v "${{ github.workspace }}/pr-head:/repo:ro" \
-            "${mount_args[@]}" \
+            -v "${{ github.workspace }}/config:/config:ro" \
             zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --no-banner --redact --exit-code 1 \
-            "${config_args[@]}"
+            --config=/config/.gitleaks.toml
 
   secrets-trufflehog:
     name: secrets — trufflehog
@@ -183,11 +179,18 @@ jobs:
           # env override can't silently downgrade the gate.
           SEMGREP_SUPPRESS_ERRORS: "false"
         run: |
+          # Verified registry packs as of 2026-05-24: p/bash and p/yaml
+          # do not exist on semgrep.dev (HTTP 404) — do not add them
+          # without first probing /c/p/<name>. Bash-in-YAML coverage
+          # comes from p/security-audit + p/github-actions; Docker
+          # socket misuse from p/dockerfile.
           semgrep ci \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
-            --config "p/javascript"
+            --config "p/javascript" \
+            --config "p/dockerfile" \
+            --config "p/github-actions"
 
   sca-trivy-fs:
     name: SCA — trivy (filesystem)
@@ -205,7 +208,11 @@ jobs:
           # exceptions file; everything else is informational.
           severity: CRITICAL
           exit-code: "1"
-          ignore-unfixed: true
+          # `ignore-unfixed: false` — a CRITICAL CVE without an upstream
+          # fix is exactly the class a bank auditor asks about first.
+          # Force an explicit dated entry in `security-exceptions.yml`
+          # before merge, rather than silently green-lighting it.
+          ignore-unfixed: false
           # `references/` is the vendored upstream research buffer (kata,
           # firecracker, cloud-hypervisor, coder, sysbox, …) — same status
           # as `docs/future-architecture/`: research-only, never part of any

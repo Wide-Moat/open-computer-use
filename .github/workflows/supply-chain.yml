@@ -97,10 +97,15 @@ jobs:
         #      `registry.example.com/attacker/malware:latest` fails here.
         run: |
           owner_lower="$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')"
+          # build.yml uses `type=match,pattern=v(.*),group=1` to strip the
+          # leading `v` from release tags before pushing to GHCR (so tag
+          # v0.9.5.1 lands as image …:0.9.5.1). Mirror that here, otherwise
+          # the first real tag push signs an image that does not exist.
+          tag="${REF_NAME#v}"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             ref="$DISPATCH_REF"
           else
-            ref="ghcr.io/${owner_lower}/${IMAGE_NAME}:${REF_NAME}"
+            ref="ghcr.io/${owner_lower}/${IMAGE_NAME}:${tag}"
           fi
           # Whitelist-only: allowed chars are exactly what a valid OCI ref
           # needs. Reject anything else outright instead of trying to
@@ -108,6 +113,14 @@ jobs:
           case "$ref" in
             *[!A-Za-z0-9._/:@-]*)
               echo "::error::image ref contains disallowed characters: $ref" >&2
+              exit 1
+              ;;
+          esac
+          # Defence-in-depth against `..` segment traversal smuggled past
+          # the whitelist (the whitelist permits the literal `..`).
+          case "$ref" in
+            *..*)
+              echo "::error::image ref contains '..': $ref" >&2
               exit 1
               ;;
           esac
@@ -179,12 +192,19 @@ jobs:
         #   - tag-shape ref (`@refs/tags/v…` on tag push; we accept any
         #     ref on workflow_dispatch via a separate identity).
         run: |
+          # Escape regex metacharacters in REF_NAME — tag `v0.9.5.1`
+          # contains `.` which would otherwise match any char and let
+          # a same-shape tag (e.g. `v0a9b5c1`) pass verification.
+          ref_re="$(printf '%s' "$REF_NAME" | sed -E 's/[][\\.*^$()+?{|]/\\&/g')"
+          repo_re="$(printf '%s' "$REPO_FOR_VERIFY" | sed -E 's/[][\\.*^$()+?{|]/\\&/g')"
           if [ "$EVENT_NAME" = "push" ]; then
-            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@refs/tags/${REF_NAME}$"
+            cert_id="^https://github\\.com/${repo_re}/\\.github/workflows/supply-chain\\.yml@refs/tags/${ref_re}$"
           else
-            # workflow_dispatch — signature identity carries the dispatch
-            # ref; accept anything under our workflow path on this repo.
-            cert_id="^https://github\\.com/${REPO_FOR_VERIFY}/\\.github/workflows/supply-chain\\.yml@.+$"
+            # workflow_dispatch — restrict the accepted refs to tags or
+            # the long-lived release branches. Without this an approver
+            # on the `production` environment could launder a signature
+            # for an image against an arbitrary throwaway branch.
+            cert_id="^https://github\\.com/${repo_re}/\\.github/workflows/supply-chain\\.yml@(refs/tags/v[0-9.]+|refs/heads/(main|next/v1))$"
           fi
 
           cosign verify \
@@ -194,6 +214,16 @@ jobs:
 
           cosign verify-attestation \
             --type spdxjson \
+            --certificate-identity-regexp "$cert_id" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE_REF"
+
+          # Mirror verification for the CycloneDX attestation. The
+          # gate's stated purpose is "fail if any artefact is missing"
+          # — verifying only spdxjson would let a corrupted CycloneDX
+          # attestation pass CI green.
+          cosign verify-attestation \
+            --type cyclonedx \
             --certificate-identity-regexp "$cert_id" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "$IMAGE_REF"
