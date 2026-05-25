@@ -10,7 +10,7 @@ applies-to: next/v1
 
 ## 1. Purpose
 
-Open Computer Use (OCU) is the in-perimeter agent-execution boundary: a uniform sandbox with a skill library, exposed via an MCP interface. It is model-neutral by construction (any model with tool-call over MCP) and integrates with the customer's existing IdP, KMS, SIEM, and outbound proxy; this view names every external boundary the system speaks across.
+Open Computer Use (OCU) is the in-perimeter agent-execution boundary: a uniform sandbox with a skill library, exposed via an MCP interface. It is model-neutral by construction (any model with tool-call over MCP) and integrates with the regulated-enterprise customer's existing IdP, KMS, SIEM, and outbound proxy; this view names every external boundary the system speaks across.
 
 OCU is one component of the Wide-Moat opinionated bundle (other peers in the bundle include n8n and Open WebUI). OCU is also usable standalone — any MCP-speaking peer is a first-class integration. See [`manifesto/01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) for the buyer story; this document scopes only what is inside OCU and what it talks to.
 
@@ -30,7 +30,7 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 |---|---|---|---|
 | **MCP-speaking peer** (n8n, Open WebUI, custom MCP client) | Inbound calls into OCU's MCP server | required | — |
 | **Admin / Operator** (PAM-JIT human) | Operates OCU; short-lived SAML-asserted attribute, no shared service accounts | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
-| **Customer IdP** (SAML / OIDC) | Authenticates inbound peers and operators; OCU is a relying party | required on full-capability shelf | — |
+| **Customer IdP** (SAML / OIDC) | Authenticates inbound peers and operators; OCU is a relying party | optional on minimal shelf (local auth fallback) — required on full-capability shelf | — |
 | **Customer SIEM** | OCSF v1.x event bridge consumed by the customer's SIEM | optional on minimal shelf (file-system sink); required where SIEM is the system of record | [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
 | **Customer KMS / HSM** | Key custody for the broker and audit signing chain on the full-capability shelf | optional — full shelf only; minimal shelf uses host-local keys | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | **Customer outbound proxy** | Chained-proxy hop for egress; OCU's trust-edge proxy speaks the chained contract | optional | — |
@@ -42,7 +42,7 @@ Regulator citations and measurable targets for each row land in [`manifesto/02-n
 
 Outbound endpoints behind the egress policy (LLM upstream, customer MCP servers, object stores, internal APIs) are not actors against OCU's contracts — the Egress trust-edge gates them and the Credential broker selects the scoped token ([`02-trust-boundaries.md`](02-trust-boundaries.md) §3 preamble).
 
-Master-plan `agent user` is upstream of `MCP-speaking peer` and not a Layer 4 actor: humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a custom client). Direct human-to-OCU UI is a v1 non-goal.
+Humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a custom client); direct human-to-OCU UI is a v1 non-goal.
 
 ## 5. Scope out
 
