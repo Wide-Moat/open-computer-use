@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-27
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -48,6 +48,22 @@ Every NFR row sits in one of three ownership classes. Layer 3 (`docs/architectur
   - NFR-COMP-26 — "Configurable prompt-redaction filter": AI-guardrail policy belongs to the customer's AI gateway (commercial AI-gateway product or in-perimeter model with its own guardrails). We route + audit, we don't redact prompts.
 
 REVISIT rows stay in this catalogue at their existing IDs until the next §02 rev; Layer 3 already takes the corrected position. **Enforcement status:** REVISIT rows are **informational / non-gating** in this draft. CI gates, release acceptance, compliance attestations, and verifier passes MUST NOT enforce a REVISIT row's Target column until the row is re-cut. The row's Scenario cell carries an inline `**[REVISIT — non-gating]**` marker so the gate-author cannot miss it.
+
+## Sandbox tier — workload-driven selection
+
+The sandbox runtime ladder is chosen by the trust profile of the workload running inside the sandbox, not by data classification or compliance tier. Multi-provider isolation-tier ecosystems are the published 2026 precedent (Anthropic Self-Hosted Sandboxes May 2026 — Cloudflare microVM, Daytona container, Modal gVisor, Vercel container).
+
+| Workload profile (`workload_trust_profile`) | Recommended tier | Rationale |
+|---|---|---|
+| `trusted_operator` — solo developer, single operator; you are the only one driving the agent | `runc` (default; one-click solo install preserved) | Shared kernel; trade isolation for speed. Acceptable when you are the workload. |
+| `internal_workforce` — vetted employees and partners driving the agent; you know who they are, you trust their intent | `gVisor` (`runsc`) — v1 hardened default | User-space-kernel isolation; two-bug escape requirement per gVisor's published threat model. Production precedent at AI scale: OpenAI, Modal, Anthropic, Google App Engine. |
+| `untrusted` — unknown actors (external customers, public endpoints, untrusted skill execution) | **microVM (hardware-virt)** — post-v1, tracked at [`arch/microvm-tier-v1.1`](https://github.com/Wide-Moat/open-computer-use/issues/161) | Hardware-virtualisation is the defensible isolation primitive against unknown-actor adversarial code. Named example: Firecracker. Kata Containers is one packaging option, not a requirement. |
+
+**Honest v1 deployability.** The `untrusted` profile is **not deployable in v1 GA** because microVM has not shipped. Configuring `workload_trust_profile: untrusted` in v1 fails at admission with a clear error pointing to [#161](https://github.com/Wide-Moat/open-computer-use/issues/161). The `trusted_operator` and `internal_workforce` profiles are fully deployable on the v1 runc + gVisor floor.
+
+The same LLM-driven sandbox workload (shell, browser, file ops, skill calls) runs in all three tiers. The choice is about **who issues the prompts driving the agent** and **what your host substrate supports** (KVM presence is a microVM precondition). Per-session trust profiles are tracked for v1.1+ at [`arch/per-session-trust-profile`](https://github.com/Wide-Moat/open-computer-use/issues/162); v1 GA carries a single deployment-wide profile.
+
+Enforcement and observability of this model are NFR-SEC-38 (admission-time validation) and NFR-SEC-39 (tier-downgrade alarm). The anti-pattern of picking a tier by data classification is forbidden by AP-13.
 
 ## 1. Functional Suitability
 
