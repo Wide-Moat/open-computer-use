@@ -264,7 +264,7 @@ Each anti-pattern is forbidden by ≥1 row above.
 - AP-10 — service-per-session in k8s. Forbidden by NFR-PERF-12.
 - AP-11 — single global agent binary without per-template version pinning. Forbidden by NFR-MAINT-06.
 - AP-12 — kernel below the supported floor. Forbidden by NFR-SEC-35 + NFR-MAINT-01 (CVE-patch SLA).
-- AP-13 — picking the sandbox tier by data classification. The container-escape attack surface for adversarial LLM-issued code is identical regardless of data class. Data class governs retention (NFR-COMP-01), key custody (NFR-SEC-33), and residency (NFR-COMP-13); the workload-trust profile picks the tier. Forbidden by NFR-SEC-02 + NFR-SEC-38.
+- AP-13 — picking the sandbox tier by data classification (e.g. "NPI → microVM" or "PUBLIC → runc"). The container-escape attack surface for adversarial LLM-issued code is identical regardless of data class. Data class governs retention (NFR-COMP-01), key custody (NFR-SEC-33), and residency (NFR-COMP-13); the workload-trust profile picks the tier. Forbidden by NFR-SEC-02 + NFR-SEC-38.
 
 ## Long-form scenarios
 
