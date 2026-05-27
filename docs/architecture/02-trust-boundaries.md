@@ -124,6 +124,8 @@ DLP-ICAP ([NFR-COMP-28](manifesto/02-nfrs.md)) is a configuration of the MITM-in
 
 Fail-closed: if the egress proxy is unreachable, the Compute plane drops outbound traffic, never bypasses the proxy. Same property on the IdP → Control plane path: IdP unreachable → new sessions denied; in-flight sessions continue under their existing token until either TTL expiry or an explicit revoke event.
 
+Egress denials carry a structured reason header (`x-deny-reason`) so audit and SOAR can classify outcomes without parsing free-text logs. Unallowed destinations are dropped at SNI pre-filter before TLS handshake (cheaper, lower forensic value); allowed destinations are inspected at L7 (richer, more expensive).
+
 Revoke is independent of IdP reachability. The Control plane holds a session denylist (kill-switch state). On the Compute-plane path the denylist is checked directly on every RPC. On the Egress trust-edge path the denylist is consulted indirectly: the Credential broker refuses to reissue scoped-JWT for revoked sessions, and the scoped-JWT TTL ([NFR-SEC-29](manifesto/02-nfrs.md), ≤ 15 min) caps egress revoke propagation on that path. Revoke propagation target is ≤5 min platform-wide per [NFR-SEC-04](manifesto/02-nfrs.md), independently of whether the customer IdP is reachable at revoke time. Kill switch ([NFR-SEC-01](manifesto/02-nfrs.md)) shares the same denylist; its ≤30 s p99 SLA covers Compute-plane stop, not the slower upstream-credential revoke path. The IdP participates in token issue, not in revoke — that is why ≤5 min revoke holds even during an IdP outage, which is the incident the target exists for.
 
 Component-spec wiring lands under [`components/`](./components/) per [PROCESS.md](./PROCESS.md) when the egress-proxy spec opens.
