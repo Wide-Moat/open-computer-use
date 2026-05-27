@@ -51,7 +51,7 @@ REVISIT rows stay in this catalogue at their existing IDs until the next §02 re
 
 ## Sandbox tier — workload-driven selection
 
-The sandbox runtime ladder is chosen by the trust profile of the workload running inside the sandbox, not by data classification or compliance tier. Multi-provider isolation-tier ecosystems are the published 2026 precedent (Anthropic Self-Hosted Sandboxes May 2026 — Cloudflare microVM, Daytona container, Modal gVisor, Vercel container).
+The sandbox runtime ladder is chosen by the trust profile of the workload running inside the sandbox, not by data classification or compliance tier.
 
 | Workload profile (`workload_trust_profile`) | Recommended tier | Rationale |
 |---|---|---|
