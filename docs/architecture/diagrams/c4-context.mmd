@@ -1,7 +1,7 @@
 %% SPDX-License-Identifier: FSL-1.1-Apache-2.0
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Canonical Layer 4 (C4 Context) diagram. Referenced from docs/architecture/03-c4-context.md.
-%% Convention: solid border = required; dashed border = optional configuration.
+%% Convention: solid border = present on the minimal-capability shelf; dashed border = not on the minimal shelf by default (per-actor optionality in 03-c4-context.md §4).
 %% Palette (project convention): red untrusted / green trusted (amber + blue zones apply at Layer 3 only).
 
 %%{init: {"theme": "neutral"} }%%
@@ -16,7 +16,7 @@ flowchart LR
         BOX[Open Computer Use<br/>in-perimeter agent-execution platform]
     end
 
-    %% ─── customer infrastructure (required on the full-capability shelf) ───
+    %% ─── customer infrastructure (full-capability shelf; IdP required there, the rest optional) ───
     IDP[Customer IdP<br/>SAML / OIDC]:::extOpt
     KMS[Customer KMS / HSM<br/>PKCS#11 / KMIP]:::extOpt
     SIEM[Customer SIEM]:::extOpt
@@ -29,9 +29,9 @@ flowchart LR
 
     %% ─── edges ───
     PEER -->|"MCP authz spec<br/>audience-validated"| OCU
-    OPER -->|"PAM-JIT SAML attr<br/>NFR-COMP-29"| OCU
-    SOAR <-->|signed webhook + admin API| OCU
-    IDP -->|SAML / OIDC| OCU
+    OPER -->|"PAM-JIT credential<br/>NFR-COMP-29"| OCU
+    SOAR <-.->|signed webhook + admin API| OCU
+    IDP -.->|SAML / OIDC| OCU
     OCU -.->|"OCSF v1.x bridge<br/>optional"| SIEM
     OCU -.->|"PKCS#11 / KMIP<br/>full-capability shelf"| KMS
     OCU -.->|"chained-proxy contract<br/>optional"| CPROXY

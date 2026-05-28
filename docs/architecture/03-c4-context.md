@@ -20,7 +20,7 @@ OCU is the agent-execution component: MCP server / Control plane → guest agent
 
 ## 3. C4 Context diagram
 
-Canonical source: [`diagrams/c4-context.mmd`](diagrams/c4-context.mmd). Convention: solid border = required; dashed border = optional configuration. Palette borrows the project red-untrusted / green-trusted convention; semi-trusted (amber) and isolated (blue) zones from the trust-boundary diagram do not apply at the Context level. The solid / dashed split makes the one-click solo-install path visible at a glance — every solid-border actor is on the minimal-capability shelf; every dashed-border actor is opt-in for the full-capability shelf. Internal containers are not shown here.
+Canonical source: [`diagrams/c4-context.mmd`](diagrams/c4-context.mmd). Convention: solid border = present on the minimal-capability shelf; dashed border = not on the minimal shelf by default. Palette borrows the project red-untrusted / green-trusted convention; semi-trusted (amber) and isolated (blue) zones from the trust-boundary diagram do not apply at the Context level. The solid / dashed split makes the one-click solo-install path visible at a glance — solid-border actors are what a solo install talks to out of the box; dashed-border actors are wired on the full-capability shelf, some optional (SIEM, proxy, ICAP, SOAR, transparency log) and some required there (IdP). Per-actor optionality is stated exactly in the §4 table. Internal containers are not shown here.
 
 ## 4. External actors
 
@@ -29,8 +29,8 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 | Actor | Role | Required-or-optional | NFR anchor |
 |---|---|---|---|
 | **MCP-speaking peer** (n8n, Open WebUI, custom MCP client) | Inbound calls into OCU's MCP server | required | — |
-| **Admin / Operator** (PAM-JIT human) | Operates OCU; short-lived SAML-asserted attribute, no shared service accounts | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
-| **Customer IdP** (SAML / OIDC) | Authenticates inbound peers and operators; OCU is a relying party | optional on minimal shelf (local auth fallback) — required on full-capability shelf | — |
+| **Admin / Operator** (PAM-JIT human) | Operates OCU; host-rooted local credential on the minimal shelf, short-lived SAML-asserted attribute on the full shelf — no shared service accounts on either | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
+| **Customer IdP** (SAML / OIDC) | Authenticates inbound peers and operators on the full shelf; OCU is a relying party | not on the minimal shelf (operators use a host-rooted local credential) — required on the full-capability shelf | — |
 | **Customer SIEM** | OCSF v1.x event bridge consumed by the customer's SIEM | optional on minimal shelf (file-system sink); required where SIEM is the system of record | [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
 | **Customer KMS / HSM** | Key custody for the broker and audit signing chain on the full-capability shelf | optional — full shelf only; minimal shelf uses host-local keys | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | **Customer outbound proxy** | Chained-proxy hop for egress; OCU's trust-edge proxy speaks the chained contract | optional | — |
