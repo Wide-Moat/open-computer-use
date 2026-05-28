@@ -3,7 +3,7 @@
 
 ---
 status: stub
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -17,8 +17,8 @@ This directory will hold the canonical enterprise solution architecture for `nex
 | [`MANIFESTO.md`](./MANIFESTO.md) | stub | Non-negotiables, NFRs by reference, governance. Read first. |
 | [`glossary.md`](./glossary.md) | stub | Canonical terms (tenant, sandbox, session, agent, runtime, …). |
 | [`PROCESS.md`](./PROCESS.md) | draft | 3-step playbooks for adding a component, ADR, NFR, dependency, or TBD. |
-| `manifesto/` | empty | Expanded Manifesto sections — appear one at a time via PRs. |
-| `components/` | empty | Per-component design contracts — appear one at a time. |
+| `manifesto/` | partial | Expanded Manifesto sections — appear one at a time via PRs. Currently `01-audience-and-buyer.md`, `02-nfrs.md`. |
+| `components/` | partial | Per-component design contracts — appear one at a time. Currently `0000-template.md` only. |
 | `adr/` | partial | Contains `README.md` (index) and `0000-template.md`. ADRs appear on demand. |
 | `diagrams/` | empty | Mermaid / D2 source files. |
 | `compliance/` | empty | Per-framework mappings (SOC 2, ISO 27001, DORA, EU AI Act, GDPR, SR 11-7, HIPAA, PCI-DSS). |
