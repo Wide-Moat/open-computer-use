@@ -1,0 +1,44 @@
+%% SPDX-License-Identifier: FSL-1.1-Apache-2.0
+%% Copyright (c) 2025 Open Computer Use Contributors
+%% Canonical Layer 4 (C4 Context) diagram. Referenced from docs/architecture/03-c4-context.md.
+%% Convention: solid border = present on the minimal-capability shelf; dashed border = not on the minimal shelf by default (per-actor optionality in 03-c4-context.md §4).
+%% Palette (project convention): red untrusted / green trusted (amber + blue zones apply at Layer 3 only).
+
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+
+    %% ─── inbound peers (any MCP-speaking caller; REST is a fallback) ───
+    PEER[MCP-speaking peer<br/>n8n · Open WebUI · custom MCP client]:::ext
+    OPER[Admin / Operator<br/>PAM-JIT human]:::ext
+
+    %% ─── the system under design ───
+    subgraph OCU[Open Computer Use]
+        BOX[Open Computer Use<br/>in-perimeter agent-execution platform]
+    end
+
+    %% ─── customer infrastructure (full-capability shelf; IdP required there, the rest optional) ───
+    IDP[Customer IdP<br/>SAML / OIDC]:::extOpt
+    KMS[Customer KMS / HSM<br/>PKCS#11 / KMIP]:::extOpt
+    SIEM[Customer SIEM]:::extOpt
+    CPROXY[Customer outbound proxy]:::extOpt
+    ICAP[Customer DLP-ICAP service]:::extOpt
+
+    %% ─── operations and assurance ───
+    SOAR[SOAR<br/>signed webhook + admin API]:::extOpt
+    TLOG[Transparency log]:::extOpt
+
+    %% ─── edges ───
+    PEER -->|"MCP authz spec<br/>audience-validated"| OCU
+    OPER -->|"PAM-JIT credential<br/>NFR-COMP-29"| OCU
+    SOAR <-.->|signed webhook + admin API| OCU
+    IDP -.->|SAML / OIDC| OCU
+    OCU -.->|"OCSF v1.x bridge<br/>optional"| SIEM
+    OCU -.->|"PKCS#11 / KMIP<br/>full-capability shelf"| KMS
+    OCU -.->|"chained-proxy contract<br/>optional"| CPROXY
+    OCU -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
+    OCU -.->|"daily Merkle head<br/>submission envelope"| TLOG
+
+    %% ─── styling (project palette) ───
+    classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
+    classDef extOpt fill:#fdecea,stroke:#c0392b,stroke-dasharray: 5 5;
+    style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px;
