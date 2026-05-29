@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -18,7 +18,7 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 ## Compute plane
 
-The session sandbox zone — one sandbox per session, lifecycle bound to the session, guest agent as PID 1. Substrate is container on the minimal-capability shelf, microVM on the full-capability shelf. Cross-session network reachability disabled.
+The session sandbox zone — one sandbox per session, lifecycle bound to the session, guest agent as PID 1. Substrate is set by the [Sandbox tier](#sandbox-tier): `runc` on the minimal-capability shelf, `gVisor` on the full-capability shelf in v1 (microVM post-v1). Cross-session network reachability disabled.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
@@ -44,10 +44,10 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 A configuration profile of one product. Two shelves:
 
-- **Minimal-capability shelf** — single-tenant, host-local Ed25519 signing keys, auto-generated self-signed CA, file-system audit sink. The one-click solo install path.
-- **Full-capability shelf** — customer HSM rooted, per-tenant SPIFFE trust domain, customer-CA-rooted egress, OCSF bridges to customer SIEM.
+- **Minimal-capability shelf** — single-tenant, host-local Ed25519 signing keys, auto-generated self-signed CA, file-system audit sink, host-rooted local operator credential. The one-click solo install path. Spelled **solo / dev tier** in some Layer 3 prose and NFR rows; the two names denote the same shelf.
+- **Full-capability shelf** — customer HSM rooted, per-tenant SPIFFE trust domain, customer-CA-rooted egress, OCSF bridges to customer SIEM, customer-IdP-asserted operator identity. Spelled **hardened tier and above** in some Layer 3 prose and NFR rows; same shelf.
 
-Both shelves run the same binary; the difference is configuration plus presence of customer-supplied facilities (HSM, CA, SIEM bridge). Not a SKU split.
+Both shelves run the same binary; the difference is configuration plus presence of customer-supplied facilities (HSM, CA, SIEM bridge, IdP). Not a SKU split. The shelf is one axis; the [Sandbox tier](#sandbox-tier) (runtime) and the [Isolation tier](#isolation-tier-t0t3) (tenancy shape) are orthogonal axes — selecting a shelf does not pick the runtime.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 / §8 / §10, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
@@ -63,6 +63,16 @@ Per-tenant deployment shape menu. Picks the substrate, not the invariants — bo
 Higher isolation tiers (dedicated hardware, customer-owned cage) are tracked as candidates in open question `arch/cross-tenant-isolation-grading`; promote when a named workload requires them.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §4.
+
+## Sandbox tier
+
+The sandbox runtime ladder, picked by the workload's `workload_trust_profile`, never by data classification (AP-13). Distinct from the [Isolation tier](#isolation-tier-t0t3) (tenancy shape) and the [Capability shelf](#capability-shelf) (key custody / CA / sink).
+
+- `runc` — shared-kernel container; v1 default for the `trusted_operator` profile (one-click solo install).
+- `gVisor` (`runsc`) — user-space-kernel isolation; v1 hardened default for the `internal_workforce` profile.
+- microVM (hardware-virt; named example Firecracker) — post-v1, for the `untrusted` profile; tracked at [#161](https://github.com/Wide-Moat/open-computer-use/issues/161).
+
+Used in: [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) §"Sandbox tier — workload-driven selection", [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2.
 
 ## Egress posture
 

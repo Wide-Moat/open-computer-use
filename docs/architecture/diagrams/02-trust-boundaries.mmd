@@ -30,7 +30,7 @@ flowchart LR
     end
 
     subgraph COMPUTE[Compute plane]
-        VM[session sandbox<br/>guest agent PID 1<br/>container minimal · microVM full<br/>one per session · ephemeral]
+        VM[session sandbox<br/>guest agent PID 1<br/>runc minimal · gVisor full · microVM post-v1<br/>one per session · ephemeral]
     end
 
     subgraph EDGE[Egress trust-edge]
@@ -44,7 +44,7 @@ flowchart LR
     %% ─── inbound edges ───
     MCPC -->|"MCP authz spec<br/>audience-validated"| ORCH
     IDP -->|SAML / OIDC| ORCH
-    OPER -->|PAM-JIT SAML attr<br/>NFR-COMP-29| ORCH
+    OPER -->|PAM-JIT credential<br/>NFR-COMP-29| ORCH
     SOAR <-->|signed webhook + admin API| ORCH
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───

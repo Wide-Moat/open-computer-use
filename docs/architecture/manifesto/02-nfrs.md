@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-27
+last-reviewed: 2026-05-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -104,7 +104,7 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | ID | Scenario | Target | Verification | Source |
 |---|---|---|---|---|
 | NFR-REL-01 | Control-plane RTO / RPO | ≤60 min / ≤5 min | quarterly DR exercise | DORA Art. 11/12 + tier-1 baseline |
-| NFR-REL-02 | Data-plane RTO | ≤30 min new sessions (in-flight non-durable) | quarterly DR exercise | DORA Art. 12 |
+| NFR-REL-02 | Compute-plane RTO | ≤30 min new sessions (in-flight non-durable) | quarterly DR exercise | DORA Art. 12 |
 | NFR-REL-03 | Audit-pipeline RTO / RPO | ≤15 min / 0 (no event loss) | chaos test | RFC-9162 + DORA Art. 19 |
 | NFR-REL-04 | **[REVISIT — non-gating]** LLM upstream failover | ≤5 min unhealthy → secondary | chaos test | DORA Art. 29 |
 | NFR-REL-05 | Single-AZ failure | continuity across remaining AZs, no operator action | quarterly chaos | DORA Art. 12 |
@@ -128,7 +128,7 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | NFR-SEC-06 | Replay-bundle completeness | Repudiation, forensics | ≥99% session events reconstructable; 100% sessions bundled | replay-eval suite | EU AI Act Art. 12 |
 | NFR-SEC-07 | Supply-chain | Tampering, supply-chain | CycloneDX SBOM + SPDX + SLSA L3 + cosign per release; VEX per known CVE | CI gate | NIST 800-218A |
 | NFR-SEC-08 | MCP allow-list enforcement | Information Disclosure, lateral | Egress trust-edge enforces customer allow-list; deny-by-default; auditable denials | SIEM-side check | primitives-backlog |
-| NFR-SEC-09 | Identity binding to every action | Spoofing, Repudiation | SPIFFE SVID on every inter-component call; human action requires SAML/OIDC + SCIM; no anonymous paths in production | code-path audit + SOC 2 CC6.x | NYDFS Part 500 |
+| NFR-SEC-09 | Identity binding to every action | Spoofing, Repudiation | SPIFFE SVID on every inter-component call; human action requires SAML/OIDC + SCIM on the full shelf, a host-rooted local operator credential on the minimal shelf; no anonymous paths and no shared service accounts on either shelf | code-path audit + SOC 2 CC6.x | NYDFS Part 500 |
 | NFR-SEC-10 | Per-session egress JWT | Replay, token-theft | `exp ≤ session-max (4 h)`; refresh issues new token, never extends | token-lifetime test | [`antipatterns.md`](../../future-architecture/antipatterns.md) A8 |
 | NFR-SEC-11 | Egress JWT signing-key rotation | Tampering | Ed25519, ≤90 d, `kid` header, 24 h overlap | rotation log | [`antipatterns.md`](../../future-architecture/antipatterns.md) A33 |
 | NFR-SEC-12 | DNS-rebinding defence at proxy | SSRF | proxy-owned resolver; fixed mandatory deny-set RFC1918 + RFC4193 (fc00::/7) + RFC4291 link-local (fe80::/10) + `169.254.169.254` + `[fd00:ec2::254]`; filter at connect time on resolved IP + SNI, never DNS resolution | unit test per rejection class | [`antipatterns.md`](../../future-architecture/antipatterns.md) A24 |
@@ -232,7 +232,7 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | NFR-COMP-26 | **[REVISIT — non-gating]** Configurable prompt-redaction filter before any external LLM call; per-tenant policy; redaction events audited | release pipeline | integration test | NYDFS Industry Letter (training-data clause) |
 | NFR-COMP-27 | SOAR bidirectional — signed webhook OUT (event payloads `session.flagged`, `policy.violation`, `dlp.hit`, `auth.anomaly`); admin API IN (quarantine session / revoke token) | versioned + integration-tested per release | release pipeline | NIST 800-61 + industry SOAR convention |
 | NFR-COMP-28 | DLP at egress — ICAP hook + outbound classifier (rule-based or LLM-based) + block-or-redact policy per tenant; HTTP-classifier for outbound prompt-leak detection | per-release pass/fail | integration test | primitives-backlog (egress DLP) |
-| NFR-COMP-29 | PAM — just-in-time admin elevation via SAML-asserted attributes; integration with the customer's PAM tool; no shared service accounts in production | per-release audit | integration test | NIST 800-53 AC-2(7) |
+| NFR-COMP-29 | PAM — just-in-time admin elevation via SAML-asserted attributes on the full shelf (integration with the customer's PAM tool); host-rooted local operator credential on the minimal shelf where no IdP is wired; no shared service accounts in production on either shelf | per-release audit | integration test | NIST 800-53 AC-2(7) |
 | NFR-COMP-30 | FSL-1.1 procurement-redline pack ships per release — DPA template + SCCs + FSL-1.1 commentary explaining 2-year Apache-2.0 conversion mechanic + competing-SaaS clause | pack in evidence bundle | per-release | tracked: `arch/fsl-redline-pack` |
 
 ## 9. Cost
