@@ -34,7 +34,7 @@ flowchart LR
     end
 
     subgraph EDGE[Egress trust-edge]
-        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>MCP allow-list enforcement]
+        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>egress allow-list · deny-by-default]
     end
 
     subgraph AUDIT[Audit pipeline]
