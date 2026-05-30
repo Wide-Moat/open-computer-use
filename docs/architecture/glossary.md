@@ -117,7 +117,19 @@ Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
 ## Published Language
 
-A shared, documented schema two contexts agree on at their boundary; the emitter conforms to the schema, not to the consumer's internals. The OCSF event between Agent Execution and Compliance Evidence is the canonical instance ([OCSF](#ocsf)). Distinct from Conformist, where one context accepts an upstream's model without negotiation (the MCP authorization spec, provider APIs).
+A shared, documented schema two contexts agree on at their boundary; the emitter conforms to the schema, not to the consumer's internals. The OCSF event between Agent Execution and Compliance Evidence is the canonical instance ([OCSF](#ocsf)). Distinct from Conformist, where one context accepts an upstream's model without negotiation (the MCP authorization spec).
+
+Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
+
+## Customer/Supplier
+
+An upstream/downstream relationship where the downstream's needs shape the upstream's contract through negotiation — distinct from Conformist (no negotiation) and Anti-corruption layer (defensive translation). The Operator → Agent Execution PAM-JIT path is the instance: the operator's access needs are met by a negotiated contract, not by adopting an external model wholesale.
+
+Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
+
+## Open Host Service
+
+A context that publishes a protocol or endpoint through which many producers and consumers integrate, typically carrying a [Published Language](#published-language). Compliance Evidence is the canonical instance — fan-in of OCSF events from four trust zones, fan-out to multiple customer SIEMs. The Open Host Service is the door; the Published Language is the vocabulary.
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
