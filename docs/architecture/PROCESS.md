@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -47,7 +47,7 @@ Heavier and vendor-backed beats lighter and unknown. The platform targets banks;
 
 ## Capturing primitives discovered during research
 
-When a research, advisor, or verifier cycle surfaces an architectural primitive that Wide-Moat will need (e.g. evidence-as-code bundle, ModelProvider abstraction, MCP allow-list, DORA RoI field-level traceability, kill-switch SLA, replay-bundle schema), append it to `primitives-backlog.md` immediately. Do not stash primitives in research-buffer files only — they get lost on the next research cycle.
+When a research, advisor, or verifier cycle surfaces an architectural primitive that OCU will need (e.g. evidence-as-code bundle, MCP allow-list, DORA RoI field-level traceability, kill-switch SLA, replay-bundle schema), append it to `primitives-backlog.md` immediately. Do not stash primitives in research-buffer files only — they get lost on the next research cycle.
 
 Each entry is one line: `- **<primitive name>** — <one-line purpose> — surfaced in <research-file>; lands in <target-section-or-component>`. Target may be `§02` (NFRs), `§03` (non-negotiables), a component spec, or `TBD` if not yet placed.
 

@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -21,7 +21,7 @@ The platform serves two human personas inside the customer organisation:
 1. **Business users** consume agents through chat surfaces, workflows, and dashboards. They never see the platform plumbing.
 2. **Builder and platform engineers** inside the customer create skills, MCP servers, n8n workflows, observability dashboards, and eval suites. They are the customer's internal multipliers; the training and enablement Wide-Moat sells is for them.
 
-Agents are treated as a first-class architectural concern below the human personas — they call tools, execute browser sessions, and emit audit events through stable contracts (MCP, ModelProvider, sandbox runtime API, replay bundle schema). They are a design constraint, not a buyer.
+Agents are treated as a first-class architectural concern below the human personas — they call tools, execute browser sessions, and emit audit events through OCU's stable contracts (MCP, the sandbox runtime API, the replay bundle schema). They are a design constraint, not a buyer.
 
 A solo enthusiast audience exists as a downstream consequence of the FSL-1.1-Apache-2.0 licence (full posture lands in §05 — see issue `arch/manifesto-05-licensing-posture`), not as a co-equal persona. Anyone may self-host, fork, and modify the platform. Expected contribution channels are evaluation submissions, hardening reports, MCP server and skill contributions, and public engineering writeups. Security primitives ship in the open artifact; the commercial moat is operational, not capability.
 
@@ -46,7 +46,7 @@ Four forcing functions converge in 2026. DORA enforcement has been active in the
 
 Wide-Moat assembles an in-perimeter agentic AI ecosystem and sells it as a deployable subscription with enablement and certification. Every component runs entirely inside the customer's perimeter (including the agent loop, the context store, and the recovery logic — not only the tool-execution sandbox). The platform is model-agnostic by construction (MCP-first, no hosted loop); SOC 2 Type II, ISO 27001, DORA Article 28–30, and EU AI Act Annex III evidence ships as first-class build artifacts on every release. The licence is FSL-1.1-Apache-2.0 with a planned `LICENSE-ADDITIONAL-PERMISSIONS.md` instrument (tracked in issue `arch/additional-permissions-instrument`; drafted in the research buffer; lands at repo root and in §05 once that section is written) enumerating internal-use scope for affiliates, joint ventures, outsourced operators, single-tenant managed deployments, and internal white-labelling; reselling as a competing multi-tenant SaaS remains forbidden during the FSL term (including by Wide-Moat itself), with each release converting to Apache 2.0 two years after publication per the License's Future License Grant.
 
-In-perimeter deployment alone is no longer a moat. UiPath Automation Suite shipped on-prem agentic AI on 5 May 2026 under a commercial closed-source EULA; Anthropic shipped self-hosted sandboxes on 19 May 2026 with the agent loop, context, and model weights kept on Anthropic infrastructure. The remaining moat is the intersection of model-neutrality, source availability, fully in-perimeter execution (loop included), and per-release compliance evidence. Re-evaluates on 2027-05-24.
+In-perimeter deployment alone is no longer a moat. UiPath Automation Suite shipped on-prem agentic AI on 5 May 2026 under a commercial closed-source EULA; Anthropic shipped self-hosted sandboxes on 19 May 2026 with the agent loop, context, and model weights kept on Anthropic infrastructure. The remaining moat is the intersection of model-neutrality, source availability, fully in-perimeter execution (loop included), and per-release compliance evidence. These are bundle properties: the loop and model-neutrality come from sibling components (Open WebUI / n8n / LiteLLM); Open Computer Use — the component these architecture docs design — contributes the in-perimeter tool-execution sandbox and the tamper-evident audit lineage, and does not run the loop or proxy a model. Re-evaluates on 2027-05-24.
 
 ## Open questions
 

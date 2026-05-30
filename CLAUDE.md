@@ -165,7 +165,7 @@ Code-review discipline: CODEOWNERS routes every PR; "done definition" per PR inc
 The following are explicit non-goals for `next/v1` GA. Each gets a clean abstraction boundary so the contract is ready when we add them later, but the implementation is out of scope:
 
 - **Skill registry.** v1 ships zero default skills bundled. Components include a `SkillProvider` abstraction at `status: tbd`. Skills load from an external registry the customer provides. Anti-pattern: invent a half-baked skill format now and lock customers into it.
-- **Hosted models.** v1 does not host any LLM. `ModelProvider` abstraction lets customers connect Anthropic / OpenAI / Bedrock / Vertex / vLLM / Ollama. We are a multi-provider proxy, not a model host.
+- **Hosted models and the agent loop.** OCU does not host, select, or proxy an LLM, and does not run the agent loop. OCU is an MCP server plus a sandbox executor; the loop and the model choice live in the calling client (a Wide-Moat sibling component such as LiteLLM / Open WebUI / n8n, or any MCP caller). If a sandbox tool needs an LLM, it reaches it as one allow-listed egress endpoint, governed by the same Egress trust-edge, broker, and audit path as any other endpoint — not through an OCU model abstraction.
 - **Admin web UI.** v1 ships zero admin UI. CLI (`occ`) + GitOps + Grafana for ops. Every UI is new attack surface, auth burden, and accessibility cost. v2 may add a read-only operator console after CLI is feature-complete and customers request it.
 - **SaaS offered by us.** Our license (FSL-1.1-Apache-2.0) forbids competing hosted services without permission. We ship self-hostable software only.
 
