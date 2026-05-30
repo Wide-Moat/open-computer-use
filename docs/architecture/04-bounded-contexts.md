@@ -34,11 +34,13 @@ flowchart TB
         POL["Policy evaluation"]
         MOD["Model access"]
     end
-    AEX -->|"OCSF events"| CEV
+    AEX -->|"OCSF event"| CEV
     style CORE fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px
     style SUP fill:#fff8e1,stroke:#b8860b
     style GEN fill:#f5f5f5,stroke:#9e9e9e,stroke-dasharray:5 5
 ```
+
+The diagram shows only the core-to-core domain edge; the full set of context relationships (inbound, generic integrations, model upstream) is the context map in §4.
 
 | Subdomain | Class | Value axis | Build-vs-buy |
 |---|---|---|---|
@@ -49,7 +51,7 @@ flowchart TB
 | **Identity federation** | generic | relying-party to customer IdP | integrate |
 | **Secrets custody** | generic | key custody behind PKCS#11 / KMIP | integrate |
 | **Policy evaluation** | generic | externalised authorization decisions | integrate |
-| **Model access** | generic | multi-provider proxy; we host no model ([CLAUDE.md §v1-non-goals](../../CLAUDE.md)) | integrate |
+| **Model access** | generic | multi-provider proxy; we host no model ([CLAUDE.md §"v1 non-goals"](../../CLAUDE.md#v1-non-goals-locked-early)) | integrate |
 
 Source availability is a go-to-market property, not a classification axis. The security primitives ship in the open artifact ([`01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) §"Audience"); that does not demote Agent Execution to generic. Applying an open runtime correctly to an adversarial in-perimeter agent loop is where the domain complexity sits, so it stays core.
 
@@ -65,7 +67,7 @@ The five zones group into two core contexts. The mismatch is deliberate: four zo
 | Egress trust-edge | Agent Execution | the single outbound path is part of running safely |
 | Audit pipeline | Compliance Evidence | different reason to exist: prove, not run |
 
-The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution. The supporting and generic contexts are not Layer 3 zones: Tenancy is a cross-cutting deployment property of the Compute plane, and the four generic contexts are external actors in Layer 3 §3, not zones we own.
+The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution. The supporting and generic contexts are not Layer 3 zones we own. Tenancy is a cross-cutting deployment property of the Compute plane. Of the four generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM); Model access is an outbound endpoint *behind* the egress policy, which Layer 3 §3 names as "not an actor against our contracts"; Policy evaluation is not yet drawn in Layer 3, introduced here as an integration the policy-enforcement components will consume.
 
 ## 4. Context map
 
@@ -74,17 +76,20 @@ flowchart LR
     IDF["Identity federation<br/>(generic)"]
     SEC["Secrets custody<br/>(generic)"]
     POL["Policy evaluation<br/>(generic)"]
-    MOD["Model access<br/>(generic)"]
+    MOD["Model access<br/>(generic, egress endpoint)"]
     MCP["MCP caller<br/>(upstream)"]
     AEX["Agent Execution<br/>(core)"]
+    EDGE["Egress trust-edge<br/>(within Agent Execution)"]
     CEV["Compliance Evidence<br/>(core)"]
     MCP -->|"Conformist:<br/>MCP authz spec"| AEX
-    IDF -->|"ACL"| AEX
-    SEC -->|"ACL"| AEX
-    POL -->|"ACL"| AEX
-    AEX -->|"Conformist:<br/>ModelProvider"| MOD
+    IDF -->|"Anti-corruption layer"| AEX
+    SEC -->|"Anti-corruption layer"| AEX
+    POL -->|"Anti-corruption layer"| AEX
+    AEX --> EDGE
+    EDGE -->|"Conformist:<br/>ModelProvider"| MOD
     AEX -->|"Published Language:<br/>OCSF event"| CEV
     style AEX fill:#e8f5e9,stroke:#1e7e34,stroke-width:2px
+    style EDGE fill:#e8f5e9,stroke:#1e7e34
     style CEV fill:#e8f5e9,stroke:#1e7e34,stroke-width:2px
     style MOD fill:#f5f5f5,stroke:#9e9e9e,stroke-dasharray:5 5
     style IDF fill:#f5f5f5,stroke:#9e9e9e,stroke-dasharray:5 5
@@ -97,7 +102,7 @@ flowchart LR
 |---|---|---|---|
 | Execution emits evidence | Agent Execution → Compliance Evidence | Published Language | OCSF v1.x event schema is the contract; the emitter conforms to the schema, not to the consumer's internals ([glossary: OCSF](glossary.md#ocsf)) |
 | Inbound tool calls | MCP caller → Agent Execution | Conformist | we conform to the MCP authorization spec; we do not define it |
-| Model upstream | Agent Execution → Model access | Conformist | the `ModelProvider` contract conforms to provider APIs; no hosted loop |
+| Model upstream | Agent Execution → Egress trust-edge → Model access | Conformist | the `ModelProvider` contract conforms to provider APIs; traffic originates in the Compute plane and traverses the Egress trust-edge ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2), never a direct context edge; no hosted loop |
 | Generic integrations | {Identity, Secrets, Policy} → Agent Execution | Anti-corruption layer | each vendor's model is translated at the boundary so a vendor swap does not reach the core |
 
 The anti-corruption layer is what lets Identity federation, Secrets custody, and Policy evaluation stay `integrate`: the vendor (Keycloak, OpenBao, OPA) can change without the core domain model changing. The Published Language between the two core contexts is the OCSF event — it is the same contract Layer 3 §10 names, viewed as a domain boundary rather than a wire format.
