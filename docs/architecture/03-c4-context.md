@@ -16,7 +16,7 @@ OCU is one component of the Wide-Moat opinionated bundle (other peers in the bun
 
 ## 2. Inside the box
 
-OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential custody + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
+OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential custody + Storage broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
 
 ## 3. C4 Context diagram
 
@@ -51,7 +51,7 @@ Humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a c
 - **Hosted LLM serving, model selection, and the agent loop** — the calling client owns all three. If a sandbox tool needs an LLM, it reaches it as one allow-listed egress endpoint, not through OCU.
 - **Skill registry and skill-pack catalog** — v1 non-goal; `SkillProvider` abstraction reserved.
 - **Admin web UI** — v1 non-goal; CLI (`occ`) + GitOps + Grafana cover operations.
-- **AI-guardrail / prompt-content policy** — customer's AI gateway, not OCU ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2 zone 4).
+- **AI-guardrail / prompt-content policy** — customer's AI gateway, not OCU ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2 zone 5).
 
 ## 6. Open questions
 

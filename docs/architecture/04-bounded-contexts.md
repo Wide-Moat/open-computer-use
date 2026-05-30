@@ -12,7 +12,7 @@ Cuts the domain into bounded contexts and classifies each as core, supporting, o
 
 ## 1. Context layer vs trust zones
 
-[`02-trust-boundaries.md`](02-trust-boundaries.md) §2 draws five zones — Control plane, Credential custody, Compute plane, Egress trust-edge, Audit pipeline. Those answer "where does it run and under what protection." This layer answers a different question: "which slices of the domain carry the competitive value, and which are solved problems we integrate." A trust zone is a deploy/protection slice; a bounded context is a domain slice. They do not map one-to-one, and the mismatches are the point.
+[`02-trust-boundaries.md`](02-trust-boundaries.md) §2 draws six zones — Control plane, Credential custody, Storage broker, Compute plane, Egress trust-edge, Audit pipeline. Those answer "where does it run and under what protection." This layer answers a different question: "which slices of the domain carry the competitive value, and which are solved problems we integrate." A trust zone is a deploy/protection slice; a bounded context is a domain slice. They do not map one-to-one, and the mismatches are the point.
 
 The classification drives the next layer: a context marked `generic` becomes an integration in [`03-c4-context.md`](03-c4-context.md)'s external-actor set, not a container we build; a `core` context becomes containers we own in the C4 Container layer.
 
@@ -57,19 +57,20 @@ Compliance Evidence is core for the same reason — domain depth, not deal-decis
 
 ## 3. Trust zones to contexts
 
-The five zones group into two core contexts. The mismatch is deliberate: four zones collapse into one context, one zone is a context of its own.
+The six zones group into two core contexts. The mismatch is deliberate: five zones collapse into one context, one zone is a context of its own.
 
 | Trust zone (Layer 3 §2) | Bounded context | Why this grouping |
 |---|---|---|
 | Control plane | Agent Execution | session lifecycle is execution machinery |
 | Compute plane (sandbox) | Agent Execution | the sandbox is where the tool-calls execute |
 | Credential custody | Agent Execution | host-side custody feeds the egress edge that serves the session |
+| Storage broker | Agent Execution | host-side broker serves the session's user-data mount |
 | Egress trust-edge | Agent Execution | the single outbound path is part of running safely |
 | Audit pipeline | Compliance Evidence | different reason to exist: prove, not run |
 
 The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution.
 
-Merging four zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. Credential custody (custody terms: `upstream-credential`, `rotation`, `lease`, `delegated-STS`) and the Egress trust-edge (enforcement and injection terms: `SNI pre-filter`, `MITM mode`, `x-deny-reason`, `auth-injection`) speak narrower sub-languages; they sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). Whether custody earns its own context is tracked in §5.
+Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. Credential custody (custody terms: `upstream-credential`, `rotation`, `lease`, `delegated-STS`), the Storage broker (mount terms: `filesystem_id`, `resource-handle`, `backend-credential`), and the Egress trust-edge (enforcement and injection terms: `SNI pre-filter`, `MITM mode`, `x-deny-reason`, `auth-injection`) speak narrower sub-languages; they sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). Whether custody earns its own context is tracked in §5.
 
 The supporting and generic contexts are not Layer 3 zones we own. Of the three generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM). Policy evaluation is not yet drawn in Layer 3; it is consumed at two sub-zones of Agent Execution — the Egress trust-edge (egress allow-list) and Credential custody (credential-scope selection) — and Layer 6 splits the anti-corruption layer accordingly. The remaining Layer 3 §3 actors are not new contexts: Customer SIEM, SOAR, and the transparency log are downstream consumers of the Compliance Evidence context (§4); the customer outbound proxy and DLP-ICAP are configurations of the Egress trust-edge already inside Agent Execution. An LLM, if a sandbox tool reaches one, is just another allow-listed egress endpoint behind that edge — not a context we model.
 
@@ -104,7 +105,7 @@ flowchart LR
 
 | Relationship | From → To | Pattern | What it commits to |
 |---|---|---|---|
-| Execution emits evidence | Agent Execution → Compliance Evidence | Open Host Service + Published Language | OCSF v1.x is the published schema; Compliance Evidence is the host with fan-in from four Layer 3 zones and fan-out to multiple SIEMs. The emitter conforms to the schema, not to the consumer's internals ([glossary: OCSF](glossary.md#ocsf)) |
+| Execution emits evidence | Agent Execution → Compliance Evidence | Open Host Service + Published Language | OCSF v1.x is the published schema; Compliance Evidence is the host with fan-in from five Layer 3 zones and fan-out to multiple SIEMs. The emitter conforms to the schema, not to the consumer's internals ([glossary: OCSF](glossary.md#ocsf)) |
 | Inbound tool calls | MCP caller → Agent Execution | Conformist | we conform to the MCP authorization spec; we do not define it |
 | Operator access | Operator → Agent Execution | Customer/Supplier | PAM-JIT human-to-platform contract ([NFR-COMP-29](manifesto/02-nfrs.md)); host-rooted credential on the minimal shelf, SAML-asserted attribute on the full shelf |
 | Generic integrations | {Identity, Secrets, Policy} → Agent Execution | Anti-corruption layer | each vendor's interface is translated at the boundary so a vendor swap does not reach the core |

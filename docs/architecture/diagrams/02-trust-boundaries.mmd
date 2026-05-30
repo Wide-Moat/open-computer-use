@@ -21,16 +21,25 @@ flowchart LR
     TLOG[Transparency log]:::extOpt
 
     %% ─── our zones ───
+    %% Control plane is one trust-zone exposing two interfaces: an agent-facing
+    %% MCP surface (tool calls) and an operator/lifecycle surface (session
+    %% lifecycle, quota, kill-switch). The kill-switch is reachable only on the
+    %% operator surface — never over MCP. The two-container split is a Layer 6
+    %% concern; here they are one zone.
     subgraph CP[Control plane]
-        ORCH[orchestrator + RPC<br/>MCP server<br/>session lifecycle]
+        ORCH[orchestrator + session lifecycle<br/>MCP interface · agent-facing<br/>operator interface · lifecycle + kill-switch<br/>kill-switch not reachable over MCP]
     end
 
     subgraph BROKER[Credential custody]
         BR[host-side credential store<br/>rotation · delegated STS on full shelf<br/>feeds the egress edge at injection<br/>no guest-facing interface]
     end
 
+    subgraph STORE[Storage broker]
+        SB[host-side storage broker<br/>guest speaks file ops, not the object-store protocol<br/>broker is the object-store client · signs its own requests<br/>holds the backend credential · guest holds no backend key<br/>content inspection here on plaintext, before signing]
+    end
+
     subgraph COMPUTE[Compute plane]
-        VM[session sandbox<br/>guest agent PID 1<br/>runc minimal · gVisor full · microVM post-v1<br/>one per session · ephemeral]
+        VM[session sandbox<br/>guest agent PID 1<br/>runc minimal · gVisor full · microVM post-v1<br/>one per session · ephemeral<br/>rootfs + tooling = read-only, host-attached at boot/restore]
     end
 
     subgraph EDGE[Egress trust-edge]
@@ -42,15 +51,28 @@ flowchart LR
     end
 
     %% ─── inbound edges ───
-    MCPC -->|"MCP authz spec<br/>audience-validated"| ORCH
+    %% MCP arrives on the agent-facing interface; operator + SOAR arrive on the
+    %% operator/lifecycle interface. Distinct auth; the kill-switch lives only
+    %% on the latter.
+    MCPC -->|"MCP authz spec · agent-facing<br/>audience-validated"| ORCH
     IDP -->|SAML / OIDC| ORCH
-    OPER -->|PAM-JIT credential<br/>NFR-COMP-29| ORCH
-    SOAR <-->|signed webhook + admin API| ORCH
+    OPER -->|"PAM-JIT credential · operator interface<br/>NFR-COMP-29"| ORCH
+    SOAR <-->|"signed webhook + admin API · operator interface"| ORCH
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
     ORCH -->|"Generic internal token<br/>host-side RPC<br/>session policy + scope<br/>TTL ≤60 min"| BR
     ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤60min · rotated"| VM
+    ORCH -->|"session resource handle<br/>scopes the mount · NFR-SEC-25"| SB
     BR -->|"credential lease<br/>fetched at injection<br/>TTL ≤15 min"| PROXY
+
+    %% ─── storage-mount path (second guest-data boundary: in vs out) ───
+    %% Distinct from egress. The guest reads/writes mutable user-data through a
+    %% mount the broker serves; the guest holds only a session-scoped resource
+    %% handle (e.g. filesystem_id), never the storage backend credential. The
+    %% broker's own backend traffic is authorized at the Egress trust-edge like
+    %% any upstream. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
+    SB -->|"mount · session resource handle only<br/>no backend credential in guest<br/>NFR-SEC-25"| VM
+    SB -->|"backend traffic · broker-signed<br/>allow-list-only, no TLS termination<br/>signature stays intact"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -62,13 +84,14 @@ flowchart LR
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>no credential in request<br/>NFR-SEC-27"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| LLM
-    PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| OBJ
+    PROXY -->|"object-store leg is the broker's, not the guest's<br/>broker-signed · allow-list-only, no TLS termination<br/>signature intact · fail-closed"| OBJ
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
     %% ─── audit edges (every named zone emits OCSF events) ───
     ORCH -->|OCSF events| BUS
     BR -->|OCSF events| BUS
+    SB -->|OCSF events| BUS
     VM -->|OCSF events| BUS
     PROXY -->|OCSF events| BUS
 
@@ -86,6 +109,7 @@ flowchart LR
     classDef endpoint fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 2 2;
     style CP fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
     style BROKER fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
+    style STORE fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
     style COMPUTE fill:#e3f2fd,stroke:#0d47a1,stroke-width:3px;
     style EDGE fill:#fff4e5,stroke:#b8860b,stroke-width:1px;
     style AUDIT fill:#e8f5e9,stroke:#1e7e34,stroke-width:1px;
