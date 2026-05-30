@@ -8,7 +8,7 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
-Names the runnable units inside the OCU box that Layer 4 drew as one block, and what crosses between them. Audience: architects and security engineers who need to see the credential broker and egress edge as separate runnable units before reading a component spec.
+Names the runnable units inside the OCU box that Layer 4 drew as one block, and what crosses between them. Audience: architects and security engineers reading this before a component spec.
 
 ## 1. Container vs zone vs context
 
@@ -25,32 +25,30 @@ The three axes line up here because the zones were already cut along runnable se
 flowchart LR
     PEER["MCP-speaking caller<br/>(runs the loop)"]
     OPER["Operator<br/>(PAM-JIT human)"]
-    CP["Control plane / MCP server"]
-    BR["Credential broker"]
-    VM["Session sandbox [1..N]<br/>(guest agent = PID 1)"]
-    EDGE["Egress trust-edge proxy"]
-    AUD["Audit pipeline"]
-    UP["Outbound endpoints<br/>(LLM · object store · internal API)"]
+    UPSTREAM["Outbound endpoints<br/>(LLM · object store · internal API)"]
     SINK["Customer SIEM / SOAR /<br/>transparency log"]
+    subgraph OCU["Open Computer Use"]
+        CP["Control plane / MCP server"]
+        BR["Credential broker"]
+        VM["Session sandbox [1..N]<br/>(guest agent = PID 1)"]
+        EDGE["Egress trust-edge proxy"]
+        AUD["Audit pipeline"]
+    end
     PEER -->|"MCP authz spec"| CP
     OPER -->|"PAM-JIT credential"| CP
     CP -->|"Egress JWT (≤4h)"| VM
     BR -->|"Broker scoped-JWT (≤15min)"| VM
     VM -->|"single egress"| EDGE
-    EDGE --> UP
+    EDGE --> UPSTREAM
     CP -->|OCSF| AUD
     BR -->|OCSF| AUD
     VM -->|OCSF| AUD
     EDGE -->|OCSF| AUD
     AUD -.->|"OCSF bridge"| SINK
-    style CP fill:#e8f5e9,stroke:#1e7e34
-    style BR fill:#e8f5e9,stroke:#1e7e34
-    style VM fill:#e8f5e9,stroke:#1e7e34
-    style EDGE fill:#e8f5e9,stroke:#1e7e34
-    style AUD fill:#e8f5e9,stroke:#1e7e34
+    style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px
     style PEER fill:#fdecea,stroke:#c0392b
     style OPER fill:#fdecea,stroke:#c0392b
-    style UP fill:#fdecea,stroke:#c0392b
+    style UPSTREAM fill:#fdecea,stroke:#c0392b
     style SINK fill:#fdecea,stroke:#c0392b,stroke-dasharray:5 5
 ```
 
@@ -58,7 +56,7 @@ Canonical source: [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd). Edge
 
 ## 3. The five containers
 
-Each maps 1:1 to a Layer 3 zone and sits in a Layer 5 context. Responsibility is one line; technology is a Layer 10 component-spec decision and is named here only by role.
+Each maps 1:1 to a Layer 3 zone and sits in a Layer 5 context. Responsibility is one line; technology is a component-spec decision (under [`components/`](./components/), opened per [PROCESS.md](PROCESS.md)) and is named here only by role.
 
 | Container | Zone | Context | Responsibility |
 |---|---|---|---|
@@ -68,7 +66,7 @@ Each maps 1:1 to a Layer 3 zone and sits in a Layer 5 context. Responsibility is
 | **Egress trust-edge proxy** | Egress trust-edge | Agent Execution | The single outbound path. Enforces the allow-list and denies off-list destinations; emits a structured deny reason. |
 | **Audit pipeline** | Audit pipeline | Compliance Evidence | Captures session, tool, credential, and egress events into a hash-linked durable store and forwards to a customer-owned sink. |
 
-The guest agent is the process that constitutes the sandbox container, not a sixth container: it has no lifecycle independent of the sandbox and dies with it. When the sandbox is decomposed at Layer 10, the agent's parts become components inside it.
+The guest agent is the process that constitutes the sandbox container, not a sixth container: it has no lifecycle independent of the sandbox and dies with it. When the sandbox is decomposed into a component spec, the agent's parts become components inside it.
 
 ## 4. Internal boundaries
 
@@ -86,7 +84,7 @@ The sandbox has no direct path to the network or to a standing secret: both go t
 
 ## 5. Deployment shelves
 
-The five containers are the same on both shelves; the substrate differs. The diagram draws the full shelf. Scaling topology — node placement, sandbox scheduling, replica counts — is a deployment-view concern, not drawn here. The egress-mode and identity-floor substitutions below are summarized from [`02-trust-boundaries.md`](02-trust-boundaries.md) §7–§8, which owns them.
+All five containers exist on both shelves; only the substrate differs. The diagram is shelf-agnostic. Scaling topology — node placement, sandbox scheduling, replica counts — is a deployment-view concern, not drawn here. The egress-mode and identity-floor substitutions below are summarized from [`02-trust-boundaries.md`](02-trust-boundaries.md) §7–§8, which owns them.
 
 | Container | Minimal shelf (one-click solo) | Full shelf |
 |---|---|---|
@@ -98,5 +96,5 @@ The five containers are the same on both shelves; the substrate differs. The dia
 
 ## 6. Open questions
 
-1. Does the Session sandbox warrant a sub-container split once the workload-trust tier and guest-agent protocol are specified, or stay one container with internal components? — [#168](https://github.com/Wide-Moat/open-computer-use/issues/168).
-2. Is the Credential broker one container per deployment or one per sandbox host, and does the answer change the diagram? — [#169](https://github.com/Wide-Moat/open-computer-use/issues/169).
+1. Does the Session sandbox warrant a sub-container split once the workload-trust tier and guest-agent protocol are specified, or stay one container with internal components? — [#174](https://github.com/Wide-Moat/open-computer-use/issues/174).
+2. Is the Credential broker one container per deployment or one per sandbox host, and does the answer change the diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).

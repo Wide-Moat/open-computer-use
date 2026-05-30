@@ -1,8 +1,8 @@
 %% SPDX-License-Identifier: FSL-1.1-Apache-2.0
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
-%% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs (Layer 10).
-%% Convention: solid border = present on the minimal-capability shelf; dashed border = full-shelf-only / optional.
+%% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
+%% Convention: solid = container present (all five exist on both shelves; substrate differs — see 05-c4-container.md §5). Dashed = optional external sink.
 %% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
 
 %%{init: {"theme": "neutral"} }%%
@@ -27,7 +27,7 @@ flowchart LR
     PEER -->|"MCP authz spec"| CP
     OPER -->|"PAM-JIT credential"| CP
     CP -->|"Egress JWT (≤4h)"| VM
-    BR -->|"scoped-JWT (≤15min)"| VM
+    BR -->|"Broker scoped-JWT (≤15min)"| VM
     VM -->|"single egress"| EDGE
     EDGE --> UPSTREAM
     CP -->|OCSF| AUD
