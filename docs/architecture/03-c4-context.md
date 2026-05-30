@@ -10,7 +10,7 @@ applies-to: next/v1
 
 ## 1. Purpose
 
-Open Computer Use (OCU) is the in-perimeter tool-execution boundary: a uniform sandbox with a skill library, exposed via an MCP interface. The calling client runs the agent loop and owns the model choice; OCU executes the tool-calls it receives and integrates with the regulated-enterprise customer's existing IdP, KMS, SIEM, and outbound proxy. This view names every external boundary the system speaks across.
+Names every external boundary OCU speaks across, for architects and security engineers integrating it with the customer's IdP, KMS, SIEM, and outbound proxy. OCU is the in-perimeter tool-execution boundary — a uniform sandbox with a skill library, exposed over MCP; the calling client runs the agent loop and owns the model choice, and OCU executes the tool-calls it receives.
 
 OCU is one component of the Wide-Moat opinionated bundle (other peers in the bundle include n8n and Open WebUI). OCU is also usable standalone — any MCP-speaking peer is a first-class integration. See [`manifesto/01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) for the buyer story; this document scopes only what is inside OCU and what it talks to.
 
