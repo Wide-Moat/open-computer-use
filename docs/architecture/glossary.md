@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-28
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -22,15 +22,15 @@ The session sandbox zone — one sandbox per session, lifecycle bound to the ses
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
-## Credential broker
+## Credential custody
 
-Per-VM secrets-injection service. Host-side. Bound to loopback / vsock / UDS only. Holds the real upstream credentials; the guest never does. Issues scoped, short-lived tokens to the guest. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
+Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from custody and injects it on the outbound leg. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
 ## Egress trust-edge
 
-The single outbound zone. Every outbound request from the Compute plane goes through here. Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped, never bypassed. Configurable posture per [Egress posture](#egress-posture) entry.
+The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, fetched from Credential custody, on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md). Spelled `egress proxy` when referring to the component implementation; `Egress trust-edge` when referring to the zone.
 
@@ -85,9 +85,9 @@ DLP-ICAP is a configuration of the MITM mode, not a third mode.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §7, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-FLEX-15.
 
-## Egress JWT
+## Session JWT
 
-Per-session bearer token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 4 h. Distinct from the broker scoped-JWT (TTL ≤ 15 min, per-resource) and the generic internal RPC token (TTL ≤ 60 min, inter-component). The three TTL classes are independent commitments.
+Per-session session-identity token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 60 min and rotated while the session is active. It proves session identity to the Control plane; it is not an upstream credential and never leaves toward an upstream. The only token the guest holds. The TTL is an anti-replay window, not a session length — session idle (≤15 min, NFR-SEC-40) and absolute (≤12 h, NFR-SEC-41) limits are separate. Distinct from the custody credential lease (TTL ≤ 15 min, per upstream resource, held by the Egress trust-edge — never the guest) and the generic internal RPC token (TTL ≤ 60 min, inter-component, host-side).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §5 / §8 / §8.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-10/23/29.
 
