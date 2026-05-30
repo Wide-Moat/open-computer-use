@@ -24,6 +24,7 @@ The three axes line up here because the zones were already cut along runnable se
 ```mermaid
 flowchart LR
     PEER["MCP-speaking caller<br/>(runs the loop)"]
+    OPER["Operator<br/>(PAM-JIT human)"]
     CP["Control plane / MCP server"]
     BR["Credential broker"]
     VM["Session sandbox [1..N]<br/>(guest agent = PID 1)"]
@@ -32,8 +33,9 @@ flowchart LR
     UP["Outbound endpoints<br/>(LLM · object store · internal API)"]
     SINK["Customer SIEM / SOAR /<br/>transparency log"]
     PEER -->|"MCP authz spec"| CP
+    OPER -->|"PAM-JIT credential"| CP
     CP -->|"Egress JWT (≤4h)"| VM
-    BR -->|"scoped-JWT (≤15min)"| VM
+    BR -->|"Broker scoped-JWT (≤15min)"| VM
     VM -->|"single egress"| EDGE
     EDGE --> UP
     CP -->|OCSF| AUD
@@ -47,6 +49,7 @@ flowchart LR
     style EDGE fill:#e8f5e9,stroke:#1e7e34
     style AUD fill:#e8f5e9,stroke:#1e7e34
     style PEER fill:#fdecea,stroke:#c0392b
+    style OPER fill:#fdecea,stroke:#c0392b
     style UP fill:#fdecea,stroke:#c0392b
     style SINK fill:#fdecea,stroke:#c0392b,stroke-dasharray:5 5
 ```
@@ -75,7 +78,7 @@ The token classes and their TTLs are canonical in [`02-trust-boundaries.md`](02-
 |---|---|---|
 | Caller → Control plane | MCP authorization spec, audience-validated | inbound |
 | Control plane → Session sandbox | Egress JWT, session-scoped | one-way dispatch |
-| Credential broker → Session sandbox | scoped-JWT, per-resource | one-way, on request |
+| Credential broker → Session sandbox | Broker scoped-JWT, per-resource | one-way, on request |
 | Session sandbox → Egress trust-edge | the only outbound network path | one-way |
 | {Control plane, broker, sandbox, edge} → Audit pipeline | OCSF event (Published Language) | fan-in |
 
@@ -83,7 +86,7 @@ The sandbox has no direct path to the network or to a standing secret: both go t
 
 ## 5. Deployment shelves
 
-The five containers are the same on both shelves; the substrate differs. The diagram draws the full shelf. Scaling topology — node placement, sandbox scheduling, replica counts — is a deployment-view concern, not drawn here.
+The five containers are the same on both shelves; the substrate differs. The diagram draws the full shelf. Scaling topology — node placement, sandbox scheduling, replica counts — is a deployment-view concern, not drawn here. The egress-mode and identity-floor substitutions below are summarized from [`02-trust-boundaries.md`](02-trust-boundaries.md) §7–§8, which owns them.
 
 | Container | Minimal shelf (one-click solo) | Full shelf |
 |---|---|---|
