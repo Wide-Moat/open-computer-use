@@ -17,11 +17,11 @@ A C4 container is a separately runnable unit — a process or data store that mu
 - A **trust zone** ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2) is a deploy/protection slice — where it runs and under what protection.
 - A **bounded context** ([`04-bounded-contexts.md`](04-bounded-contexts.md) §1) is a domain slice — which part carries the competitive value.
 
-The six trust zones map to seven containers. Five zones are one container each. The Control plane is the exception: it splits into two containers along its interface seam — an agent-facing MCP gateway and an operator/lifecycle API — because the kill-switch must be unreachable from the agent path by network policy, not by an in-process route guard (§3). Layer 5 grouped five of the zones into one bounded context (Agent Execution); that grouping is about domain ownership, not deployment, so it does not merge the boxes — Agent Execution is realized as six cooperating containers, and the seventh (Audit pipeline) is the Compliance Evidence context.
+The six trust zones map to seven containers. Five of the six zones are one container each. The Control plane is the exception: it splits into two containers along its interface seam — an agent-facing MCP gateway and an operator/lifecycle API — because the kill-switch must be unreachable from the agent path by network policy, not by an in-process route guard (§3). Layer 5 grouped five of the zones into one bounded context (Agent Execution); that grouping is about domain ownership, not deployment, so it does not merge the boxes — Agent Execution is realized as six cooperating containers, and the seventh (Audit pipeline) is the Compliance Evidence context.
 
 ## 2. Container diagram
 
-The diagram is [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd) (seven containers in the OCU box; four external actors for orientation). Edge labels name the protocol or token class that crosses; `1..N` marks the per-session container; every container fans into the Audit pipeline over one Published Language (OCSF). External-actor contracts are in [`03-c4-context.md`](03-c4-context.md) §4, not restated here.
+The diagram is [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd) (seven containers in the OCU box; four external actors for orientation). Edge labels name the protocol or token class that crosses; `1..N` marks the per-session container; all six source containers fan into the Audit pipeline over one Published Language (OCSF). External-actor contracts are in [`03-c4-context.md`](03-c4-context.md) §4, not restated here.
 
 ## 3. The seven containers
 
@@ -32,9 +32,9 @@ Each sits in a Layer 3 zone and a Layer 5 context. Responsibility is one line; t
 | **MCP gateway** (agent-facing) | Control plane | Agent Execution | Terminates inbound MCP tool-calls and authenticates the caller; metadata-only, runs no agent loop and proxies no model. Holds no upstream credential, no lifecycle mutation, and no kill-switch. | [NFR-IC-04](manifesto/02-nfrs.md), [NFR-FLEX-14](manifesto/02-nfrs.md) |
 | **Control / operator API** | Control plane | Agent Execution | Session lifecycle, quota, the session denylist, and the kill-switch. Operator-only ingress; no path reachable from the MCP surface. | [NFR-SEC-01](manifesto/02-nfrs.md), [NFR-COMP-29](manifesto/02-nfrs.md) |
 | **Credential custody** | Credential custody | Agent Execution | Host-side store of the real upstream credentials with rotation and delegated STS. Hands a scoped lease to the Egress trust-edge at injection time; no guest-facing interface. | [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-29](manifesto/02-nfrs.md) |
-| **Storage broker** | Storage broker | Agent Execution | Host-side object-store client holding the backend credential; serves the guest's mutable user-data over a file-operation mount (guest holds only a `filesystem_id`) and signs its own backend requests. | [NFR-SEC-25](manifesto/02-nfrs.md), [NFR-SEC-31](manifesto/02-nfrs.md) |
+| **Storage broker** | Storage broker | Agent Execution | Host-side object-store client holding the backend credential; serves the guest's mutable user-data over a file-operation mount (guest holds only a `filesystem_id`) and signs its own backend requests. | [NFR-SEC-25](manifesto/02-nfrs.md), [NFR-SEC-15](manifesto/02-nfrs.md) |
 | **Session sandbox** `[1..N]` | Compute plane | Agent Execution | Executes one session's tool-calls in an isolated runtime that holds no standing secret and reaches the network only through the egress edge. Guest agent is PID 1; runtime tier by `workload_trust_profile`. | [NFR-SEC-02](manifesto/02-nfrs.md), [NFR-SEC-43](manifesto/02-nfrs.md) |
-| **Egress trust-edge proxy** | Egress trust-edge | Agent Execution | The single outbound path. Deny-by-default allow-list; injects the upstream authorization fetched from custody on the outbound leg; emits a structured deny reason. | [NFR-SEC-05](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md) |
+| **Egress trust-edge proxy** | Egress trust-edge | Agent Execution | The single outbound path. Deny-by-default allow-list; emits a structured deny reason. On legs that require it, injects the upstream authorization fetched from custody — possible only in MITM-inspecting mode; the minimal-shelf transparent pass-through cannot inject (see [`02-trust-boundaries.md`](02-trust-boundaries.md) §7). The broker's pre-signed backend leg traverses allow-list-only (no TLS termination); mode is per-destination, not global. | [NFR-SEC-05](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md) |
 | **Audit pipeline** | Audit pipeline | Compliance Evidence | Captures session, tool, credential, storage, and egress events into a hash-linked durable store and forwards to a customer-owned sink. | [NFR-SEC-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md) |
 
 The MCP gateway and the Control / operator API are the same trust zone (Control plane, §2) split into two runnable units: the kill-switch is a deploy-time fact on a separate process with operator-only ingress, not a route guard one config or deserialization flaw away from the agent-reachable surface. The guest agent is the process that constitutes the sandbox container, not an eighth container: it has no lifecycle independent of the sandbox and dies with it.
@@ -47,13 +47,15 @@ Token classes and their TTLs are canonical in [`02-trust-boundaries.md`](02-trus
 |---|---|---|
 | Caller → MCP gateway | MCP authorization spec, audience-validated | inbound |
 | Operator → Control / operator API | PAM-JIT credential, operator-only ingress | inbound |
+| Customer IdP → Control / operator API | relying-party assertion (full shelf); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
+| SOAR → Control / operator API | signed admin API for revoke (the inbound half of the SOAR contract); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
 | MCP gateway → Control / operator API | session create / status, service identity | internal request |
 | Control / operator API → Session sandbox | Session JWT bound to `container_name` | host dials guest |
 | Storage broker → Session sandbox | file-operation mount, session resource handle | host dials guest |
 | Credential custody → Egress trust-edge | scoped credential lease, fetched at injection | edge pulls |
 | Session sandbox → Egress trust-edge | the only outbound network path | one-way |
 | Storage broker → Egress trust-edge → backend | broker-signed request, allow-list-only | outbound |
-| {every container} → Audit pipeline | OCSF event (Published Language) | fan-in |
+| {all six source containers} → Audit pipeline | OCSF event (Published Language) | fan-in |
 
 Two properties are load-bearing at this layer. First, no guest path reaches a standing secret — both credential boundaries in the table above sit host-side of the guest. Second, the control / exec channel is opened by the host into the guest (host dials, guest listens) with the caller identity host-derived, so a compromised guest cannot reach the kill-switch or impersonate another session ([NFR-SEC-43](manifesto/02-nfrs.md)). The two guest-data paths stay distinct: the storage mount (inbound + outbound user-data via the broker) and egress (outbound only via the edge).
 

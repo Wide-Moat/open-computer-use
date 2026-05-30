@@ -33,14 +33,15 @@ flowchart LR
     MCPG -->|"session create / status<br/>service identity"| CTRL
 
     %% ─── control + storage reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
-    CTRL -->|"Session JWT bound to container_name<br/>TTL ≤60min · rotated · host dials guest"| VM
+    CTRL -->|"Session JWT bound to container_name<br/>rotated · host dials guest"| VM
     STORE -->|"mount · resource handle (filesystem_id)"| VM
 
-    %% ─── egress: guest sends unauthenticated; edge pulls a lease from custody and injects ───
+    %% ─── egress: guest sends unauthenticated; on injection-needing legs the edge
+    %%     pulls a custody lease and injects (MITM mode only — see 05 §3, §6) ───
     VM -->|"single outbound · no credential in request"| EDGE
-    CUST -->|"credential lease ≤15min<br/>fetched at injection"| EDGE
+    CUST -->|"credential lease<br/>fetched at injection (MITM legs)"| EDGE
     STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
-    EDGE -->|"upstream auth injected on the outbound leg"| UPSTREAM
+    EDGE -->|"injection-needing leg: upstream auth injected (MITM mode)"| UPSTREAM
 
     %% ─── audit fan-in (every container emits OCSF) ───
     MCPG -->|OCSF| AUD
