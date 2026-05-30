@@ -12,7 +12,7 @@ Canonical definitions for terms used across this architecture. Define a term her
 
 ## Control plane
 
-Orchestrator, RPC surface, session lifecycle, MCP server. Single instance per deployment. Holds no customer payload; metadata-only by design. Outbound to LLM and other upstream goes through the Egress trust-edge — the Control plane is not a model proxy.
+Orchestrator and session lifecycle, exposing two interfaces of one zone: an agent-facing MCP interface (tool calls) and an operator/lifecycle interface (lifecycle, quota, kill-switch). The kill-switch is reachable only on the operator interface, never over MCP. Single instance per deployment. Holds no customer payload; metadata-only by design. Outbound to LLM and other upstream goes through the Egress trust-edge — the Control plane is not a model proxy. The agent-facing / operator split becomes two containers at Layer 6.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
@@ -27,6 +27,12 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from custody and injects it on the outbound leg. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
+
+## Storage broker
+
+Host-side broker for the guest's mutable user-data mount. Holds the storage-backend credential; the guest mounts through it holding only a session-scoped resource handle (a `filesystem_id`), never the backend key. Its own backend traffic is authorized at the Egress trust-edge like any upstream. A zone distinct from [Credential custody](#credential-custody): it has a guest-facing interface (the mount) and governs an inbound data path, where custody has no guest interface and the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice.
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 / §7.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-25.
 
 ## Egress trust-edge
 
@@ -129,7 +135,7 @@ Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
 ## Open Host Service
 
-A context that publishes a protocol or endpoint through which many producers and consumers integrate, typically carrying a [Published Language](#published-language). Compliance Evidence is the canonical instance — fan-in of OCSF events from four trust zones, fan-out to multiple customer SIEMs. The Open Host Service is the door; the Published Language is the vocabulary.
+A context that publishes a protocol or endpoint through which many producers and consumers integrate, typically carrying a [Published Language](#published-language). Compliance Evidence is the canonical instance — fan-in of OCSF events from five trust zones, fan-out to multiple customer SIEMs. The Open Host Service is the door; the Published Language is the vocabulary.
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
