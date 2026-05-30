@@ -49,11 +49,11 @@ flowchart LR
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
     ORCH -->|"Generic internal token<br/>host-side RPC<br/>session policy + scope<br/>TTL ≤60 min"| BR
-    ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
+    ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤60min · rotated"| VM
     BR -->|"credential lease<br/>fetched at injection<br/>TTL ≤15 min"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
-    %% Compute plane gets a direct denylist check (Session JWT TTL ≤4h needs it);
+    %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
     %% Egress trust-edge revoke = the edge stops injecting upstream auth for a
     %% revoked session; the credential-lease TTL (≤15 min) caps how long an
     %% already-fetched credential survives, so no direct ORCH→PROXY edge.

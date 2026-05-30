@@ -87,7 +87,7 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §7, [`manifesto/0
 
 ## Session JWT
 
-Per-session session-identity token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 4 h. It proves session identity to the Control plane; it is not an upstream credential and never leaves toward an upstream. The only token the guest holds. Distinct from the custody credential lease (TTL ≤ 15 min, per upstream resource, held by the Egress trust-edge — never the guest) and the generic internal RPC token (TTL ≤ 60 min, inter-component, host-side). The three TTL classes are independent commitments.
+Per-session session-identity token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 60 min and rotated while the session is active. It proves session identity to the Control plane; it is not an upstream credential and never leaves toward an upstream. The only token the guest holds. The TTL is an anti-replay window, not a session length — session idle (≤15 min, NFR-SEC-40) and absolute (≤12 h, NFR-SEC-41) limits are separate. Distinct from the custody credential lease (TTL ≤ 15 min, per upstream resource, held by the Egress trust-edge — never the guest) and the generic internal RPC token (TTL ≤ 60 min, inter-component, host-side).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §5 / §8 / §8.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-10/23/29.
 

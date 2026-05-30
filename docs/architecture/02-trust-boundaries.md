@@ -82,7 +82,7 @@ flowchart LR
     EDGE[Egress trust-edge]
     AUDIT[Audit pipeline]
     EXT --> CP
-    CP -- "Session JWT (≤4h)" --> VM
+    CP -- "Session JWT (≤60min)" --> VM
     VM -- "single egress (no credential)" --> EDGE
     BR -- "credential lease (≤15min)" --> EDGE
     EDGE -- "auth injected" --> EXT
@@ -138,7 +138,7 @@ Token taxonomy is canonical here; the three classes, their scopes, and their TTL
 
 | Token class | Scope | TTL | Consumer | §02 anchor |
 |---|---|---|---|---|
-| **Session JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 4 h | Compute plane (guest agent), proving session identity to the Control plane | NFR-SEC-10 |
+| **Session JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 60 min, rotated | Compute plane (guest agent), proving session identity to the Control plane | NFR-SEC-10 |
 | **Generic internal token** | inter-component RPC (Control plane ↔ custody ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | NFR-SEC-23 |
 | **Custody credential lease** | per upstream resource (one bucket prefix / one API-key class) | ≤ 15 min | Egress trust-edge (fetched from custody at injection; never the guest) | NFR-SEC-29 |
 
