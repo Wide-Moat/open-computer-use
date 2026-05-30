@@ -10,7 +10,7 @@ applies-to: next/v1
 
 This directory will hold the canonical enterprise solution architecture for `next/v1`. Read [`MANIFESTO.md`](./MANIFESTO.md) before anything else.
 
-## Contents
+## Files in this directory
 
 | File | Status | Purpose |
 |---|---|---|
