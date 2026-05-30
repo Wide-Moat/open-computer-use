@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-28
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -44,7 +44,7 @@ Every NFR row sits in one of three ownership classes. Layer 3 (`docs/architectur
   - NFR-COMP-10 — "DPIA / FRIA refresh": data controller does the DPIA. We supply sub-processor + data-flow inputs, we don't refresh the assessment.
   - NFR-COMP-14 — "EU AI Act Art. 15 accuracy declaration": accuracy of the AI system. The customer's model, not ours.
   - NFR-COMP-18 — "ISO/IEC 42001:2023 AI Management System conformance": 42001 binds the organisation deploying the AI system. We ENABLE the customer's 42001 evidence; we are not conformance-ed.
-  - NFR-COMP-25 — "ZDR contractual-clause checklist per supported managed LLM upstream": the customer contracts ZDR with the upstream. We surface upstream ZDR posture in docs (NFR-FLEX-01) but don't represent it.
+  - NFR-COMP-25 — "ZDR contractual-clause checklist per supported managed LLM upstream": the customer contracts ZDR with the upstream, in the calling client that runs the loop — not in OCU. OCU neither selects the upstream nor represents its ZDR posture.
   - NFR-COMP-26 — "Configurable prompt-redaction filter": AI-guardrail policy belongs to the customer's AI gateway (commercial AI-gateway product or in-perimeter model with its own guardrails). We route + audit, we don't redact prompts.
 
 REVISIT rows stay in this catalogue at their existing IDs until the next §02 rev; Layer 3 already takes the corrected position. **Enforcement status:** REVISIT rows are **informational / non-gating** in this draft. CI gates, release acceptance, compliance attestations, and verifier passes MUST NOT enforce a REVISIT row's Target column until the row is re-cut. The row's Scenario cell carries an inline `**[REVISIT — non-gating]**` marker so the gate-author cannot miss it.

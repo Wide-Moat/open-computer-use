@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-24
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -43,3 +43,9 @@ Removed because the primitive landed in §02 with a measurable target:
 - Identity = SPIFFE workload + SAML/OIDC + SCIM → NFR-SEC-09 + NFR-FLEX-03.
 - MITM-friendly egress with customer-CA trust → NFR-SEC-05.
 - MCP server allow-list → NFR-SEC-08.
+
+## Removed as out-of-scope (2026-05-30)
+
+Dropped because the primitive is not OCU's concern, not because it landed:
+
+- `ModelProvider` abstraction → the agent loop and model choice live in the calling client (a Wide-Moat sibling component), not in OCU; an LLM is reached as one allow-listed egress endpoint. OCU hosts, selects, and proxies no model.

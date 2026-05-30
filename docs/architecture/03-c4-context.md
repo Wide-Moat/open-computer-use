@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-25
+last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
