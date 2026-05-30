@@ -2,7 +2,9 @@
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
 %% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
-%% Convention: solid = container present (all five exist on both shelves; substrate differs — see 05-c4-container.md §5). Dashed = optional external sink.
+%% Seven containers across six Layer-3 trust zones: the Control plane splits into an agent-facing
+%% MCP gateway and an operator/lifecycle API (the kill-switch lives only on the latter); the other
+%% five zones map 1:1. Substrate differs by shelf (see 05-c4-container.md §5); the count does not.
 %% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
 
 %%{init: {"theme": "neutral"} }%%
@@ -16,22 +18,35 @@ flowchart LR
 
     %% ─── containers inside the system under design ───
     subgraph OCU["Open Computer Use"]
-        CP["Control plane / MCP server<br/>session lifecycle · inbound MCP surface"]
-        BR["Credential broker<br/>scoped-token issuance · host-side"]
+        MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
+        CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
+        CUST["Credential custody<br/>upstream creds · rotation · STS · host-side"]
+        STORE["Storage broker<br/>object-store client · signs own requests<br/>serves the guest mount"]
         VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
-        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list"]
+        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth from custody"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
-    %% ─── edges (token classes per 02-trust-boundaries.md §8) ───
-    PEER -->|"MCP authz spec"| CP
-    OPER -->|"PAM-JIT credential"| CP
-    CP -->|"Egress JWT (≤4h)"| VM
-    BR -->|"Broker scoped-JWT (≤15min)"| VM
-    VM -->|"single egress"| EDGE
-    EDGE --> UPSTREAM
-    CP -->|OCSF| AUD
-    BR -->|OCSF| AUD
+    %% ─── inbound (two distinct surfaces of the Control plane) ───
+    PEER -->|"MCP authz spec"| MCPG
+    OPER -->|"PAM-JIT credential · operator-only ingress"| CTRL
+    MCPG -->|"session create / status<br/>service identity"| CTRL
+
+    %% ─── control + storage reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
+    CTRL -->|"Session JWT bound to container_name<br/>TTL ≤60min · rotated · host dials guest"| VM
+    STORE -->|"mount · resource handle (filesystem_id)"| VM
+
+    %% ─── egress: guest sends unauthenticated; edge pulls a lease from custody and injects ───
+    VM -->|"single outbound · no credential in request"| EDGE
+    CUST -->|"credential lease ≤15min<br/>fetched at injection"| EDGE
+    STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
+    EDGE -->|"upstream auth injected on the outbound leg"| UPSTREAM
+
+    %% ─── audit fan-in (every container emits OCSF) ───
+    MCPG -->|OCSF| AUD
+    CTRL -->|OCSF| AUD
+    CUST -->|OCSF| AUD
+    STORE -->|OCSF| AUD
     VM -->|OCSF| AUD
     EDGE -->|OCSF| AUD
     AUD -.->|"OCSF bridge<br/>full shelf"| SINK
