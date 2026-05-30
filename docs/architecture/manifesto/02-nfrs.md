@@ -28,7 +28,7 @@ Three short-lived token classes carry three different lifetimes by design:
 | Generic internal token | inter-component RPC | ≤60 min | NFR-SEC-23 |
 | Broker scoped-JWT | per-resource (one filesystem / one upstream API key class) | ≤15 min | NFR-SEC-29 |
 
-Tighter scope = shorter TTL. The three numbers are independent commitments, not contradictions.
+Tighter scope = shorter TTL; the three numbers are independent commitments.
 
 ## Scope ownership
 

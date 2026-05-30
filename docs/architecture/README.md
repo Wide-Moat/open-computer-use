@@ -10,7 +10,7 @@ applies-to: next/v1
 
 This directory will hold the canonical enterprise solution architecture for `next/v1`. Read [`MANIFESTO.md`](./MANIFESTO.md) before anything else.
 
-## What's here
+## Files in this directory
 
 | File | Status | Purpose |
 |---|---|---|
@@ -23,9 +23,9 @@ This directory will hold the canonical enterprise solution architecture for `nex
 | `diagrams/` | empty | Mermaid / D2 source files. |
 | `compliance/` | empty | Per-framework mappings (SOC 2, ISO 27001, DORA, EU AI Act, GDPR, SR 11-7, HIPAA, PCI-DSS). |
 
-## What's NOT here yet
+## Not yet present
 
-Everything else. The tree grows one artifact per PR, after discussion. See [`PROCESS.md`](./PROCESS.md).
+The tree grows one artifact per PR, after discussion. See [`PROCESS.md`](./PROCESS.md).
 
 The in-progress materials at [`docs/future-architecture/`](../future-architecture/) remain a working buffer until coverage here reaches 100%; at that point a `SUPERSEDED.md` marker points back here and that directory becomes legacy.
 
