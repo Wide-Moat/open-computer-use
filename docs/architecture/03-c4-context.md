@@ -24,7 +24,7 @@ Canonical source: [`diagrams/c4-context.mmd`](diagrams/c4-context.mmd). Conventi
 
 ## 4. External actors
 
-The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md`](02-trust-boundaries.md) §3. This view groups them by role and marks per-actor optionality so the one-click solo install path is visible at a glance.
+The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md`](02-trust-boundaries.md) §3. This view groups them by role and marks per-actor optionality; exact required/optional status is in the §4 table below.
 
 | Actor | Role | Required-or-optional | NFR anchor |
 |---|---|---|---|

@@ -27,7 +27,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 
 `deprecated` is for decisions that no longer apply but were not superseded by a specific replacement.
 
-## When to write an ADR (vs. inline note)
+## ADR threshold
 
 An ADR is for decisions that are:
 

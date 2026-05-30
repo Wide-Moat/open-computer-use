@@ -43,7 +43,7 @@ The Layer 0 SAST gate runs against every path in the repository except those lis
 
 ## Alternatives considered
 
-- **Baseline cleanup PR.** Fix the 37 findings in legacy code before continuing. Rejected: the code is scheduled for full rewrite; fixing it now spends review time on artifacts we throw away. The legacy code is not patched on `next/v1`; it is replaced from scratch in Layer 6+ per the architecture plan.
+- **Baseline cleanup PR.** Fix the 37 findings in legacy code before continuing. Rejected: the code is scheduled for full rewrite in Layer 6+ per the architecture plan; fixing it now spends review time on artifacts we throw away.
 - **Per-rule exception file** (`.semgrep-exceptions.yaml` with finding hashes). Rejected: gives the illusion of per-finding scrutiny while in practice rubber-stamping every legacy hit. The directory-level exclusion is more honest about what we are doing.
 - **Lower the gate to `WARN`.** Rejected: removes the gate for new code too. The whole point of Layer 0 is that new components must pass on creation.
 - **Delete the legacy code from `next/v1` now.** Rejected: the branch must stay runnable for early-stage demos and contract-shape experiments until Layer 6+ components land.

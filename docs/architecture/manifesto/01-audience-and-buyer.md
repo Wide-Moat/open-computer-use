@@ -12,7 +12,7 @@ Names who Wide-Moat is built for, who can stop a deployment from happening, and 
 
 ## Audience
 
-Wide-Moat is built for any organisation that needs in-perimeter agentic AI. The capability ceiling targets the requirements of a tier-1 US or EU bank — the most demanding envelope of security, compliance, and operational scale we know — so smaller and less-regulated organisations fit beneath it on the same artifact. Primary commercial focus and trust anchor are tier-1 banks; the product is one product, not a tiered SKU. The 2026 use-cases that close at this tier are KYC/AML investigator assistance, internal IT-helpdesk automation, sandboxed developer productivity, and compliance-evidence collection.
+Wide-Moat is built for any organisation that needs in-perimeter agentic AI. The capability ceiling targets the requirements of a tier-1 US or EU bank — the most demanding regulatory and operational-scale envelope we design against — so smaller and less-regulated organisations fit beneath it on the same artifact. Primary commercial focus and trust anchor are tier-1 banks; the product is one product, not a tiered SKU. The 2026 use-cases that close at this tier are KYC/AML investigator assistance, internal IT-helpdesk automation, sandboxed developer productivity, and compliance-evidence collection.
 
 Wide-Moat is sold as an in-perimeter ecosystem subscription — a single integrated platform with enablement and certification, not as separable components.
 

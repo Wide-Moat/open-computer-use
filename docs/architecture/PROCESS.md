@@ -59,8 +59,6 @@ Every file under `docs/architecture/` must match an entry in the whitelist at `s
 
 When a PR legitimately needs a new file kind (e.g. introducing the `contracts/` directory or a new compliance template), update `ALLOWED` in `architecture-tree-whitelist.sh` in the same PR. Reviewers check that the added pattern is as tight as possible: `compliance/*-mapping.md`, not `compliance/*`.
 
-## What this file is not
+## Scope boundary
 
-- Not a roadmap. Roadmaps live elsewhere.
-- Not a checklist of which artifacts exist. That's `README.md`.
-- Not the rules for writing the content itself. Those are in `CLAUDE.md` under `## Documentation discipline` and `## Architecture content routing`.
+This file is the how-to for adding artifacts. Adjacent concerns live elsewhere: roadmaps are out of scope; the inventory of which artifacts exist is `README.md`; the rules for writing the content are in `CLAUDE.md` under `## Documentation discipline` and `## Architecture content routing`.
