@@ -1,7 +1,7 @@
 %% SPDX-License-Identifier: FSL-1.1-Apache-2.0
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Layer 7 STRIDE overlay on the Layer 6 container DFD. Referenced from docs/architecture/06-threat-model.md.
-%% OPEN/residual threats annotated per element; the DFD itself is canonical in c4-container.mmd (not redrawn).
+%% Residual (PARTIAL) threats annotated per element; the DFD itself is canonical in c4-container.mmd (not redrawn).
 %%{init: {"theme": "neutral"} }%%
 flowchart LR
     PEER["MCP caller"]:::ext
@@ -26,10 +26,8 @@ flowchart LR
     VM -.OCSF.-> AUD
     EDGE -.OCSF.-> AUD
 
-    OPEN["OPEN — no NFR yet<br/>P1-I1 (#149)"]:::open
-    PEND["Committed NFR, impl pending<br/>#148 #150 #176 #181 #182 #183<br/>#184 #185 #186 #187 #188"]:::pend
-    MCPG -. P1-I1 .-> OPEN
-    MCPG -. P1-E2 .-> PEND
+    PEND["NFR specified, impl tracked<br/>#148 #149 #150 #176 #181 #182<br/>#183 #184 #185 #186 #187 #188"]:::pend
+    MCPG -. P1-I1 P1-E2 .-> PEND
     CTRL -. P2-R1 .-> PEND
     CUST -. P3-R1 P3-I2 P3-T2 .-> PEND
     STORE -. P4-D1 .-> PEND
@@ -38,6 +36,5 @@ flowchart LR
     AUD -. P7-S1 P7-R2 P7-T2 P7-R3 P7-T3 .-> PEND
 
     classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
-    classDef open fill:#fdecea,stroke:#c0392b,stroke-width:3px,color:#c0392b;
     classDef pend fill:#fff8e1,stroke:#f39c12,stroke-width:2px,color:#7a5c00;
     style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px;
