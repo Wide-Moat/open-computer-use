@@ -3,7 +3,7 @@
 
 # 16 — Antipatterns by phase (operational decision log)
 
-> Source: [`sandboxd/docs/antipatterns.md`](../../../sandboxd/docs/antipatterns.md) + footgun sections in `research/01-15` + production-gap notes.
+> Source: internal antipattern notes + footgun sections in `research/01-12` + production-gap notes.
 >
 > **This is a decision log, not a generic survey.** Each entry filtered for our stack (k8s + Kata + Cloud Hypervisor + Rust agent ([ADR-0002](./adr/0002-guest-agent-language-go.md)) + Go control plane ([ADR-0001](./adr/0001-control-plane-language-go.md)) + Computer Use + connect-go L4↔L3 RPC). Antipatterns that don't apply to our chosen stack are dropped explicitly. Each kept antipattern carries **our choice** in addition to "don't do this".
 >
@@ -13,7 +13,7 @@
 
 Each entry has:
 - **Antipattern** — what NOT to do.
-- **Source** — `sandboxd/docs/antipatterns.md:LINE` or `research/NN-*.md` section.
+- **Source** — internal antipattern note or `research/NN-*.md` section.
 - **Failure mode** — what breaks in production.
 - **Our choice** — locked decision for our stack.
 - **First-bites phase(s)** — where it would FIRST appear if we slip.
@@ -27,13 +27,13 @@ Listed so future contributors don't waste time rediscovering generic warnings th
 
 | Antipattern | Source | Why excluded |
 |---|---|---|
-| Mounting `/var/run/docker.sock` into sandbox | sandboxd:12-34 | We don't ship Docker in prod — only containerd under Kata ([ADR-0003](../adr/0003-docker-poc-first-then-k8s.md)). Compose PoC removes DinD by Phase 5. |
-| Mounting host `/var/lib/docker` | sandboxd:79-95 | Same as above. |
-| Maintaining both Compose AND Helm | sandboxd:331-347 | Compose stays as PoC only; Helm is the prod artifact ([ADR-0003](../adr/0003-docker-poc-first-then-k8s.md)). |
-| Using gVisor for browser-heavy workloads | sandboxd:43-59 | We chose Kata+CH for browser; gVisor only for non-browser code-exec tier (Phase 7, experimental). |
-| Single global runtime for all workloads | sandboxd:61-77 | One cluster = one runtime today (kata-ch). Multi-tier templates per-tenant arrive in Phase 9 — record as a Phase-9-research item. |
-| Building 7 GiB sandbox images | sandboxd:223-239 | Implementation discipline, not an architectural choice; tracked in image-build CI not here. |
-| Using `kubectl exec` to inject session config | sandboxd:349-365 | We have L1 agent with connect-go `Configure` RPC. `kubectl exec` is never used for session injection. |
+| Mounting `/var/run/docker.sock` into sandbox | internal note | We don't ship Docker in prod — only containerd under Kata ([ADR-0003](../adr/0003-docker-poc-first-then-k8s.md)). Compose PoC removes DinD by Phase 5. |
+| Mounting host `/var/lib/docker` | internal note | Same as above. |
+| Maintaining both Compose AND Helm | internal note | Compose stays as PoC only; Helm is the prod artifact ([ADR-0003](../adr/0003-docker-poc-first-then-k8s.md)). |
+| Using gVisor for browser-heavy workloads | internal note | We chose Kata+CH for browser; gVisor only for non-browser code-exec tier (Phase 7, experimental). |
+| Single global runtime for all workloads | internal note | One cluster = one runtime today (kata-ch). Multi-tier templates per-tenant arrive in Phase 9 — record as a Phase-9-research item. |
+| Building 7 GiB sandbox images | internal note | Implementation discipline, not an architectural choice; tracked in image-build CI not here. |
+| Using `kubectl exec` to inject session config | internal note | We have L1 agent with connect-go `Configure` RPC. `kubectl exec` is never used for session injection. |
 
 ---
 
@@ -45,7 +45,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A1 — `rm`-the-binary is not security by itself
 
-- **Source.** `sandboxd/docs/antipatterns.md:38-70`. Quote: "Linux keeps the inode alive… With root inside the sandbox: `cp /proc/1/exe /tmp/extracted_binary`".
+- **Source.** Internal antipattern note. Linux keeps the inode alive: with root inside the sandbox, `cp /proc/1/exe /tmp/extracted_binary` recovers the agent binary.
 - **Failure.** Compromised root in sandbox copies our agent out of `/proc/1/exe` and reverses it.
 - **Our choice — defense in depth, not single layer.**
   - `memfd_create` so the binary never touches a real FS path.
@@ -58,7 +58,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A2 — Service per pod / Service per session
 
-- **Source.** `sandboxd/antipatterns.md:367-383`.
+- **Source.** Internal antipattern note.
 - **Failure.** N services × M sessions → kube-apiserver melts; endpoints controller stalls; iptables/IPVS rules churn.
 - **Our choice — one headless Service per pool, app-layer routing in control plane.**
   - One headless Service per warm pool, pod DNS via stable name.
@@ -68,7 +68,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A3 — Cluster autoscaler without overprovisioning
 
-- **Source.** `sandboxd/antipatterns.md:97-113`.
+- **Source.** Internal antipattern note.
 - **Failure.** Cold start dominated by 2–5 min node provisioning; spike of new sessions → users see "creating sandbox…" for minutes; SLO violation.
 - **Our choice — overprovisioning pause-pods with `priorityClassName`.**
   - Pause-pods at lower priority occupy headroom on each node group.
@@ -79,7 +79,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A4 — Session affinity via k8s `sessionAffinity: ClientIP`
 
-- **Source.** `sandboxd/antipatterns.md:209-226`.
+- **Source.** Internal antipattern note.
 - **Failure.** Under corporate NAT / mobile carriers all traffic shares one IP → all sessions pin to one pod → that pod overloaded, others idle. Capacity adds don't help latency.
 - **Our choice — application-layer routing only.**
   - L4 looks up `session_id → pod_IP` in Valkey on every request.
@@ -90,7 +90,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A5 — Pod IP caching without TTL or invalidation
 
-- **Source.** `sandboxd/antipatterns.md:133-149`.
+- **Source.** Internal antipattern note.
 - **Failure.** Pod dies → IP reassigned to another tenant → traffic for session X lands in tenant Y's pod → tenant data crosses tenants.
 - **Our choice — TTL + watch-driven invalidation.**
   - Valkey entries TTL 60 s.
@@ -102,7 +102,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A6 — `kubectl exec` to inject env into running Chromium (or any tool)
 
-- **Source.** `sandboxd/antipatterns.md:349-365`.
+- **Source.** Internal antipattern note.
 - **Failure.** Env mutation after process start does not affect already-spawned process; you set `HTTP_PROXY=...` and Chromium still bypasses the egress proxy because it cached env at start.
 - **Our choice — Chromium starts AFTER `Configure`.**
   - Pool member = warm with pre-loaded Chrome dependencies, **but Chrome not running**.
@@ -113,19 +113,19 @@ Ordered by phase where they FIRST become possible.
 
 ### A7 — Trust agent for authentication
 
-- **Source.** `sandboxd/antipatterns.md:269-283`.
+- **Source.** Internal antipattern note.
 - **Failure.** If L1 is owned, in-process auth check is bypassable anyway. False sense of security. Key rotation forces sandbox restart.
 - **Our choice — auth in L4 only.**
   - L1 trusts whoever can reach its connect-go port.
   - Network policy + Kata isolation ensures only L4 can.
   - Agent does NOT validate JWTs.
-  - **Counter-pattern note from [`research/15-claude-code-reverse-engineering.md`](./research/15-claude-code-reverse-engineering.md) §6:** Anthropic adds public-key JWT verification at L1 as defense-in-depth. We revisit if we ever expose L1 over TCP at scale; for vsock/localhost it stays "trust the network".
+  - **Counter-pattern note (industry-observed):** some designs add public-key JWT verification at L1 as defense-in-depth. We revisit if we ever expose L1 over TCP at scale; for vsock/localhost it stays "trust the network".
 - **Phase.** 7 (Rust agent design).
 - **Detection.** Grep `jwt.Parse`, `jwt.Verify` in agent code — should not exist.
 
 ### A8 — Long-lived egress tokens (e.g. 30 days)
 
-- **Source.** `sandboxd/antipatterns.md:286-299`.
+- **Source.** Internal antipattern note.
 - **Failure.** Mid-session compromise → attacker has 30-day exfil window. Rotating signing key invalidates all live tokens at once.
 - **Our choice — per-session JWT, lifetime = session-max (4 h).**
   - L4 mints on `CreateSession`.
@@ -137,7 +137,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A9 — Persistent sandbox state by default
 
-- **Source.** `sandboxd/antipatterns.md:302-316`.
+- **Source.** Internal antipattern note.
 - **Failure.** Disk bloat; compliance liability (GDPR/HIPAA — old PII on disk); compromised sandbox reads prior tenant's data.
 - **Our choice — ephemeral by default, no persistent sandbox-workspace tier.**
   - Computer Use sessions are hours, not days.
@@ -149,7 +149,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A10 — Embedding secrets in sandbox images
 
-- **Source.** `sandboxd/antipatterns.md:259-275` nearby.
+- **Source.** Internal antipattern note.
 - **Failure.** Image registry compromise → all secrets ever shipped leaked. Rotation requires rebuild.
 - **Our choice — secrets only via `Agent.Configure` RPC.**
   - Image is stateless.
@@ -160,7 +160,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A11 — Builds without reproducibility
 
-- **Source.** `sandboxd/antipatterns.md:241-257`.
+- **Source.** Internal antipattern note.
 - **Failure.** Two builds of the same source produce different images → can't verify supply-chain → cosign signature on wrong artifact passes admission.
 - **Our choice — pinned versions + `SOURCE_DATE_EPOCH` + cosign + verify at admission.**
   - Phase 1: pin every `apt`/`pip`/`npm` version in `Dockerfile`.
@@ -171,7 +171,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A12 — Warm pool without bounds
 
-- **Source.** `sandboxd/antipatterns.md` (warm-pool patterns).
+- **Source.** Internal antipattern note (warm-pool patterns).
 - **Failure.** Unbounded pool → cluster OOM. No `maxAge` → stale members carry leaked state.
 - **Our choice — `min/target/max + refillRate + maxAge`.**
   - Defaults: `minSize=5, targetSize=20, maxSize=50, refillRate=3/s, maxAge=30m`.
@@ -182,7 +182,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A13 — No idle timeout
 
-- **Source.** `sandboxd/antipatterns.md:475-491`.
+- **Source.** Internal antipattern note.
 - **Failure.** Sandbox runs forever after user closes browser → wasted RAM/CPU at scale.
 - **Our choice — multi-tier cascade.**
   - User session idle (no `/mcp` calls): 10 min → L4 sends `Agent.Shutdown`.
@@ -195,7 +195,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A14 — Logging user output verbatim
 
-- **Source.** `sandboxd/antipatterns.md:406-420`.
+- **Source.** Internal antipattern note.
 - **Failure.** Stdout from agent contains user secrets (printed API keys, file contents) → logs become a credential-harvest target → SOC2/PCI audit fails.
 - **Our choice — structured metadata only.**
   - Log: `{session_id, tool, exit_code, duration_ms, stdout_bytes, stderr_bytes}`.
@@ -206,7 +206,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A15 — `SIGKILL` without grace period
 
-- **Source.** `sandboxd/antipatterns.md:425-438`.
+- **Source.** Internal antipattern note.
 - **Failure.** Chrome / Python killed mid-write → temp files, sockets, pipes left over → next session inherits stale state.
 - **Our choice — `terminationGracePeriodSeconds: 30` + cooperative shutdown.**
   - L4 sends `Agent.Shutdown` RPC → agent drops page caches → `SIGTERM` to children → waits 5 s → `SIGKILL` survivors → exits.
@@ -217,7 +217,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A16 — `restartPolicy: Always` for sandbox
 
-- **Source.** `sandboxd/antipatterns.md:187-203`.
+- **Source.** Internal antipattern note.
 - **Failure.** Sandbox is a session, not a service. Auto-restart on crash → session resurrects with stale state, mid-tool-call → user sees inexplicable behavior.
 - **Our choice — `restartPolicy: Never`.**
   - On crash → L3 emits event → L4 invalidates session → user notified.
@@ -227,7 +227,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A17 — Treat sandboxes as cattle indiscriminately
 
-- **Source.** `sandboxd/antipatterns.md:205-221`.
+- **Source.** Internal antipattern note.
 - **Failure.** Replacing an in-use sandbox mid-session = losing the user's work.
 - **Our choice — pool members = cattle; assigned sandboxes = pets.**
   - Pre-assignment: replaceable, recycled freely.
@@ -238,7 +238,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A18 — "Build yet another platform"
 
-- **Source.** `sandboxd/antipatterns.md` meta + our own scope discipline.
+- **Source.** Internal antipattern note + our own scope discipline.
 - **Failure.** We end up maintaining an inferior k8s operator + inferior egress proxy + inferior hypervisor instead of building Computer Use product.
 - **Our choice — adopt + integrate, don't reinvent.**
   - **Orchestration:** `agent-sandbox` CRDs ([`research/06-agent-sandbox.md`](./research/06-agent-sandbox.md)).
@@ -251,7 +251,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A19 — Premature cold-start optimization
 
-- **Source.** `sandboxd/operations.md` meta.
+- **Source.** Internal operations note.
 - **Failure.** Spending months on CH snapshot/restore before knowing if warm pool alone solves cold start → engineering capacity wasted.
 - **Our choice — measure first.**
   - Phase 5: warm pool with `minSize=5`. Measure p99 session-create.
@@ -294,7 +294,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A24 — Hostname allowlist without DNS-rebinding defense
 
-- **Source.** [`research/09-agentbox.md`](./09-agentbox.md) §9 + sandboxd egress patterns.
+- **Source.** [`research/09-agentbox.md`](./09-agentbox.md) §9 + internal egress patterns.
 - **Failure.** Allowlist `api.example.com`; attacker controls DNS; resolves to internal IP → SSRF.
 - **Our choice — proxy resolves DNS itself, pins to public IP ranges only.**
   - Egress proxy uses a known recursive resolver, not the sandbox's resolv.conf.
@@ -305,7 +305,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A25 — HTTP body / response logging through egress proxy
 
-- **Source.** `sandboxd/security.md` "Do not log".
+- **Source.** Internal security note ("Do not log").
 - **Failure.** Bodies contain secrets (API responses with tokens, downloaded files). Audit pipeline = secrets store.
 - **Our choice — egress proxy logs metadata only.** `{ts, session_id, target_host, port, verdict, bytes_out, bytes_in, latency_ms, jwt_id}`. Never bodies, never headers beyond Host/User-Agent.
 - **Phase.** 8.
@@ -313,7 +313,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A26 — Logging environment variable values
 
-- **Source.** `sandboxd/security.md` "Do not log".
+- **Source.** Internal security note ("Do not log").
 - **Failure.** Diagnostic log dumps `os.environ` → secrets leak.
 - **Our choice — log env keys only, never values.** If a debug log needs a value, it goes through the sensitive-log pipeline with RBAC.
 - **Phase.** 6, 7.
@@ -321,7 +321,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A27 — Single global agent binary (no versioning)
 
-- **Source.** Inferred from `research/02-e2b-infra.md` §12 (version-gated metrics) + sandboxd operations.
+- **Source.** Inferred from `research/02-e2b-infra.md` §12 (version-gated metrics) + internal operations notes.
 - **Failure.** Updating the agent binary forces all sandboxes to upgrade simultaneously. Rollback impossible without rebuilding the world.
 - **Our choice — agent version baked in image tag; per-template image digest.** L4 metrics + control queries the agent's version on `Configure`; can keep multiple agent versions in production simultaneously (one per template).
 - **Phase.** 7.
@@ -337,7 +337,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A29 — No template smoke test in deployment
 
-- **Source.** sandboxd ops + general.
+- **Source.** Internal operations notes + general.
 - **Failure.** New template version ships, all sessions assigned to it fail because of a typo.
 - **Our choice — every template ships with a smoke test job that spawns it once, runs a tiny exec (`echo ok`), tears down.** Helm post-install hook runs it; rollout blocked on failure.
 - **Phase.** 5 (Helm) + every template change.
@@ -355,7 +355,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A31 — Wildcard allowed-hosts (`*.com`)
 
-- **Source.** [`research/13-anthropic-sandbox-runtime.md`](./13-anthropic-sandbox-runtime.md) §8.
+- **Source.** Industry-observed egress-allowlist failure mode (internal design note).
 - **Failure.** Operator sets `*.com` "for convenience" → effectively allows any host → egress proxy useless.
 - **Our choice — JWT validator rejects patterns that match more than two label-segments wildcards (`*.*.com` etc) and rejects suffix-only TLD matches (`*.com`, `*.org`, `*.io`).**
 - **Phase.** 8.
@@ -381,7 +381,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A34 — No per-session encryption for persistent data
 
-- **Source.** sandboxd security + sandboxd §11 implications.
+- **Source.** Internal security notes.
 - **Failure.** Persistent PVC reused across tenants without scrubbing → data crosses.
 - **Our choice — if persistence enabled, KMS-backed per-session key; data encrypted at rest; key destroyed on session end.**
 - **Phase.** 10 (HA + persistence).
@@ -405,7 +405,7 @@ Ordered by phase where they FIRST become possible.
 
 ### A37 — PVC for sandbox session workspace
 
-- **Source.** [`research/22-anthropic-firecracker-microvm-internals-observed.md` §2.3](./research/22-anthropic-firecracker-microvm-internals-observed.md#23-rootfs-as-cow-snapshot--the-pvc-replacement-pattern-). Observation: Anthropic's production Firecracker microVM serves `/home/claude` from a per-VM CoW snapshot (qcow2 backing / dm-thin / ZFS clone) of a golden rootfs — **not** from a per-session PVC.
+- **Source.** Internal design note. Pattern: serve the per-session home directory from a per-VM CoW snapshot (qcow2 backing / dm-thin / ZFS clone) of a golden rootfs — **not** from a per-session PVC.
 - **Failure.**
   - **Cross-tenant leak (security).** A reused PVC that isn't scrubbed exactly right between sessions = previous tenant's data to the next one. The scrub step is operationally fragile; CoW snapshots eliminate the failure mode by design (delta is discarded, golden image is the only shared state and it is read-only).
   - **Reset isn't free.** Wiping a 10 GiB PVC before a session lease takes seconds-to-minutes; discarding a qcow2 delta is constant-time.
@@ -426,16 +426,16 @@ Ordered by phase where they FIRST become possible.
 
 ---
 
-## Section C — Antipatterns specific to OUR stack (not in sandboxd)
+## Section C — Antipatterns specific to OUR stack
 
-These came up while filtering and don't appear in the canonical sandboxd list because they're consequences of our connect-go / Kata / multi-replica choices.
+These came up while filtering and do not appear in the inherited list because they're consequences of our connect-go / Kata / multi-replica choices.
 
 ### C1 — Not using vsock when available
 
 - **Failure.** TCP-only L1 transport works on runc/sysbox but loses the IP-exhaustion + zero-network-stack-overhead benefits of vsock on Kata. Also blocks "single binary across all runtimes" claim.
 - **Our choice — vsock primary, TCP fallback. Runtime auto-detect.**
   - Agent boot: `if /dev/vsock exists → bind AF_VSOCK; else TCP 0.0.0.0:port`.
-  - Same binary across all runtimes (sandboxd §3).
+  - Same binary across all runtimes.
 - **Phase.** 7.
 - **Detection.** Agent integration test on both transports.
 
@@ -540,7 +540,7 @@ Quick lookup: when planning Phase N, scan these entries.
 | 7 (Rust guest agent) | A1 (defense in depth, all 4 layers), A6 (Configure-before-Chrome), A7 (no auth in agent), A15 (cooperative Shutdown RPC), A27 (versioned agent), A35 (tight seccomp), C1 (vsock auto-detect), C3 (4 RPC shapes), C4 (push model) |
 | 8 (egress proxy + audit) | A8 (token lifetime), A14/A25/A26 (log discipline), A24 (DNS rebinding), A31 (wildcard rejection), A32 (CONNECT timeouts), A33 (key rotation overlap) |
 | 9 (Kata + CH) | A20 (`cache=never`), A21 (seccomp ON), A23 (Landlock pre-declare), A28 (template-level RuntimeClass), **A37 (CoW snapshot backend for Tier 3, not PVC)**, C2 (dedicated node pool), C7 (don't bake runtime) |
-| 10 (snapshot/HA) | A19 (measure first), A22 (no GPU on snapshottable), A34 (KMS per session), and the sandboxd post-restore hardening triad (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop) |
+| 10 (snapshot/HA) | A19 (measure first), A22 (no GPU on snapshottable), A34 (KMS per session), and the post-restore hardening triad (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop) |
 
 ---
 

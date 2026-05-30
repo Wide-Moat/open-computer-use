@@ -24,7 +24,7 @@
 - **Port to Go.**
   1. `github.com/mdlayher/vsock`: `vsock.Listen(":2048")`.
   2. Accept and demultiplex by service (health, API, logging) on connection.
-  3. Graceful fallback if vsock unavailable (matches our [pattern 3 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md)).
+  3. Graceful fallback if vsock unavailable (matches our cross-cutting pattern 3).
 - **Skip.** Kata's ttrpc protocol is OCI-shaped.
 
 ## 3. gRPC service definitions — structure to learn, NOT copy
@@ -39,7 +39,7 @@
 - **Where.** `src/agent/src/main.rs:648-680` (`init_agent_as_init`). Cgroup mount: 651. `/dev/ptmx` symlink: 659–660. `setsid()`: 662. Controlling-tty ioctl: 665. Hostname: 670–677.
 - **Port to Go.** Detect `getpid() == 1`; conditionally run init routine; mount cgroups only if absent; symlink `/dev/ptmx` if missing.
 - **Skip.** Full OCI init (hooks, env setup) — ours is microVM-specific, much smaller.
-- **Note.** `PR_SET_DUMPABLE=0` and capability drops live in the **runtime config**, not the agent (agent runs as root inside the guest). We pair this with [pattern 5 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md).
+- **Note.** `PR_SET_DUMPABLE=0` and capability drops live in the **runtime config**, not the agent (agent runs as root inside the guest). We pair this with our cross-cutting pattern 5.
 
 ## 5. kata-deploy DaemonSet — install/cleanup, probes, node affinity
 

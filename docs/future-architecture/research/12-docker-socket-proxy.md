@@ -40,7 +40,7 @@
 
 - **Where.** README `:109-147` (access matrix); Dockerfile defaults.
 - **What.** All dangerous operations default to deny (`AUTH=0`, `SECRETS=0`, `POST=0`, `CONTAINERS=0`). Only read-only basics allowed. **No catch-all "allow everything" gate.**
-- **Why for us.** Foundational; matches [pattern 13 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md) (NetworkPolicy default-deny). Operator must opt-in to each capability.
+- **Why for us.** Foundational; matches cross-cutting pattern 13 (NetworkPolicy default-deny). Operator must opt-in to each capability.
 
 ## 6. Trust boundary at network edge — no TLS inside
 

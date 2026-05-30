@@ -62,23 +62,23 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 
 ## Phase 0.5 — Architecture-doc polish (gaps from review)
 
-**Goal.** Patch the architecture docs with the Anthropic / sandboxd practices flagged as missing during the Phase-0 review (gaps tracked across `antipatterns.md` and `research/*`). Pure docs, no code.
+**Goal.** Patch the architecture docs with the runtime-hardening practices flagged as missing during the Phase-0 review (gaps tracked across `antipatterns.md` and `research/*`). Pure docs, no code.
 
 **Blocker removed.** Architecture promises something the antipatterns doc says is critical, but `architecture/*` doesn't yet describe how. Phase 1 starts with mismatched contract → rework.
 
 **Research checklist.** None — synthesis of existing pattern docs.
 
 **Deliverables (file-by-file).** All shipped 2026-05-18.
-- ✅ `architecture/05-layer1-guest-agent.md`: rewrote on the `process_api` precedent. Auto-detected transport (vsock if `/dev/vsock`, TCP otherwise), `PR_SET_DUMPABLE=0`, `SIGCHLD` reaping, `SIGTERM`→`SIGKILL` chain, capabilities negotiation (V1/V2), dual-port API (data-plane WS + control-plane HTTP). Language flipped Go → **Rust** ([ADR-0002](./adr/0002-guest-agent-language-go.md) rewritten in place).
+- ✅ `architecture/05-layer1-guest-agent.md`: rewrote on the agent-in-microVM pattern. Auto-detected transport (vsock if `/dev/vsock`, TCP otherwise), `PR_SET_DUMPABLE=0`, `SIGCHLD` reaping, `SIGTERM`→`SIGKILL` chain, capabilities negotiation (V1/V2), dual-port API (data-plane WS + control-plane HTTP). Language flipped Go → **Rust** ([ADR-0002](./adr/0002-guest-agent-language-go.md) rewritten in place).
 - ✅ `architecture/07-security.md`: added mandatory deny paths (`.git/hooks/*`, `.bashrc`, `.mcp.json`, `.claude/`, etc.), graceful-shutdown protocol, optional `memfd_create` (Phase 9+ defense-in-depth), and full snapstart-restore hardening (CRNG reseed, `init_on_free=1`, `CAP_SYS_RESOURCE` drop, env-scrub) — Phase 10 mandatory.
-- ✅ `architecture/03-layer3-providers.md`: warm-pool knobs extended with `refillRate` and `maxAge`; SandboxClaim CRD spec added; environment-type (Baku) dispatch matrix added.
+- ✅ `architecture/03-layer3-providers.md`: warm-pool knobs extended with `refillRate` and `maxAge`; SandboxClaim CRD spec added; environment-type dispatch matrix added.
 - ✅ `architecture/02-layer4-control-plane.md`: no-`sessionAffinity:ClientIP` anti-pattern called out; HA upgrade strategy (scale-to-1 + blue-green); prompt-caching pass-through position recorded.
-- ✅ `architecture/06-storage.md`: block-device tooling swap subsection added (Baku / process_api pattern, Phase 10 prereq).
+- ✅ `architecture/06-storage.md`: block-device tooling swap subsection added (snapshot-pool pattern, Phase 10 prereq).
 - ✅ `architecture/08-networking.md`: multi-region workspace-proxy pattern (Coder) added as Phase-10 substrate.
 - ✅ `architecture/10-observability.md`: RAM-based capacity-sizing formula added; SLO targets restated; distributed-tracing subsection added (traceparent across L4 → L3 → L1, audit-event linkage).
 - ✅ `architecture/04-layer2-runtimes.md`: nydus snapshotter mention added; virtio-fs vs 9p CH/FC asymmetry resolved; Firecracker / Lambda lineage paragraph added with cross-link to [ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md).
 - ✅ `antipatterns.md`: referenced from the new layer additions; no new entries surfaced — all gaps mapped to existing A/C IDs.
-- ✅ New research digests landed: [`research/19`](./research/19-anthropic-process-api.md), [`research/20`](./research/20-snapstart-hot-swap.md), [`research/21`](./research/21-environment-runner-go.md).
+- ✅ New runtime design notes landed for the L1 agent, snapshot-pool, and session-agent split (kept local).
 - ✅ ADR updates: ADR-0002 rewritten (Go → Rust), ADR-0008 Phase 7 gate tightened, ADR-0001 gained a Phase 6 re-evaluation gate, new ADR-0010 (Lambda framing) landed.
 
 **Acceptance.**
@@ -263,7 +263,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - `references/kata-containers/src/agent/` — PID 1 patterns, signal handling, `PR_SET_DUMPABLE=0`, vsock listener, zombie reaping. See [`research/01-kata-containers.md`](./research/01-kata-containers.md).
 - `references/infra/packages/envd/` — Go agent API surface and streaming. See [`research/02-e2b-infra.md`](./research/02-e2b-infra.md) §3.
 - `references/microsandbox/` — minimal libkrun integration patterns.
-- `references/sandbox-runtime/` — bubblewrap / seccomp BPF (secondary-defense inside VM). See [`research/13-anthropic-sandbox-runtime.md`](./research/13-anthropic-sandbox-runtime.md).
+- `references/sandbox-runtime/` — bubblewrap / seccomp BPF (secondary-defense inside VM).
 - `references/chromedp/chromedp/` — chromedp vs raw CDP WebSocket for the agent. See [`research/07-chromedp.md`](./research/07-chromedp.md).
 - `references/agent-sandbox/` — `RuntimeClass` plumbing.
 - **ADR-0002 re-evaluation gate (mandatory section).** Answer:
@@ -280,7 +280,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - Provider templates carry `runtime_class`: `runc`, `sysbox`, `gvisor`.
 - All existing MCP tools (bash/python/file/sub_agent) work via the new agent.
 - **`POST /mcp` wire format unchanged** — same `tests/integration/test_mcp_*.py` pass against the new agent without modification (MCP-contract-frozen invariant).
-- Performance: cold-start budget within sandboxd targets (sysbox ≤ 100 ms agent-ready).
+- Performance: cold-start budget within our targets (sysbox ≤ 100 ms agent-ready).
 - Dual-port API live: data plane (WS) + control plane (HTTP) — config rotation works without dropping streams.
 
 **Reversibility.** New image tag; rollback by pinning prior image digest. (No data migration; agent is stateless.)
@@ -327,7 +327,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - `references/firecracker/` and `references/firecracker-containerd/` — alternative path; snapshotting for fast cold start. See [`research/05-firecracker.md`](./research/05-firecracker.md) (especially the jailer pattern), [`research/11-firecracker-containerd.md`](./research/11-firecracker-containerd.md) (demux snapshotter).
 - `references/kata-containers/` — full kata + CH integration; kata-deploy DaemonSet. See [`research/01-kata-containers.md`](./research/01-kata-containers.md).
 - **nydus snapshotter / lazy image loading** — relevant when per-template images differ.
-- Bare-metal node pool sizing (sandboxd's capacity formula → already pulled into `architecture/10-observability.md` in Phase 0.5).
+- Bare-metal node pool sizing (our capacity formula → already pulled into `architecture/10-observability.md` in Phase 0.5).
 - Output: `phase-9-research.md` — `kata-ch` vs `kata-fc` for our workload, bare-metal node sizing, RuntimeClass install steps, snapshotter choice (devmapper / nydus).
 
 **Acceptance.**
@@ -357,7 +357,7 @@ These rules are how we keep the migration evolutionary. Any PR that violates the
 - `references/firecracker/` — Firecracker snapshot for comparison.
 - `references/firecracker-containerd/` — demux snapshotter for COW rootfs (fast restore) — see [`research/11-firecracker-containerd.md`](./research/11-firecracker-containerd.md) §1.
 - Multi-region: KV replication (Redis cluster / etcd multi-DC) — standard docs.
-- **Post-restore hardening checklist** — kernel CRNG reseed on VM fork, `init_on_free=1`, `CAP_SYS_RESOURCE` drop. Primary reference: [`research/20-snapstart-hot-swap.md`](./research/20-snapstart-hot-swap.md) §4. Historical context: [`research/15-claude-code-reverse-engineering.md`](./research/15-claude-code-reverse-engineering.md) §10.
+- **Post-restore hardening checklist** — kernel CRNG reseed on VM fork, `init_on_free=1`, `CAP_SYS_RESOURCE` drop (standard snapshot-restore hardening; internal design note).
 - Output: `phase-10-research.md` — snapshot frequency policy; pod-failure mid-session → snapshot-then-restore-elsewhere flow; backup/DR.
 
 **Acceptance.**

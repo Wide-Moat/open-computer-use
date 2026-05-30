@@ -80,7 +80,7 @@ Lifecycle:
 4. Idle sandbox older than `maxAge` → destroyed, refiller spawns a replacement.
 5. Sessions ending → sandbox is destroyed (not returned to pool — tenancy hygiene; see [07-security.md](./07-security.md)).
 
-Phase 2 ships the skeleton (`minSize=0` default = no behavior change). Phase 5 makes it real. Phase 10 swaps the "warm sandboxes pool" for a **frozen-snapshot pool** with block-device hot-swap on resume — same knobs, different mechanics. See [`research/20-snapstart-hot-swap.md`](../research/20-snapstart-hot-swap.md).
+Phase 2 ships the skeleton (`minSize=0` default = no behavior change). Phase 5 makes it real. Phase 10 swaps the "warm sandboxes pool" for a **frozen-snapshot pool** with block-device hot-swap on resume — same knobs, different mechanics (internal design note).
 
 ## SandboxClaim CRD semantics (KubernetesProvider)
 
@@ -95,7 +95,7 @@ metadata:
 spec:
   templateRef:
     name: customer-cu-kata-ch-v3   # SandboxTemplate to allocate from
-  envtype: anthropic-hosted         # provider-side dispatch (see below)
+  envtype: managed-hosted           # provider-side dispatch (see below)
   lease:
     ttlSeconds: 7200                # auto-release if the session never returns
     renewDeadlineSeconds: 60        # heartbeat budget
@@ -120,9 +120,9 @@ Two operational properties we get for free:
 
 The `DockerSocketProvider` and `DirectCHProvider` implement the same lifecycle in-process; the CRD shape is the k8s realization of a provider-internal concept.
 
-## Environment-type dispatch (Baku pattern)
+## Environment-type dispatch
 
-Templates carry an `envtype` field consumed by the provider to pick the backend mechanism. The pattern is lifted from Anthropic's Baku/`environment-runner` split ([`research/21`](../research/21-environment-runner-go.md), inspiration-only) and applied narrowly here:
+Templates carry an `envtype` field consumed by the provider to pick the backend mechanism. The pattern follows an industry-observed router/session-agent split and is applied narrowly here:
 
 | `envtype` | Provider behaviour | Use case |
 |---|---|---|
@@ -130,7 +130,7 @@ Templates carry an `envtype` field consumed by the provider to pick the backend 
 | `internal` | sysbox on k8s; egress proxy in monitor mode | Trusted employees |
 | `customer-shared` | sysbox or gVisor (per-template) on k8s; egress proxy enforcing | Customer code-only sandboxes |
 | `customer-cu` | Kata (CH or FC) on bare-metal node pool; egress proxy enforcing | Customer Computer Use sessions |
-| `anthropic-hosted` | Reserved label for our own SaaS deployment; same as `customer-cu` today but pinned to a tier | Anthropic-equivalent deployment shape |
+| `managed-hosted` | Reserved label for our own managed deployment; same as `customer-cu` today but pinned to a tier | Managed-deployment shape |
 | `byoc` | Customer-supplied cluster; provider holds a lease on a customer namespace | Reserved, not Phase-1 |
 
 `envtype` is **not** the same as `runtimeClass`. `runtimeClass` is the L2 isolation primitive; `envtype` is the L3 dispatch key. One `envtype` can map to multiple `runtimeClass`-es depending on template (e.g. `customer-shared` resolves to sysbox for code, gVisor for browserless code-exec).
@@ -169,6 +169,6 @@ Transport: same channel as L4 ↔ L3 (HTTP stream or gRPC server-side stream).
 
 ## Source
 
-- [`sandboxd/docs/architecture.md`](../../../sandboxd/docs/architecture.md) (Layer 3 sections)
+- Internal design notes (Layer 3 sections)
 - [`docs/future-architecture/architecture/01-layers.md`](./01-layers.md)
 - [`docs/future-architecture/references.md`](../references.md) (`kubernetes-sigs/agent-sandbox`, `e2b-dev/infra`)

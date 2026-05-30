@@ -21,7 +21,7 @@
   }
   Signature: HMAC-SHA256(header.payload, signing_key)
   ```
-- **Why for us (Phase 8 MVP).** Stateless; proxy verifies signature + expiry, no DB round-trip. 4-hour `exp` matches our session-lifetime cap ([pattern 16 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md)).
+- **Why for us (Phase 8 MVP).** Stateless; proxy verifies signature + expiry, no DB round-trip. 4-hour `exp` matches our session-lifetime cap (cross-cutting pattern 16).
 - **Production note.** HS256 = shared symmetric key — works when proxy + L4 are colocated. For untrusted-host scenarios switch to **RS256** with public-key distribution (proxy only needs the public key).
 
 ## 2. Allowlist matching — wildcard suffix + port stripping
@@ -82,7 +82,7 @@
   - No bytes transferred / latency.
   - `tenant_id` in JWT but **not logged** — we must add it for multi-tenant audit.
   - Blocked = log host but not reason (typo vs. missing entry).
-- **Target.** Structured JSON: `{ts, session_id, tenant_id, target, port, verdict, reason, bytes_out, latency_ms, jwt_id}` → ship to immutable audit sink (matches `00-anthropic-and-sandboxd.md` pattern 10).
+- **Target.** Structured JSON: `{ts, session_id, tenant_id, target, port, verdict, reason, bytes_out, latency_ms, jwt_id}` → ship to immutable audit sink (matches cross-cutting pattern 10).
 
 ## 8. Signing-key management — `secrets.token_hex(32)`, in-process
 

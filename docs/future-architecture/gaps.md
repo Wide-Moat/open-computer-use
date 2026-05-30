@@ -81,7 +81,7 @@ Audit append-only sink with ≥ 90 d retention is named in `architecture/07-secu
 
 - Can an agent session be **replayed 100 % accurately** for debugging? If the agent did something strange — full replay, or at least deterministic audit.
 - Persist every MCP call + screenshot in a format that **plays back** → 80 % of replay capability at a low cost.
-- **Time inside the sandbox** — does the agent see real wallclock or a frozen one? Anthropic `process_api` almost certainly manipulates the clock for consistent caching and reproducibility.
+- **Time inside the sandbox** — does the agent see real wallclock or a frozen one? Some sandbox runtimes manipulate the clock for consistent caching and reproducibility.
 - **Random-seed control** — for skills that use randomness, fix the seed per session for replay.
 - **Audit-event ID** — UUIDv7 (timestamp-prefixed) is much easier for time-range queries than UUIDv4.
 
@@ -200,7 +200,7 @@ These are the core, and they tend to surface in production:
 - **Tool output larger than the MCP message limit** — `dmesg` stdout or a giant JSON. Streaming, pagination, pre-signed URL — which one is chosen.
 - **Large files agent → user** — agent generated a 5 GB Parquet. S3 pre-signed URL or your transport? Cost implications.
 
-**Status:** LIGHT (`architecture/05-layer1-guest-agent.md` covers `SIGTERM`→`SIGKILL`, zombie reaping, dual-port API; `process_api` precedent in `research/19` handles zombies and long-running processes) / MISSING (explicit cancellation-latency SLO, long-running-tool heartbeat protocol, disconnection-mid-tool semantics, concurrent-tool-call contract, output-size flow control, large-artefact transport policy).
+**Status:** LIGHT (`architecture/05-layer1-guest-agent.md` covers `SIGTERM`→`SIGKILL`, zombie reaping, dual-port API; the agent-in-microVM pattern handles zombies and long-running processes) / MISSING (explicit cancellation-latency SLO, long-running-tool heartbeat protocol, disconnection-mid-tool semantics, concurrent-tool-call contract, output-size flow control, large-artefact transport policy).
 
 **Lands in phase:** Phase 7 acceptance should be strengthened to cover the above. No new phase.
 

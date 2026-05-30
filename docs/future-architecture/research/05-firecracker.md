@@ -23,7 +23,7 @@
   - **Cgroup placement** (v1 & v2 — moves FC pid into a child cgroup).
   - **Optional `--netns`** (network-ns inheritance).
   - **Seccomp filters** loaded by firecracker itself after jailer execs it.
-- **Why for us.** This is the **canonical Anthropic pattern** for hypervisor hardening — referenced in `sandboxd/docs/comparison.md`. Our Phase 9 Helm/CRD work for `kata-fc` templates should use jailer-equivalent containment, even if the orchestrator wraps CH instead.
+- **Why for us.** This is the standard hypervisor-hardening pattern. Our Phase 9 Helm/CRD work for `kata-fc` templates should use jailer-equivalent containment, even if the orchestrator wraps CH instead.
 - **Skip.** Assumes host enforces file perms; no AppArmor/SELinux integration. `resource_limits` moved to cgroups in the 2024 release.
 
 ## 3. MMDS — guest metadata service (EC2-compatible)
@@ -104,7 +104,7 @@ This list is the reason **Cloud Hypervisor is our primary** and FC is the second
 | Pattern | File | Phase | Constraint |
 |---|---|---|---|
 | REST on unix socket | `rpc_interface.rs` | 8 | Synchronous only |
-| **Jailer** (chroot + ns + cgroup + uid) | `jailer/src/main.rs` + `chroot.rs` | 8 | **Anthropic pattern** — adopt principle |
+| **Jailer** (chroot + ns + cgroup + uid) | `jailer/src/main.rs` + `chroot.rs` | 8 | Standard hardening pattern — adopt principle |
 | MMDS V2 (token-auth) | `mmds/data_store.rs` | 8 | Cleared on snapshot restore |
 | Snapshot files + CRC + ondemand | `persist.rs` | 10 | Memory file must persist |
 | Memory oversubscription | `vstate/memory.rs` | 8 | OOM killer can evict |

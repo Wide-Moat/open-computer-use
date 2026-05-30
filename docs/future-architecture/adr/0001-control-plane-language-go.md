@@ -40,7 +40,7 @@ Constraints:
 - **Verdict:** continue using Python through Phases 1–5 (refactor in place); rewrite in Go at Phase 6.
 
 ### Rust
-- **Pro:** memory safety, smallest binary, fastest runtime, aligns with kata-agent and sandboxd's Layer-1 language preference. Would also let us share code between L1 (agent) and L4 (control plane).
+- **Pro:** memory safety, smallest binary, fastest runtime, aligns with kata-agent's Layer-1 language preference. Would also let us share code between L1 (agent) and L4 (control plane).
 - **Con:** project owner is not productive in Rust; k8s ecosystem in Rust is immature (`kube-rs` exists but is a fraction of `client-go`'s coverage); slower iteration on a control-plane-heavy codebase.
 - **Verdict:** rejected for L4. L1 may revisit ([ADR-0002](./0002-guest-agent-language-go.md)).
 

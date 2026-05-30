@@ -109,7 +109,7 @@
 - **Conditions** — `metav1.Condition` (type, status, reason, message, observedGeneration).
 - **Sandbox.** `Ready` (DependenciesReady/NotReady/SandboxSuspended) | `Suspended` (PodTerminated/PodNotTerminated) | `Finished` (PodSucceeded/PodFailed).
 - **`serviceFQDN`** — controller-flag `--cluster-domain` configurable.
-- **`podIPs[]`** — direct from Pod status, mirrored for fast L4 routing (matches our [pattern 9 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md): app-layer routing, not ClientIP).
+- **`podIPs[]`** — direct from Pod status, mirrored for fast L4 routing (matches our cross-cutting pattern 9: app-layer routing, not ClientIP).
 
 ## 7. Webhooks
 
