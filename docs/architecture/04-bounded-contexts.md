@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: draft
+status: proposed
 last-reviewed: 2026-05-30
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
