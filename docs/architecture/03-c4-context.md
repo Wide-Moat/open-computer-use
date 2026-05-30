@@ -16,7 +16,7 @@ OCU is one component of the Wide-Moat opinionated bundle (other peers in the bun
 
 ## 2. Inside the box
 
-OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor, not the LLM loop. Internal decomposition is out of scope at this layer.
+OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
 
 ## 3. C4 Context diagram
 
