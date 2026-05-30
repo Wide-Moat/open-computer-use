@@ -176,6 +176,40 @@ GATEWAY_TOKEN="<your-token>"
 SUBAGENT_CLI=opencode
 ```
 
+For a governed endpoint such as Tuning Engines, keep the same provider shape
+and point `baseURL` at the Tuning Engines inference API:
+
+```bash
+OPENCODE_CONFIG_EXTRA='{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "tuning-engines": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Tuning Engines",
+      "options": {
+        "baseURL": "https://api.tuningengines.com/v1",
+        "apiKey": "{env:TUNING_ENGINES_API_KEY}"
+      },
+      "models": {
+        "gpt-5.4-mini": { "name": "GPT 5.4 Mini" }
+      }
+    }
+  },
+  "model": "tuning-engines/gpt-5.4-mini"
+}'
+```
+
+Set the matching env var in `.env`:
+
+```bash
+TUNING_ENGINES_API_KEY="<your-tuning-engines-inference-key>"
+SUBAGENT_CLI=opencode
+```
+
+Open Computer Use still owns the sandbox, MCP tools, browser automation, and
+sub-agent runtime. Tuning Engines adds governed model access, tenant policy,
+traces, approvals, and usage visibility behind the OpenAI-compatible route.
+
 ---
 
 ## OpenCode — agent personas
