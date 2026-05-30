@@ -18,8 +18,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 
 | Number | Title | Status | Supersedes | Last-reviewed |
 |---|---|---|---|---|
-
-(Empty. ADRs land one at a time via PRs against `next/v1`.)
+| [0001](0001-layer-0-gate-legacy-exclusion.md) | Layer 0 gate — legacy exclusion | accepted | — | 2026-05-24 |
 
 ## Lifecycle
 
