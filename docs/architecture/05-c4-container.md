@@ -54,7 +54,7 @@ flowchart LR
     style SINK fill:#fdecea,stroke:#c0392b,stroke-dasharray:5 5
 ```
 
-Canonical source: [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd). Edge labels name the protocol or token class that crosses; `1..N` marks the per-session container. The four Agent-Execution containers fan into the Audit pipeline over one Published Language (OCSF) — drawn as four edges, one label. External actors and their contracts are in [`03-c4-context.md`](03-c4-context.md) §4; this view does not redraw them.
+Canonical source: [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd). Edge labels name the protocol or token class that crosses; `1..N` marks the per-session container. The four Agent-Execution containers fan into the Audit pipeline over one Published Language (OCSF) — drawn as four edges, one label. External actors are drawn for orientation; their contracts are in [`03-c4-context.md`](03-c4-context.md) §4, not restated here.
 
 ## 3. The five containers
 
