@@ -10,13 +10,13 @@ applies-to: next/v1
 
 ## 1. Purpose
 
-Open Computer Use (OCU) is the in-perimeter agent-execution boundary: a uniform sandbox with a skill library, exposed via an MCP interface. It is model-neutral by construction (any model with tool-call over MCP) and integrates with the regulated-enterprise customer's existing IdP, KMS, SIEM, and outbound proxy; this view names every external boundary the system speaks across.
+Open Computer Use (OCU) is the in-perimeter tool-execution boundary: a uniform sandbox with a skill library, exposed via an MCP interface. The calling client runs the agent loop and owns the model choice; OCU executes the tool-calls it receives and integrates with the regulated-enterprise customer's existing IdP, KMS, SIEM, and outbound proxy. This view names every external boundary the system speaks across.
 
 OCU is one component of the Wide-Moat opinionated bundle (other peers in the bundle include n8n and Open WebUI). OCU is also usable standalone — any MCP-speaking peer is a first-class integration. See [`manifesto/01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) for the buyer story; this document scopes only what is inside OCU and what it talks to.
 
 ## 2. Inside the box
 
-OCU is the agent-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). Internal decomposition is out of scope at this layer.
+OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor, not the LLM loop. Internal decomposition is out of scope at this layer.
 
 ## 3. C4 Context diagram
 
@@ -48,7 +48,7 @@ Humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a c
 
 - **Workflow orchestration** — peers like n8n call OCU as an MCP client; they live in their own repos.
 - **Chat surface** — peers like Open WebUI call OCU as an MCP client; they live in their own repos.
-- **Hosted LLM serving** — model-neutral by construction; customer plugs in their model of choice over MCP tool-call.
+- **Hosted LLM serving, model selection, and the agent loop** — the calling client owns all three. If a sandbox tool needs an LLM, it reaches it as one allow-listed egress endpoint, not through OCU.
 - **Skill registry and skill-pack catalog** — v1 non-goal; `SkillProvider` abstraction reserved.
 - **Admin web UI** — v1 non-goal; CLI (`occ`) + GitOps + Grafana cover operations.
 - **AI-guardrail / prompt-content policy** — customer's AI gateway, not OCU ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2 zone 4).
