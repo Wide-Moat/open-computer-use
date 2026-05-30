@@ -28,7 +28,7 @@ Three short-lived token classes carry three different lifetimes by design. Only 
 | Generic internal token | inter-component RPC, host-side | ≤60 min | host-side services | NFR-SEC-23 |
 | Custody credential lease | per upstream resource (one bucket prefix / one API-key class) | ≤15 min | Egress trust-edge (fetched from custody at injection) | NFR-SEC-29 |
 
-Tighter scope = shorter TTL; the three numbers are independent commitments. The custody credential lease bounds how long the Egress trust-edge may hold a fetched upstream credential, not anything the guest holds — the guest holds no upstream credential.
+Tighter scope = shorter TTL; the three numbers are independent commitments. The custody credential lease bounds how long the Egress trust-edge may hold a fetched upstream credential; the guest holds no upstream credential.
 
 ## Scope ownership
 

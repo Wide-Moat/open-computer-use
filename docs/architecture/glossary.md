@@ -24,13 +24,13 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 ## Credential custody
 
-Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from custody and injects it on the outbound leg — custody issues no token to the guest. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
+Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from custody and injects it on the outbound leg. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
 ## Egress trust-edge
 
-The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, fetched from Credential custody, on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped, never bypassed.
+The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, fetched from Credential custody, on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md). Spelled `egress proxy` when referring to the component implementation; `Egress trust-edge` when referring to the zone.
 
