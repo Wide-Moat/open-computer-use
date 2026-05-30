@@ -8,9 +8,9 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
-Cuts the domain into bounded contexts and classifies each as core, supporting, or generic — the buy-vs-build decision made before any component exists. Audience is anyone deciding what we build ourselves and what we integrate.
+Cuts the domain into bounded contexts and classifies each as core, supporting, or generic — the buy-vs-build call. Audience: anyone deciding what we build and what we integrate.
 
-## 1. Why this layer is not the trust-zone layer
+## 1. Context layer vs trust zones
 
 [`02-trust-boundaries.md`](02-trust-boundaries.md) §2 draws five zones — Control plane, Credential broker, Compute plane, Egress trust-edge, Audit pipeline. Those answer "where does it run and under what protection." This layer answers a different question: "which slices of the domain carry the competitive value, and which are solved problems we integrate." A trust zone is a deploy/protection slice; a bounded context is a domain slice. They do not map one-to-one, and the mismatches are the point.
 
@@ -46,8 +46,8 @@ The diagram shows only the core-to-core domain edge; the full set of context rel
 |---|---|---|---|
 | **Agent Execution & Sandbox Lifecycle** | core | domain complexity — safely running an adversarial agent loop in-perimeter | build |
 | **Compliance Evidence & Audit Lineage** | core | domain complexity — binding every agent action into a replayable, hash-linked lineage that survives an adversarial loop (the lineage, not the OCSF schema or the SIEM sink, is the defensible part) | build |
-| **Tenancy & Isolation** | supporting | owns the T0–T3 isolation-tier selection model; a model with its own logic, not a mere deployment flag | build |
-| **Operator Access** | supporting | owns the PAM-JIT human-to-platform contract ([NFR-COMP-29](manifesto/02-nfrs.md)); specific to us, not a differentiator | build |
+| **Tenancy & Isolation** | supporting | owns the T0–T3 isolation-tier selection logic | build |
+| **Operator Access** | supporting | owns the PAM-JIT human-to-platform contract ([NFR-COMP-29](manifesto/02-nfrs.md)); bespoke to us, sits outside the value axis | build |
 | **Identity federation** | generic | relying-party to customer IdP | integrate |
 | **Secrets custody** | generic | key custody behind PKCS#11 / KMIP | integrate |
 | **Policy evaluation** | generic | externalised authorization decisions | integrate |
