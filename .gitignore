@@ -129,3 +129,20 @@ docs/future-architecture/research/layer*.md
 docs/future-architecture/research/COMPETITOR-*.md
 docs/future-architecture/research/PLAN-*.md
 docs/future-architecture/research/RESEARCH-*.md
+
+# Anthropic reverse-engineering digests — proprietary-derived material.
+# These analyse Anthropic's code/sandbox internals and must never enter the
+# public repo or any public text. Removed from tracking; stay local only.
+# Numbered per-file globs so legitimate competitor/market research
+# (01-12, 14, 18, proof-uipath-*, advisor-*, bank-buyer, enthusiast-audience,
+# widemoat-thesis-advisor) under research/ remains tracked.
+docs/future-architecture/research/13-*.md
+docs/future-architecture/research/15-*.md
+docs/future-architecture/research/16-*.md
+docs/future-architecture/research/17-*.md
+docs/future-architecture/research/19-*.md
+docs/future-architecture/research/20-*.md
+docs/future-architecture/research/21-*.md
+docs/future-architecture/research/22-*.md
+docs/future-architecture/research/23-*.md
+docs/future-architecture/research/proof-anthropic-*.md

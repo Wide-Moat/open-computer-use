@@ -118,5 +118,5 @@ The mapping is policy held in L4 config (DB-backed in Phase 6+). Admin UI edits 
 
 ## Source
 
-- [`sandboxd/docs/architecture.md`](../../../sandboxd/docs/architecture.md) (template patterns)
+- Internal design notes (template patterns)
 - [`kubernetes-sigs/agent-sandbox`](https://github.com/kubernetes-sigs/agent-sandbox) — `SandboxTemplate` CRD basis

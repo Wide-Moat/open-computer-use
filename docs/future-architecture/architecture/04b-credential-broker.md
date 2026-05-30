@@ -3,7 +3,7 @@
 
 # 04b — Credential Broker
 
-> The host-side process that holds **real** cloud credentials so the sandbox guest never sees them. Distilled from the `rclone-filestore` precedent (Anthropic's managed sandbox, observed via the `:9112` broker pattern).
+> The host-side process that holds **real** cloud credentials so the sandbox guest never sees them. Follows the industry-observed FUSE-filestore-over-loopback broker pattern.
 >
 > **Phase placement.** Foundations in Phase 4 (secret broker section of [07-security.md](./07-security.md)); deployment-topology decisions referenced here. Final shape locked when Phase 4 ships.
 
@@ -18,13 +18,14 @@ The broker pattern: a trusted daemon outside the guest holds the real keys, acce
 
 ```text
 [ guest (untrusted) ]                            [ trust boundary ]
-  rclone-filestore  ── HTTP/localhost:9112 ───►  broker (host-side)
-   (scoped JWT,                                    (real GCS/S3/API creds,
-    filesystem_id,                                 SigV4 / x-api-key signing,
-    NO secrets)                                    TLS origination outbound)
+  FUSE filestore   ── HTTP/localhost:9112 ───►  broker (host-side)
+   client                                          (real GCS/S3/API creds,
+   (scoped JWT,                                    SigV4 / x-api-key signing,
+    filesystem_id,                                 TLS origination outbound)
+    NO secrets)
                                                        │
                                                        ▼
-                                                GCS / S3 / Anthropic API
+                                                GCS / S3 / model API
 ```
 
 ## Two planes, two mechanisms
@@ -91,11 +92,11 @@ The microVM tiers **strengthen** the broker pattern: guest kernel escape (the mo
 
 ### Localhost ergonomics over a non-local channel: the vsock shim
 
-Application code (`rclone-filestore`, custom backends) assumes `localhost:9112`. To preserve that ergonomics on a microVM tier without baking vsock awareness into every caller:
+Application code (FUSE filestore client, custom backends) assumes `localhost:9112`. To preserve that ergonomics on a microVM tier without baking vsock awareness into every caller:
 
 ```text
 GUEST (Firecracker):
-  rclone-filestore  →  127.0.0.1:9112        ← caller thinks it's local
+  FUSE filestore client  →  127.0.0.1:9112    ← caller thinks it's local
         └── vsock-shim: listens on 127.0.0.1:9112,
             forwards to vsock(host CID, port 9112)    ← dumb bridge, NO secrets
 
@@ -103,7 +104,7 @@ GUEST (Firecracker):
 
 HOST:
   vsock-listener :9112
-        └── broker (real creds) → S3 / Anthropic / GCS
+        └── broker (real creds) → S3 / model API / GCS
 ```
 
 The shim is a **dumb forwarder** — it holds no keys, runs no policy, knows no JWTs. Implementations: `socat VSOCK-CONNECT ... TCP-LISTEN:9112` for prototyping, or a tiny static Rust/Go binary in the L1 image for production. The illusion of "localhost broker" is independent of whether the host runs one shared broker or broker-per-VM — pick the multi-tenancy posture separately.
@@ -128,13 +129,13 @@ The `filesystem_id` JWT claim is what makes one session's filestore invisible to
 - The JWT names the `filesystem_id` it's authorized for; the broker refuses any path outside that prefix.
 - Cross-session reads are not "guarded" — they're impossible to express because the JWT cannot name another session's `filesystem_id`.
 
-This is the design lever that lets per-session FUSE mounts (`rclone-filestore:claude_chat_<SESSION_ID>:/path` style) work without per-session credentials in the guest.
+This is the design lever that lets per-session FUSE mounts (`filestore:session_<SESSION_ID>:/path` style) work without per-session credentials in the guest.
 
 ## Open questions (resolve before Phase 4 ships)
 
 - **Issuer of the scoped JWT.** L4? Per-session minting? Where the signing key lives and rotates. **This is the gating decision** — the JWT is the only barrier between "the guest asked" and "the broker spent a real key." Resolve first.
 - **JWT binding to vsock CID.** Either embed CID in claims (broker verifies channel CID == claim CID — defense in depth) or rely purely on the unforgeable CID (simpler).
-- **FUSE mount vs HTTP API only.** The reference (`rclone-filestore`) uses FUSE; some workloads only need the HTTP CRUD. Phase 4 ships HTTP first; FUSE-in-guest behind a feature flag.
+- **FUSE mount vs HTTP API only.** The FUSE client path uses a mount; some workloads only need the HTTP CRUD. Phase 4 ships HTTP first; FUSE-in-guest behind a feature flag.
 - **Upstream set on day one.** S3 only? Plus Anthropic Files API? Plus GCS? Start minimal — each upstream is a new attack surface.
 - **Physical backend.** MinIO (PoC), AWS S3, OVH Object Storage. Path-style vs virtual-hosted for S3-compatible — broker normalizes.
 
@@ -149,7 +150,4 @@ This is the design lever that lets per-session FUSE mounts (`rclone-filestore:cl
 
 ## Source
 
-- `sandboxd/vm-anthropic/credential-broker-spec.md` — distilled spec from the observed `rclone-filestore` + `:9112` pattern.
-- `sandboxd/vm-anthropic/anthropic sandbox internals 2.md` — surrounding architecture.
-- `sandboxd/vm-anthropic/sandbox-security-docs.zip` → `sandbox-security-teardown.md` § 2.6 (two-planes-of-identity argument).
-- [`research/22-anthropic-firecracker-microvm-internals-observed.md`](../research/22-anthropic-firecracker-microvm-internals-observed.md) Layer 4 (no-S3-keys rule).
+- Internal design notes — credential-broker spec, the two-planes-of-identity argument, and the no-S3-keys-in-the-guest rule.

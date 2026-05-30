@@ -16,14 +16,14 @@ Rules:
 ## DN-1 — Substrate-independent egress, identity & secret-broker design
 
 > Owning phases: Phase 4 (secret broker), Phase 6 (control plane), Phase 8 (egress proxy).
-> Derived from the Anthropic microVM observations in [`research/22`](./research/22-anthropic-firecracker-microvm-internals-observed.md) and [`research/23`](./research/23-anthropic-microvm-execution-network-secrets-observed.md).
+> Derived from internal microVM design notes.
 > Status: **candidate.** Pending Phase 4/6/8 research + owner sign-off.
 
 **Goal.** One design for egress control, connectivity/identity, and secret handling that holds across all three deployment substrates — Docker Compose PoC, Kubernetes, microVM — as *one invariant with thin per-substrate enforcement*, not three separate designs.
 
 ### 1. One egress invariant, three thin wrappers
 
-Invariant: **default-deny + allowlist-on-connect** (this is P1 from `research/23` — enforce against the resolved IP + TLS SNI, never the DNS name).
+Invariant: **default-deny + allowlist-on-connect** — enforce against the resolved IP + TLS SNI, never the DNS name.
 
 | Substrate | Enforcement binding |
 |---|---|
@@ -35,7 +35,7 @@ SNI-based allowlisting implementations to evaluate at Phase 8: HAProxy `req.ssl_
 
 ### 2. "Internet, not intranet"
 
-The egress filter must deny RFC1918 + link-local + cloud metadata (`169.254.169.254`), and **must not forget IPv6** (`fc00::/7`, `fe80::/10`). This is P2 from `research/23` — a sandbox that can reach the internet must still not reach the deployment's internal network or the host's metadata endpoint.
+The egress filter must deny RFC1918 + link-local + cloud metadata (`169.254.169.254`), and **must not forget IPv6** (`fc00::/7`, `fe80::/10`). A sandbox that can reach the internet must still not reach the deployment's internal network or the host's metadata endpoint.
 
 ### 3. Connectivity + identity
 
@@ -45,7 +45,7 @@ For the cases where a sandbox legitimately needs an *internal* service, do not w
 
 A **broker-gateway lives outside the sandbox.** The workload receives a per-session token; the real `ANTHROPIC_API_KEY` exists only on the gateway. Claude Code (and any model client) is pointed at the gateway via `ANTHROPIC_BASE_URL`. **LiteLLM** sits *behind* the gateway as a token-accounting / usage-metering layer — **not** as the auth or RBAC layer.
 
-This is P3 from `research/23` expressed as our own component. It aligns with the [`07-security.md`](./architecture/07-security.md) secret broker (Phase 4) and with the FD-passing hardening philosophy in [`research/17`](./research/17-anthropic-claude-code-remote-env-observed.md) §3: a compromised sandbox can leak at most a scoped, short-lived session token, never the long-lived provider key.
+It aligns with the [`07-security.md`](./architecture/07-security.md) secret broker (Phase 4) and with an FD-passing hardening philosophy: a compromised sandbox can leak at most a scoped, short-lived session token, never the long-lived provider key.
 
 ### 5. Real RBAC
 

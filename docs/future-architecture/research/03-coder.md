@@ -38,7 +38,7 @@
 
 - **Where.** `coderd/audit.go:1-100`. Field catalog: `enterprise/audit/table.go`. Queries: `coderd/database/queries/auditlogs.sql`.
 - **What.** `audit_logs` rows carry structured JSON diffs (before/after) per field. Each field declared `ActionTrack` | `ActionIgnore` | `ActionSecret` — secrets never serialized.
-- **Why for us.** Phase 6 + 9. Same DB as system → no sync issues. Field-level sensitivity = mechanical enforcement of [pattern 10 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md) (never log verbatim).
+- **Why for us.** Phase 6 + 9. Same DB as system → no sync issues. Field-level sensitivity = mechanical enforcement of our cross-cutting pattern 10 (never log verbatim).
 - **Skip.** Real-time export to Splunk/DataDog (Phase 8 may add via separate sink), enterprise retention policies. Start DB-only.
 
 ## 5. Workspace lifecycle — provisioner job abstraction
