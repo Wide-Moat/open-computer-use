@@ -105,25 +105,25 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §3 / §8.1 / §10
 
 ## Bounded context
 
-A slice of the domain with its own consistent model and language. Distinct from a trust zone ([`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 — a deploy / protection slice): a bounded context answers "which domain model is consistent here," a trust zone answers "where does it run and under what protection." The two do not map one-to-one. Classified core (built in-house, carries competitive value), supporting (built, not differentiating), or generic (integrated, not built).
+A slice of the domain with its own consistent language and rules. Distinct from a trust zone ([`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 — a deploy / protection slice): a bounded context answers "which domain language is consistent here," a trust zone answers "where does it run and under what protection." The two do not map one-to-one. Classified core (built in-house, carries competitive value), supporting (built, not differentiating), or generic (integrated, not built). ("Model" in this repo always means the LLM — never the DDD sense; this glossary uses "domain" / "language" instead.)
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
 ## Anti-corruption layer
 
-A translation boundary that keeps an external model from leaking into a context's own model. Lets a generic integration (customer IdP, secrets store, policy engine) be swapped without changing the core domain model. Spelled out in full; not abbreviated to "ACL" in diagrams, which collides with Access Control List.
+A translation boundary that keeps an external vendor's domain from leaking into a context's own. Lets a generic integration (customer IdP, secrets store, policy engine) be swapped without changing the core's domain. Spelled out in full; not abbreviated to "ACL" in diagrams, which collides with Access Control List.
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
 ## Published Language
 
-A shared, documented schema two contexts agree on at their boundary; the emitter conforms to the schema, not to the consumer's internals. The OCSF event between Agent Execution and Compliance Evidence is the canonical instance ([OCSF](#ocsf)). Distinct from Conformist, where one context accepts an upstream's model without negotiation (the MCP authorization spec).
+A shared, documented schema two contexts agree on at their boundary; the emitter conforms to the schema, not to the consumer's internals. The OCSF event between Agent Execution and Compliance Evidence is the canonical instance ([OCSF](#ocsf)). Distinct from Conformist, where one context accepts an upstream's contract without negotiation (the MCP authorization spec).
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
 ## Customer/Supplier
 
-An upstream/downstream relationship where the downstream's needs shape the upstream's contract through negotiation — distinct from Conformist (no negotiation) and Anti-corruption layer (defensive translation). The Operator → Agent Execution PAM-JIT path is the instance: the operator's access needs are met by a negotiated contract, not by adopting an external model wholesale.
+An upstream/downstream relationship where the downstream's needs shape the upstream's contract through negotiation — distinct from Conformist (no negotiation) and Anti-corruption layer (defensive translation). The Operator → Agent Execution PAM-JIT path is the instance: the operator's access needs are met by a negotiated contract, not by adopting an external interface wholesale.
 
 Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md).
 
