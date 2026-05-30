@@ -134,7 +134,7 @@ Component-spec wiring lands under [`components/`](./components/) per [PROCESS.md
 
 ## 8. Workload-identity floor
 
-Token taxonomy is canonical here and matches [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md) §"Token TTL taxonomy" verbatim. Three classes, each named, each with its own scope, TTL, signer, and consumer. Only the session JWT reaches the guest.
+Token taxonomy is canonical here; the three classes, their scopes, and their TTLs match [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md) §"Token TTL taxonomy". Each is named with its own scope, TTL, signer, and consumer. Only the session JWT reaches the guest.
 
 | Token class | Scope | TTL | Consumer | §02 anchor |
 |---|---|---|---|---|
