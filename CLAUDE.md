@@ -198,3 +198,19 @@ Applies to every file under `docs/`, every `README.md`, every ADR.
 - Step-by-step copy-paste for user-facing procedures: "do this, then this, verify". No scattered KNOWN-BUGS-style fragments.
 - English only. No emoji unless the user explicitly requests it.
 - When in doubt, delete. Shorter is better if no fact is lost.
+
+### Slop patterns (structural, not just vocabulary)
+
+The banned-vocabulary list catches words. These catch the structure that reads as AI-generated even when every word is clean. Reviewers and the doc-slop agent (`.claude/agents/doc-slop-reviewer.md`) check these on every new architecture doc.
+
+- **Headings name content, never frame it.** A heading states what the section *is*, as a noun phrase. Never "Why this is not X", "Understanding Y", "A note on Z", "How we think about W". These are conversational tells.
+  - Bad: `## Why this layer is not the trust-zone layer` → Good: `## Context vs trust zone`
+  - Bad: `## Understanding the broker` → Good: `## Credential broker`
+- **The purpose line states purpose once.** The mandated first sentence says what the doc is and for whom — once. Do not follow it with a second sentence that restates the audience in other words.
+  - Bad: "Cuts the domain into contexts … the call made before any component exists. Audience is anyone deciding what we build vs integrate." (the tail restates the opening)
+  - Good: "Cuts the domain into bounded contexts and classifies each — the buy-vs-build call. Audience: anyone choosing what to build and what to integrate."
+- **No throat-clearing tails.** Drop "… before any component exists", "… in the modern landscape", "… as we move forward" — grand-sounding clauses that add no fact.
+- **No hedge-restatement.** Don't say a thing, then say it again softer: "X. That is to say, X." Cut the second clause.
+- **No rule-of-three padding.** "secure, scalable, and resilient" — adjective triples without a measurable referent are the loudest tell. Name one specific property or none.
+- **No "it's important to note / worth mentioning" even reworded.** If it's important, state it as a plain claim. If it isn't, cut it.
+- **Symmetry for its own sake is a smell.** Every section the same length, every list exactly three items, every paragraph the same shape — real docs are lumpy because content is lumpy. Don't pad a thin section to match a thick one.
