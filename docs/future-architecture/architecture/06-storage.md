@@ -13,7 +13,7 @@
 | **1. Image layers** | OS, runtimes, guest agent | RO | per release | OCI registry (cached on host); sealed `squashfs` block disks for the binaries / skills split once Phase 9 lands |
 | **2. Skills** | AI capability bundles (`skills/`) | RO | per release, immutable | Object store (S3) as squashfs blobs; **materialized at provisioning, not runtime** ([no hot-reload](../research/22-anthropic-firecracker-microvm-internals-observed.md#layer-5--skills-as-a-provisioning-time-concern-not-a-runtime-one)) |
 | **3. Workspace home** | `/home/assistant` per session | RW | per session, ephemeral | **CoW snapshot of golden rootfs** (qcow2 backing / dm-thin / ZFS clone) on Kata/CH; tmpfs / overlayfs on sysbox/runc. **Never PVC** (see [A37](../antipatterns.md#a37--pvc-for-sandbox-session-workspace)) |
-| **4. User data** | uploads, outputs, tool results | RW | per tenant | S3-compatible object storage, mounted via FUSE sidecar; **no S3 credentials inside the guest** ([session-token auth](../research/22-anthropic-firecracker-microvm-internals-observed.md#layer-4--credentials-identity-and-the-no-s3-keys-in-the-guest-rule)) |
+| **4. User data** | uploads, outputs, tool results | RW | per tenant | S3-compatible object storage, reached via a FUSE client speaking file-ops to a host-side storage broker; **no S3 credentials inside the guest** ([session-token auth](../research/22-anthropic-firecracker-microvm-internals-observed.md#layer-4--credentials-identity-and-the-no-s3-keys-in-the-guest-rule)) |
 
 ## Tier 1 — Image
 
@@ -49,12 +49,11 @@ Benefits:
 
 - Three logical buckets per tenant: `uploads/` (user → sandbox), `outputs/` (sandbox → user), `tool-results/` (intermediate artifacts surfaced in UI).
 - **Backend:** S3-compatible. Production: AWS S3 / GCS / R2 / Ceph RGW. Local PoC: MinIO in `docker-compose.yml`.
-- **Mounted via FUSE sidecar** in the sandbox pod (k8s) or as a service container (Compose). **Baseline backend: `rclone mount` with VFS full cache** — production-validated in Anthropic's sandbox (see [`research/16-anthropic-production-sandbox-observed.md`](../research/16-anthropic-production-sandbox-observed.md)). Final decision locked at Phase 3 research; alternatives kept in scope for that pass:
-  - `rclone mount` — **baseline.** Most flexible, supports 70+ backends, VFS cache gives ~POSIX semantics (SQLite, random write, append, fsync all work). Known limits: hardlinks, symlinks, chmod silent-fail.
-  - `mountpoint-s3` — AWS-native, fastest, **sequential-write-only** (incompatible with atomic-file write patterns). Rejected as primary for AI-agent workloads.
-  - `geesefs` — better random-write than mountpoint-s3 but smaller backend set than rclone.
-  - `csi-rclone` / `juicefs-csi` — for k8s production once Phase 5 ships.
-- **Credentials:** short-lived STS tokens minted by the L4 secret broker per session ([07-security.md](./07-security.md)). Not static AWS keys.
+- **Broker model (the object-store credential is never in the guest).** The guest mounts a FUSE filesystem that speaks a file-operation interface to a host-side storage broker; the broker is the object-store client and signs its own backend requests. The guest never speaks the object-store protocol and never holds an STS token. This is the canonical model in [`02-trust-boundaries.md`](../../architecture/02-trust-boundaries.md) §2 zone 3 / §7.1 and [NFR-SEC-25](../../architecture/manifesto/02-nfrs.md), matched by Anthropic's `rclone-filestore` (a custom `anthropic.filestore.v1alpha` Connect-RPC fork, not stock S3-mount) and by Daytona's runner-as-S3-client volume model.
+- **Guest-side FUSE client.** A FUSE backend that speaks the broker's file-RPC — Anthropic forks rclone for this; a thin custom backend is the alternative. Stock `rclone mount` straight to S3 (70+ backends, VFS cache) is the *interim PoC shortcut* only, and only where the guest is trusted; it is not the target, because it puts the object-store credential and protocol in the guest.
+  - `mountpoint-s3` — AWS-native, fastest, **sequential-write-only**; usable behind the broker, rejected as a guest-facing primary.
+  - `geesefs` — better random-write than mountpoint-s3, smaller backend set.
+- **Backend credential:** held by the broker, never the guest. Short-lived **STS scoped-session** credentials minted per session, locked by inline session policy to the bucket-prefix the `filesystem_id` names ([07-security.md](./07-security.md)). Not static keys. The broker's backend leg traverses the Egress trust-edge allow-list-only (no TLS termination), so the request signature stays intact.
 - **Lifecycle policy** at the S3 layer replaces the current `find /tmp -mtime` cleanup cron.
 
 ## Mounts spec on the sandbox
@@ -87,7 +86,7 @@ mounts:
 | 1 | None — extract provider interface only |
 | 2 | None directly; provider learns mount specs but Docker still binds local fs |
 | 3 | MinIO into Compose; `S3_*` config; FUSE sidecar pattern; squashfs skill blobs |
-| 4 | Per-session STS tokens replace static S3 creds |
+| 4 | Storage broker holds the backend credential (per-session STS, not static keys); guest speaks file-RPC to the broker and holds only a `filesystem_id` handle |
 | 5 | K8s provider keeps Tier 3 ephemeral (tmpfs / overlayfs on sysbox); no PVC for sandbox session workspace ([A37](../antipatterns.md#a37--pvc-for-sandbox-session-workspace)); FUSE pattern carried to pods |
 | 8 | virtio-fs replaces FUSE on kata-ch (faster, kernel-level) |
 | 9 | Tier 3 = CoW snapshot of golden rootfs (qcow2 / dm-thin / ZFS) on Kata templates; ext4 `resuid=65534` per-VM ceiling; sealed `squashfs` disks for binaries / system skills ([`research/22`](../research/22-anthropic-firecracker-microvm-internals-observed.md)) |
@@ -124,7 +123,7 @@ Implication for the release pipeline (Phase 10): tooling produces both an OCI im
 
 - **No RWX (ReadWriteMany).** Single-writer patterns only. Avoids EFS/Filestore complexity and consistency surprises.
 - **No proprietary CSI drivers.** S3-compatible API only.
-- **No custom storage gateway.** Use existing FUSE / virtio-fs / CSI building blocks.
+- **No custom storage *transport*.** The mount substrate uses existing FUSE / virtio-fs / CSI building blocks — we do not write a block protocol. The storage *broker* (credential custody + object-store client + per-session scope) is a deliberate component, not a transport; it is the canonical model, not a workaround ([`02-trust-boundaries.md`](../../architecture/02-trust-boundaries.md) §2 zone 3).
 - **No PVC for the sandbox session workspace (Tier 3).** Locked decision — see [A37](../antipatterns.md#a37--pvc-for-sandbox-session-workspace). CoW snapshot at the storage layer replaces it. PVC remains the right primitive for stateful platform services (PostgreSQL, Redis, Prometheus, etcd) — none of which our sandbox runtime hosts.
 - **No S3 credentials inside the sandbox guest.** Tier 4 Phase 4 target end-state: guest carries a `filesystem_id` session token, broker / storage proxy holds S3 keys server-side ([`research/22` §4](../research/22-anthropic-firecracker-microvm-internals-observed.md#layer-4--credentials-identity-and-the-no-s3-keys-in-the-guest-rule)).
 - **No skill hot-reload.** Skills materialize at provisioning, are immutable for the lifetime of the VM ([`research/22` §5](../research/22-anthropic-firecracker-microvm-internals-observed.md#layer-5--skills-as-a-provisioning-time-concern-not-a-runtime-one)).

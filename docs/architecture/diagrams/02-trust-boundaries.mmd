@@ -35,7 +35,7 @@ flowchart LR
     end
 
     subgraph STORE[Storage broker]
-        SB[host-side storage broker<br/>holds the storage backend credential<br/>maps session resource handle to backend<br/>guest mounts via the broker, holds no backend key]
+        SB[host-side storage broker<br/>guest speaks file ops, not the object-store protocol<br/>broker is the object-store client · signs its own requests<br/>holds the backend credential · guest holds no backend key<br/>content inspection here on plaintext, before signing]
     end
 
     subgraph COMPUTE[Compute plane]
@@ -72,7 +72,7 @@ flowchart LR
     %% broker's own backend traffic is authorized at the Egress trust-edge like
     %% any upstream. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
     SB -->|"mount · session resource handle only<br/>no backend credential in guest<br/>NFR-SEC-25"| VM
-    SB -->|"backend traffic<br/>authorized at egress like any upstream"| PROXY
+    SB -->|"backend traffic · broker-signed<br/>allow-list-only, no TLS termination<br/>signature stays intact"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -84,7 +84,7 @@ flowchart LR
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>no credential in request<br/>NFR-SEC-27"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| LLM
-    PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| OBJ
+    PROXY -->|"object-store leg is the broker's, not the guest's<br/>broker-signed · allow-list-only, no TLS termination<br/>signature intact · fail-closed"| OBJ
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
