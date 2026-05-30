@@ -25,8 +25,8 @@ flowchart LR
         ORCH[orchestrator + RPC<br/>MCP server<br/>session lifecycle]
     end
 
-    subgraph BROKER[Credential broker]
-        BR[per-VM secrets-injection<br/>HOST-side<br/>loopback / vsock / UDS<br/>delegated STS on full shelf]
+    subgraph BROKER[Credential custody]
+        BR[host-side credential store<br/>rotation · delegated STS on full shelf<br/>feeds the egress edge at injection<br/>no guest-facing interface]
     end
 
     subgraph COMPUTE[Compute plane]
@@ -49,19 +49,20 @@ flowchart LR
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
     ORCH -->|"Generic internal token<br/>host-side RPC<br/>session policy + scope<br/>TTL ≤60 min"| BR
-    ORCH -->|"Egress JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
-    BR -->|"Broker scoped-JWT<br/>vsock / UDS / loopback<br/>TTL ≤15 min"| VM
+    ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤4h"| VM
+    BR -->|"credential lease<br/>fetched at injection<br/>TTL ≤15 min"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
-    %% Compute plane gets a direct denylist check (Egress JWT TTL ≤4h needs it);
-    %% Egress trust-edge revoke is indirect via Credential broker scoped-JWT
-    %% non-reissue (TTL ≤15 min caps propagation), so no direct ORCH→PROXY edge.
+    %% Compute plane gets a direct denylist check (Session JWT TTL ≤4h needs it);
+    %% Egress trust-edge revoke = the edge stops injecting upstream auth for a
+    %% revoked session; the credential-lease TTL (≤15 min) caps how long an
+    %% already-fetched credential survives, so no direct ORCH→PROXY edge.
     ORCH -.->|"revoke (denylist check)<br/>NFR-SEC-04 ≤5 min"| VM
 
     %% ─── egress edges ───
-    VM -->|"single outbound path<br/>network-bound identity<br/>NFR-SEC-27"| PROXY
-    PROXY -->|"strict TLS validation<br/>broker-issued credential<br/>fail-closed"| LLM
-    PROXY -->|"strict TLS validation<br/>broker-issued credential<br/>fail-closed"| OBJ
+    VM -->|"single outbound path<br/>no credential in request<br/>NFR-SEC-27"| PROXY
+    PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| LLM
+    PROXY -->|"strict TLS validation<br/>upstream auth injected from custody<br/>fail-closed"| OBJ
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
