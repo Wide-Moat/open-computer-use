@@ -1,0 +1,58 @@
+%% SPDX-License-Identifier: FSL-1.1-Apache-2.0
+%% Copyright (c) 2025 Open Computer Use Contributors
+%% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
+%% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
+%% Seven containers across six Layer-3 trust zones: the Control plane splits into an agent-facing
+%% MCP gateway and an operator/lifecycle API (the kill-switch lives only on the latter); the other
+%% five zones map 1:1. Substrate differs by shelf (see 05-c4-container.md §5); the count does not.
+%% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
+
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+
+    %% ─── external (drawn for orientation; contracts in 03-c4-context.md §4) ───
+    PEER["MCP-speaking caller<br/>(runs the loop)"]:::ext
+    OPER["Operator<br/>(PAM-JIT human)"]:::ext
+    UPSTREAM["Outbound endpoints<br/>(LLM · object store · internal API)"]:::ext
+    SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
+
+    %% ─── containers inside the system under design ───
+    subgraph OCU["Open Computer Use"]
+        MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
+        CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
+        CUST["Credential custody<br/>upstream creds · rotation · STS · host-side"]
+        STORE["Storage broker<br/>object-store client · signs own requests<br/>serves the guest mount"]
+        VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
+        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth from custody"]
+        AUD["Audit pipeline<br/>durable bus · hash-chained store"]
+    end
+
+    %% ─── inbound (two distinct surfaces of the Control plane) ───
+    PEER -->|"MCP authz spec"| MCPG
+    OPER -->|"PAM-JIT credential · operator-only ingress"| CTRL
+    MCPG -->|"session create / status<br/>service identity"| CTRL
+
+    %% ─── control + storage reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
+    CTRL -->|"Session JWT bound to container_name<br/>rotated · host dials guest"| VM
+    STORE -->|"mount · resource handle (filesystem_id)"| VM
+
+    %% ─── egress: guest sends unauthenticated; on injection-needing legs the edge
+    %%     pulls a custody lease and injects (MITM mode only — see 05 §3, §6) ───
+    VM -->|"single outbound · no credential in request"| EDGE
+    CUST -->|"credential lease<br/>fetched at injection (MITM legs)"| EDGE
+    STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
+    EDGE -->|"injection-needing leg: upstream auth injected (MITM mode)"| UPSTREAM
+
+    %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
+    MCPG -->|OCSF| AUD
+    CTRL -->|OCSF| AUD
+    CUST -->|OCSF| AUD
+    STORE -->|OCSF| AUD
+    VM -->|OCSF| AUD
+    EDGE -->|OCSF| AUD
+    AUD -.->|"OCSF bridge<br/>full shelf"| SINK
+
+    %% ─── styling (project palette) ───
+    classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
+    classDef extOpt fill:#fdecea,stroke:#c0392b,stroke-dasharray: 5 5;
+    style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px;
