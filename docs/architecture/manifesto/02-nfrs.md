@@ -270,7 +270,7 @@ Each anti-pattern is forbidden by ≥1 row above.
 
 ## Long-form scenarios
 
-Eight scenarios are candidates for full Source / Stimulus / Response / Response-Measure treatment in a follow-up PR: NFR-SEC-01 (kill switch), NFR-SEC-06 (replay bundle), NFR-REL-01..03 (RTO/RPO trio), NFR-SEC-04 (BYOK rotation), NFR-SEC-08 (MCP allow-list), NFR-MAINT-AUDIT-SCHEMA (OCSF), NFR-SEC-26 (internal service-to-service auth), NFR-FLEX-12 (customer-tenant Compute plane). Tracked: `arch/long-form-nfr-scenarios`.
+Eight scenarios are candidates for full Source / Stimulus / Response / Response-Measure treatment in a follow-up PR: NFR-SEC-01 (kill switch), NFR-SEC-06 (replay bundle), NFR-REL-01..03 (RTO/RPO trio), NFR-SEC-04 (BYOK rotation), NFR-SEC-08 (egress allow-list), NFR-MAINT-AUDIT-SCHEMA (OCSF), NFR-SEC-26 (internal service-to-service auth), NFR-FLEX-12 (customer-tenant Compute plane). Tracked: `arch/long-form-nfr-scenarios`.
 
 ## Open questions
 
