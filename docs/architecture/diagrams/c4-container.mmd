@@ -43,7 +43,7 @@ flowchart LR
     STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
     EDGE -->|"injection-needing leg: upstream auth injected (MITM mode)"| UPSTREAM
 
-    %% ─── audit fan-in (every container emits OCSF) ───
+    %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
     MCPG -->|OCSF| AUD
     CTRL -->|OCSF| AUD
     CUST -->|OCSF| AUD
