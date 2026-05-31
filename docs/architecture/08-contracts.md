@@ -79,7 +79,7 @@ The control-plane RPC rule (breaking = major version + deprecation header) is ca
 
 ## 5. Schema artifacts
 
-This overview is the map; the schema files under `contracts/` own the field-level types. Five surfaces are drafted; the rest are not yet built.
+This overview is the map; the schema files under `contracts/` own the field-level types. Six schema files are drafted (the storage surface carries three — mount config, south-face file-op RPC, north-face file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
 
 Drafted (not merged):
 
