@@ -25,6 +25,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
 | File-operation mount | Storage broker → Session sandbox | file-operation interface — HTTP+JSON mount config (`filesystem_id`, broker-signed lease) over a FUSE/virtio-fs/9p substrate | define | NFR-SEC-25 |
+| File / artifact data plane (north face) | Data-plane client → Storage broker (north face) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getMetadata/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
 | Lease pull | Credential custody → Egress trust-edge | Protobuf/gRPC | define | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
 | Broker backend leg | Storage broker → Egress trust-edge → backend | external backend protocol | conform | NFR-SEC-16 |
@@ -37,14 +38,14 @@ Protobuf/gRPC is the unary session set-up and lease legs only (create, route, de
 
 The broker backend leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend's API or the log operator's Merkle-head signing.
 
-The transport substrate under each into-sandbox leg (TCP / UDS / vsock for the exec channel; FUSE / virtio-fs / 9p for the mount) is a deployment-overlay and component-spec choice, not a contract (NFR-SEC-26, NFR-SEC-25). What the contract fixes is channel direction, per channel: the control/exec channel is host-dialled — the host opens it and a non-host peer is rejected at accept (NFR-SEC-43); the outbound leg runs the opposite way, guest-out and intercepted at the edge under egress policy (NFR-SEC-27).
+The Storage broker has two faces on one client: the south mount (above) and the north file/artifact data plane, served on a dedicated file/UI ingress, not the MCP-tool-call listener (NFR-SEC-78). The transport substrate under each into-sandbox leg (TCP / UDS / vsock for the exec channel; FUSE / virtio-fs / 9p for the mount) is a deployment-overlay and component-spec choice, not a contract (NFR-SEC-26, NFR-SEC-25). What the contract fixes is channel direction, per channel: the control/exec channel is host-dialled — the host opens it and a non-host peer is rejected at accept (NFR-SEC-43); the outbound leg runs the opposite way, guest-out and intercepted at the edge under egress policy (NFR-SEC-27).
 
 ## 2. Format choice
 
 Five formats cover every surface OCU defines; the choice follows the boundary shape, not preference.
 
 - **MCP JSON-Schema (over JSON-RPC 2.0)** — the agent tool surface. The protocol fixes the format; OCU does not choose it. Tool definitions carry JSON Schema; an embedded schema defaults to JSON Schema 2020-12 and may declare another dialect with `$schema`, so the validator honours the declared dialect and falls back to 2020-12 ([MCP spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
-- **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke). SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
+- **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke) and the north-face file/artifact data plane (upload/list/download/getMetadata/preview-render), an HTTP+JSON surface served on a dedicated ingress. SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
 - **Protobuf/gRPC** — unary internal RPC between OCU containers, where both ends version together: session set-up and lease pull. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy.
 - **WebSocket** — the bidirectional exec/PTY+CDP surface, one socket per session. A PTY carries interleaved stdin/stdout/stderr bytes plus in-band resize and signal control, so the frame is tagged-JSON control alongside raw binary stream frames, not a unary call (NFR-IC-03). gRPC fits request/response, not a live byte stream, which is why this surface is WebSocket and the set-up RPC is not.
 - **AsyncAPI 3.0** — one-directional decoupled event fan-in to the Audit pipeline and fan-out to SIEM. Payload is the OCSF Published Language; AsyncAPI names the channel, OCSF types the event ([AsyncAPI 3.0](https://www.asyncapi.com/docs/concepts/asyncapi-document/define-payload)).
@@ -60,6 +61,13 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |
 | Bounded payload | gateway/REST/gRPC bound body size, array length, and object depth at the closed schema; the broker and exec transport cap max-message/max-object | NFR-SEC-51, NFR-SEC-46 |
+| Bounded north-face inbound body | reject a body above the configured ceiling (default ≤50 MiB) pre-buffer, never partially staged; per-validated-caller op/byte rate limits on a dedicated file/UI ingress | NFR-SEC-78 |
+| Archive validation | reject pre-extraction on uncompressed-total / entry-count / traversal / symlink ceilings | NFR-SEC-80 |
+| Content classification | resolve content type on ingest (magic-byte + declared media type), record before mount-visibility; pre-stage deny on a policy-denied type | NFR-SEC-81 |
+| Embed-token verify | reject any embed token not signature-valid, not naming this surface in audience, or past `exp` (`exp ≤ 120 s`); no OCU upstream secret crosses to the browser | NFR-SEC-82 |
+| Frame-ancestors allowlist | every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (header-only, default `'none'`) | NFR-SEC-83 |
+| First-party session + CSRF | a state-mutating request requires a server-validated CSRF token; a missing/invalid session is 401 with no anonymous fallback | NFR-SEC-84 |
+| File-activity audit (north) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline, gateway-authored, fail-closed | NFR-SEC-79 |
 
 The MCP edge carries the same five through a two-tier error model: a protocol error (`JSON-RPC error{code,message}`) never reaches the model and carries a reason code only; a tool-execution error (`result.isError: true` + content) reaches the model with sanitized output. Both are bounded by NFR-SEC-51.
 
@@ -77,7 +85,8 @@ Drafted (not merged):
 
 - `contracts/mcp/2025-06-18/ocu-constraints.schema.json` — the MCP conform profile.
 - `contracts/exec/exec-channel.schema.json` — the exec/PTY WebSocket envelope.
-- `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount config (the file-op message bodies are tbd).
+- `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the south-face mount config and file-op RPC (the file-op message bodies are tbd).
+- `contracts/storage/file-artifact-api.schema.json` — the north-face file/artifact data plane (upload/list/download/getMetadata/preview-render + the embed-token/CSP/CSRF envelope). Per-operation bodies are tbd, like the south face; the embed-token binding claim ([#217](https://github.com/Wide-Moat/open-computer-use/issues/217)) and preview-render parser isolation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) are tracked open items.
 - `contracts/audit/audit-fanin.asyncapi.yaml` — the OCSF fan-in (the compute-metering and saturation payloads are tbd, [#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).
 
 Not built:

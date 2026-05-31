@@ -12,6 +12,7 @@ flowchart LR
     OPER["Operator (PAM-JIT)"]:::ext
     UPSTREAM["Outbound endpoints"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
+    DPC["Data-plane client<br/>(SPA / headless)"]:::ext
 
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway"]
@@ -28,6 +29,7 @@ flowchart LR
     MCPG -->|"Protobuf / gRPC"| CTRL
     CTRL -->|"WebSocket (PTY+CDP)"| VM
     STORE -->|"file-op mount (HTTP+JSON)"| VM
+    DPC -->|"OpenAPI 3.1 (file/artifact API)"| STORE
     VM -->|"network policy"| EDGE
     CUST -->|"Protobuf / gRPC"| EDGE
     STORE -->|"network policy"| EDGE
