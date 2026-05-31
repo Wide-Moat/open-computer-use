@@ -121,6 +121,12 @@ Per-session session-identity token issued by the Control plane to the guest agen
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §5 / §8 / §8.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-10/23/29.
 
+## Generic internal token
+
+Host-side service-to-service RPC token authenticating one internal component to another (Control plane ↔ Credential custody ↔ Audit pipeline), TTL ≤ 60 min. It never reaches the guest and carries no operator scope or upstream credential. Distinct from the [Session JWT](#session-jwt) (guest-held, per session) and the custody credential lease (per upstream resource, held by the Egress trust-edge).
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §8, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-23.
+
 ## OCSF
 
 Open Cybersecurity Schema Framework, v1.x JSON. The canonical audit-event schema we emit on the Audit pipeline. Bridges to SIEM transforms emit CEF / Elastic ECS / Chronicle UDM downstream.
