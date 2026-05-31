@@ -333,7 +333,9 @@
               "enum": ["allow", "deny"]
             },
             "x_deny_reason": { "$ref": "#/$defs/DenyReason" }
-          }
+          },
+          "if": { "properties": { "disposition_id": { "const": "deny" } }, "required": ["disposition_id"] },
+          "then": { "required": ["x_deny_reason"] }
         }
       }
     },
