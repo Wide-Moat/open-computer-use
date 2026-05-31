@@ -22,9 +22,9 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Operator REST | Operator → Control / operator API | OpenAPI 3.1 | define | — |
 | IdP assertion | Customer IdP → Control / operator API | SAML/OIDC | relying-party | NFR-COMP-29 |
 | SOAR revoke (inbound) | SOAR → Control / operator API | OpenAPI 3.1 | define | NFR-SEC-01 |
-| Session RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
-| Exec / PTY+CDP | Control / operator API → Session sandbox | Protobuf/gRPC | define | NFR-IC-03, NFR-SEC-43 |
-| File-operation mount | Storage broker → Session sandbox | Protobuf/gRPC | define | NFR-SEC-25 |
+| Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
+| Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
+| File-operation mount | Storage broker → Session sandbox | file-operation interface — HTTP+JSON mount config (`filesystem_id`, broker-signed lease) over a FUSE/virtio-fs/9p substrate | define | NFR-SEC-25 |
 | Lease pull | Credential custody → Egress trust-edge | Protobuf/gRPC | define | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
 | Broker backend leg | Storage broker → Egress trust-edge → backend | external backend protocol | conform | NFR-SEC-16 |
@@ -33,15 +33,20 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
+Protobuf/gRPC is the session set-up RPC only (create, route, destroy a session). The two into-sandbox legs are different surfaces: the exec stream is a WebSocket and the file-operation mount is an HTTP+JSON config plus a file-op message set — neither is gRPC.
+
 The broker backend leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend's API or the log operator's Merkle-head signing.
+
+The transport substrate under each into-sandbox leg (TCP / UDS / vsock for the exec channel; FUSE / virtio-fs / 9p for the mount) is a deployment-overlay and component-spec choice, not a contract (NFR-SEC-26, NFR-SEC-25). What the contract fixes is channel direction, per channel: the control/exec channel is host-dialled — the host opens it and a non-host peer is rejected at accept (NFR-SEC-43); the outbound leg runs the opposite way, guest-out and intercepted at the edge under egress policy (NFR-SEC-27).
 
 ## 2. Format choice
 
-Four formats cover every surface OCU defines; the choice follows the boundary shape, not preference.
+Five formats cover every surface OCU defines; the choice follows the boundary shape, not preference.
 
 - **MCP JSON-Schema (over JSON-RPC 2.0)** — the agent tool surface. The protocol fixes the format; OCU does not choose it. Tool definitions carry JSON Schema; an embedded schema defaults to JSON Schema 2020-12 and may declare another dialect with `$schema`, so the validator honours the declared dialect and falls back to 2020-12 ([MCP spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
 - **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke). SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
-- **Protobuf/gRPC** — internal RPC between OCU containers, where both ends version together. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy.
+- **Protobuf/gRPC** — unary internal RPC between OCU containers, where both ends version together: session set-up and lease pull. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy.
+- **WebSocket** — the bidirectional exec/PTY+CDP surface, one socket per session. A PTY carries interleaved stdin/stdout/stderr bytes plus in-band resize and signal control, so the frame is tagged-JSON control alongside raw binary stream frames, not a unary call (NFR-IC-03). gRPC fits request/response, not a live byte stream, which is why this surface is WebSocket and the set-up RPC is not.
 - **AsyncAPI 3.0** — one-directional decoupled event fan-in to the Audit pipeline and fan-out to SIEM. Payload is the OCSF Published Language; AsyncAPI names the channel, OCSF types the event ([AsyncAPI 3.0](https://www.asyncapi.com/docs/concepts/asyncapi-document/define-payload)).
 
 ## 3. Contract-enforced mitigations
@@ -50,7 +55,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 
 | Mitigation | Property the contract must carry | NFR |
 |---|---|---|
-| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §3](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects custody credentials (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
+| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §8](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects custody credentials (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
 | Bounded error verbosity | caller gets a stable reason code; `error.message`/`error.data` leak no internal topology or stack | NFR-SEC-51 |
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |

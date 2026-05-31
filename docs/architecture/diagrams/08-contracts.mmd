@@ -26,8 +26,8 @@ flowchart LR
     PEER -->|"MCP JSON-Schema"| MCPG
     OPER -->|"OpenAPI 3.1"| CTRL
     MCPG -->|"Protobuf / gRPC"| CTRL
-    CTRL -->|"Protobuf / gRPC"| VM
-    STORE -->|"Protobuf / gRPC"| VM
+    CTRL -->|"WebSocket (PTY+CDP)"| VM
+    STORE -->|"file-op mount (HTTP+JSON)"| VM
     VM -->|"network policy"| EDGE
     CUST -->|"Protobuf / gRPC"| EDGE
     STORE -->|"network policy"| EDGE
