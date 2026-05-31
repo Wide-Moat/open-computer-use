@@ -29,11 +29,11 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
 | Broker backend leg | Storage broker → Egress trust-edge → backend | external backend protocol | conform | NFR-SEC-16 |
 | Audit fan-in / SIEM | six containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
-| SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-SEC-45 |
+| SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-COMP-27 |
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
-Protobuf/gRPC is the session set-up RPC only (create, route, destroy a session). The two into-sandbox legs are different surfaces: the exec stream is a WebSocket and the file-operation mount is an HTTP+JSON config plus a file-op message set — neither is gRPC.
+Protobuf/gRPC is the unary session set-up and lease legs only (create, route, destroy a session; pull a lease). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (Connect-RPC over HTTP/2) is a component-spec choice, not part of the contract.
 
 The broker backend leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend's API or the log operator's Merkle-head signing.
 
@@ -55,7 +55,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 
 | Mitigation | Property the contract must carry | NFR |
 |---|---|---|
-| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §8](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects custody credentials (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
+| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §3](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects custody credentials (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
 | Bounded error verbosity | caller gets a stable reason code; `error.message`/`error.data` leak no internal topology or stack | NFR-SEC-51 |
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |
@@ -69,13 +69,23 @@ Contracts evolve additively. Adding an endpoint, an optional field, a new event 
 
 The control-plane RPC rule (breaking = major version + deprecation header) is canonical in NFR-IC-04 and governs OCU's own Control/operator API and internal gRPC. The MCP gateway is a Conformist to the MCP wire contract and does not carry semver: its revision is a date string (`protocolVersion: "2025-06-18"`) negotiated on `initialize` and echoed on every HTTP request via `MCP-Protocol-Version`. A revision the peer cannot negotiate is the breaking signal — the server returns an alternate version it supports and a client that cannot accept it disconnects ([MCP lifecycle](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle)); the spec's example initialization error is `-32602` "Unsupported protocol version". This negotiation path, not an HTTP `Deprecation` header, is the deprecation mechanism NFR-IC-04 describes for that edge. Concurrency is sequential-default per session with opt-in parallelism (NFR-IC-05); PTY and CDP multiplex one WebSocket per session (NFR-IC-03).
 
-## 5. Deferred artifacts
+## 5. Schema artifacts
 
-This overview is the map. Executable artifacts are one schema file per OCU-defined surface; each is a tbd stub here.
+This overview is the map; the schema files under `contracts/` own the field-level types. Five surfaces are drafted; the rest are not yet built.
 
-- One schema file per OCU-defined surface (`contracts/mcp/2025-06-18/`, `contracts/openapi/`, `contracts/proto/`, `contracts/asyncapi/`) — status: not built. Field-level types for Tool, CallToolResult, and content blocks follow MCP revision `2025-06-18` and are defined in the MCP schema file, not restated here. [#TBD]
-- Mock / conformance servers per surface for consumer CI — status: not built. [#TBD]
-- The `SkillProvider` contract is a v1 non-goal; skills load from a customer-provided registry, so no skill-format schema ships in v1. [#TBD]
+Drafted (not merged):
+
+- `contracts/mcp/2025-06-18/ocu-constraints.schema.json` — the MCP conform profile.
+- `contracts/exec/exec-channel.schema.json` — the exec/PTY WebSocket envelope.
+- `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount config (the file-op message bodies are tbd).
+- `contracts/audit/audit-fanin.asyncapi.yaml` — the OCSF fan-in (the compute-metering and saturation payloads are tbd, [#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).
+
+Not built:
+
+- `contracts/openapi/` (operator REST + SOAR revoke) and `contracts/proto/` (session set-up + lease pull) — [#TBD].
+- The transparency-log submission envelope — [#TBD].
+- Mock / conformance servers per surface for consumer CI — [#TBD].
+- The `SkillProvider` contract is a v1 non-goal; skills load from a customer-provided registry, so no skill-format schema ships in v1.
 
 ## 6. Open questions
 

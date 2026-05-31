@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wide-moat.dev/ocu/contracts/exec/exec-channel.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0. Copyright (c) 2025 Open Computer Use Contributors. Exec/PTY WebSocket control-frame envelope (Control API -> Session sandbox). One WebSocket per session; host-dialled, non-host peers rejected at accept (NFR-IC-03, NFR-SEC-43). Text frames carry the tagged-JSON control messages below; raw stdio travels as separate binary frames announced by the StdIo* control tags (raw bytes are not JSON, so they are described structurally here, not validated). Per RFC 6455 WebSocket; control tags are an OCU-defined union.",
+
+  "title": "ExecChannelMessage",
+  "description": "A single tagged-JSON control frame on the exec WebSocket. The discriminator is the sole top-level property name (an externally-tagged union). Binary stdio frames are out of band of this schema and follow a StdIo* announce frame.",
+
+  "$defs": {
+    "ProcessId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "ContainerName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "Signal": {
+      "$comment": "A signal is either a number (1..64) or a POSIX name; bound to limit input (NFR-SEC-46). The discriminator is the message key, not this value's type.",
+      "oneOf": [
+        { "type": "integer", "minimum": 1, "maximum": 64 },
+        { "type": "string", "pattern": "^SIG[A-Z0-9]{1,12}$" }
+      ]
+    },
+    "ExitCode": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "BoundedReason": {
+      "$comment": "NFR-SEC-51: bounded error verbosity. Caller gets a stable reason code; message must not carry stack traces or internal topology. Length capped.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        },
+        "message": {
+          "$comment": "x-ocu-default: maxLength 256 is an NFR-SEC-51 default pending sign-off, not a source-pinned value; retunable per workload tier.",
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": ["reason_code"]
+    },
+
+    "CreateProcess": {
+      "$comment": "Spawn parameters. env-scrub and uid/gid drop are the no-creds-in-guest carriers; the schema records the fields, the sandbox enforces the scrub. The cmd/cwd/args-item maxLength 4096, args maxItems 1024, and env maxProperties 1024 are x-ocu-default bounds satisfying NFR-SEC-46 (a bound must exist) pending sign-off on the value; retunable per workload tier. The env-value maxLength 32768 matches the negotiated WebSocket buffer ceiling (NFR-SEC-46). Integer maxima are wire-type ceilings (uint8/16/32/64), not policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "args": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 4096 },
+          "maxItems": 1024
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "maxLength": 32768 },
+          "maxProperties": 1024
+        },
+        "cwd": { "type": "string", "maxLength": 4096 },
+        "rows": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "cols": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "timeout": { "$comment": "wall-clock seconds; expiry -> ProcessTimedOut", "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "cpu_timeout": { "$comment": "CPU-time budget seconds; exhaustion -> ProcessCpuTimedOut", "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "memory_limit_bytes": { "$comment": "per-process cap; breach -> ProcessOutOfMemory", "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "clear_env": { "type": "boolean", "default": false },
+        "uid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "gid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "allow_process_id_reuse": { "type": "boolean", "default": false },
+        "reattachable": { "type": "boolean", "default": false },
+        "bound_pid": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": ["cmd", "args"]
+    },
+
+    "ProcessConnection": {
+      "$comment": "Handshake envelope (client message 1 or 2). create_req present => spawn; absent => reattach. expected_container_name and the out-of-band JWT sub both carry NFR-SEC-43 container binding. want_trace_events and accept_zstd are the client side of capability negotiation: the client advertises them in the handshake; the server answers with the ConnectionCapabilities first frame.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process_id": { "$ref": "#/$defs/ProcessId" },
+        "create_req": { "$ref": "#/$defs/CreateProcess" },
+        "expected_container_name": { "$ref": "#/$defs/ContainerName" },
+        "want_trace_events": { "type": "boolean" },
+        "accept_zstd": { "type": "boolean" }
+      },
+      "required": ["process_id"]
+    },
+
+    "ConnectionCapabilities": {
+      "$comment": "First server frame after the handshake. Per-feature negotiation, not a version integer: each flag toggles one capability so the protocol evolves without a global version bump. The V1/V2 split is expressed through the message tags (ProcessCreated vs ProcessCreatedV2, AttachedToProcess vs AttachedToProcessV2), not a version field in the handshake. supports_zstd advertises that frames may be zstd-compressed; the compressed-frame layout is not pinned by any source, so the flag is carried but the wire format is left to the sandbox.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "supports_traces": { "type": "boolean" },
+        "supports_zstd": { "type": "boolean" }
+      },
+      "required": ["supports_traces", "supports_zstd"]
+    },
+
+    "ServerMessage": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "ConnectionCapabilities": { "$ref": "#/$defs/ConnectionCapabilities" },
+
+        "ProcessCreated": { "type": "null" },
+        "ProcessCreatedV2": {
+          "$comment": "V2 spawn-success variant. The tag exists; no source pins its payload body, so it is left as an open object (TBD: field set, see x-ocu-open-questions).",
+          "type": "object"
+        },
+        "AttachedToProcess": { "type": "null" },
+        "AttachedToProcessV2": {
+          "$comment": "V2 reattach-success variant. The tag exists; its payload body is unpinned by any source, same TBD as ProcessCreatedV2.",
+          "type": "object"
+        },
+        "ProcessNotRunning": { "type": "null" },
+        "ProcessAlreadyAttached": {
+          "$comment": "NFR-IC-05: single owner per pid (sequential-default concurrency).",
+          "type": "null"
+        },
+        "FailedToStart": {
+          "$comment": "Generic start failure. Distinct from FailedToStartProcessWithSameIdRunning per OCU-canon split.",
+          "$ref": "#/$defs/BoundedReason"
+        },
+        "FailedToStartProcessWithSameIdRunning": {
+          "$comment": "Pid-reuse violation (allow_process_id_reuse=false).",
+          "type": "null"
+        },
+        "InfraError": { "$ref": "#/$defs/BoundedReason" },
+
+        "ExpectStdOut": {
+          "$comment": "Announce frame: the next binary frame on the socket is stdout, bounded by max-ws-buffer-size 32768 (NFR-SEC-46).",
+          "type": "null"
+        },
+        "StdOutEOF": { "type": "null" },
+        "ExpectStdErr": {
+          "$comment": "Announce frame: next binary frame is stderr, bounded by NFR-SEC-46.",
+          "type": "null"
+        },
+        "StdErrEOF": { "type": "null" },
+
+        "SignalSent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "signal": { "$ref": "#/$defs/Signal" } },
+          "required": ["signal"]
+        },
+        "FailedToSendSignal": { "$ref": "#/$defs/BoundedReason" },
+        "InvalidSignal": { "$ref": "#/$defs/BoundedReason" },
+
+        "TraceEvent": {
+          "$comment": "Server-side trace event; emitted only when supports_traces was negotiated. No source pins a field list, so the body is an open object (TBD: field set, see x-ocu-open-questions).",
+          "type": "object"
+        },
+
+        "ProcessExited": {
+          "$comment": "Normal exit, carrying the exit code only. Signal-terminated and signal-stopped are distinct internal termination reasons but have no distinct wire variant in any source; they surface through this same code field (a 128+signal convention is the sandbox's choice, not asserted here). No source exposes code/signal as separate serialized fields.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "code": { "$ref": "#/$defs/ExitCode" } },
+          "required": ["code"]
+        },
+        "ProcessTimedOut": { "type": "null" },
+        "ProcessCpuTimedOut": { "type": "null" },
+        "ProcessOutOfMemory": { "type": "null" },
+        "ContainerOutOfMemory": { "type": "null" },
+        "ShuttingDown": { "type": "null" }
+      }
+    },
+
+    "ClientMessage": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "SendSignal": { "$ref": "#/$defs/Signal" },
+        "ExpectStdIn": {
+          "$comment": "OCU-canon: announce-only. The next binary frame carries stdin bytes (bounded by max-ws-buffer-size 32768, NFR-SEC-46); a non-binary follow-up is an error.",
+          "type": "null"
+        },
+        "Resize": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rows": { "type": "integer", "minimum": 0, "maximum": 65535 },
+            "cols": { "type": "integer", "minimum": 0, "maximum": 65535 }
+          },
+          "required": ["rows", "cols"]
+        },
+        "Detach": {
+          "$comment": "Leaves the process running; valid only when create_req.reattachable was true.",
+          "type": "null"
+        },
+        "KeepAlive": { "type": "null" },
+        "Closed": { "type": "null" },
+        "TraceEvent": {
+          "$comment": "Client-side trace event; valid only when supports_traces was negotiated. Body unspecified by any source, so left as an open object (TBD: field set, see x-ocu-open-questions).",
+          "type": "object"
+        }
+      }
+    }
+  },
+
+  "x-ocu-open-questions": [
+    "ProcessCreatedV2 / AttachedToProcessV2 payload body: the V2 success tags exist but no source pins their frame body. A server-tracked status set (memory_usage_bytes, memory_cgroup_path, process_group_pid, internal_state with states CgroupCreated/Ready) is observed, but its carrier frame is unconfirmed. Pin the V2 payload (and whether it carries the status set) before hardening either tag's body beyond an open object.",
+    "TraceEvent field set: the tag is negotiated via supports_traces but no source pins its fields; define a trace contract before constraining the body."
+  ],
+
+  "$comment-oneOf": "Two wire phases in one union. Branch 1 (ProcessConnection) is the phase-1 handshake frame, identified by its required process_id. Branches 2-3 are the post-handshake control frames, each a sole-property tagged object (maxProperties:1, additionalProperties:false) that cannot carry process_id. The branches are provably disjoint — a handshake frame matches only branch 1; a tagged frame matches only its own branch — so oneOf is exact, not first-match.",
+  "oneOf": [
+    { "$ref": "#/$defs/ProcessConnection" },
+    { "$ref": "#/$defs/ServerMessage" },
+    { "$ref": "#/$defs/ClientMessage" }
+  ]
+}

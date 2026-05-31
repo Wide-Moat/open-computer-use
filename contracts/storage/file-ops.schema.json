@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/storage/file-ops.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation RPC surface (Session sandbox -> Storage broker, via the inspecting egress edge). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
+  "title": "File-operation RPC surface (TBD)",
+  "description": "Stub. The broker file-op RPC set. The substrate is Connect-RPC over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
+
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Interface version. Breaking change increments major (NFR-IC-04). Matches the v1alpha-style proto namespace of the file-op service.",
+      "type": "string",
+      "pattern": "^v[0-9]+(alpha|beta)?[0-9]*$",
+      "examples": ["v1alpha"]
+    },
+
+    "FilesystemId": {
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The egress edge binds the connection to this id (NFR-SEC-25).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "examples": ["session_01HXYZ_chat"]
+    },
+
+    "Intent": {
+      "description": "Operation class. The egress edge can deny by intent.",
+      "type": "string",
+      "enum": ["read", "write", "preview"]
+    },
+
+    "AuthorizationMetadata": {
+      "description": "Three-axis authorization attached to every file-op request: scope (filesystem_id) + intent + downloadable. Richer than a static credential. The bearer header is added at the egress edge and is NOT part of this object (no-creds-in-guest, NFR-SEC-25).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem_id", "intent", "downloadable"],
+      "properties": {
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "intent": { "$ref": "#/$defs/Intent" },
+        "downloadable": {
+          "description": "Whether data may leave the perimeter (distinct from may-read). The preview-not-download exfiltration control.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "OperationName": {
+      "description": "The file-op RPC set, by name. Two groups: file operations and directory operations, plus chunked transfer and whole-filesystem control-plane primitives. Names are sourced; request/response bodies are TBD (see x-ocu-tbd-bodies).",
+      "type": "string",
+      "enum": [
+        "listDirectory",
+        "makeDirectory",
+        "moveDirectory",
+        "removeDirectory",
+        "createFile",
+        "readFile",
+        "readMetadata",
+        "copyFile",
+        "moveFile",
+        "removeFile",
+        "fileUpload",
+        "fileDownload",
+        "importFiles",
+        "importZip",
+        "migrateFilesystem",
+        "removeFilesystem"
+      ]
+    },
+
+    "DenyReason": {
+      "description": "Structured deny returned by the egress edge on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). Transported as the x-deny-reason response header. The header NAME is sourced; the reason-code vocabulary below is an OCU default pending NFR-SEC-51 sign-off, not a frozen const set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_deny_reason"],
+      "properties": {
+        "x_deny_reason": {
+          "type": "string",
+          "x-ocu-default-deny-vocab": "default, pending NFR-SEC-51 sign-off",
+          "enum": [
+            "scope_mismatch",
+            "intent_denied",
+            "not_downloadable",
+            "lease_expired",
+            "size_exceeded",
+            "not_found"
+          ]
+        }
+      }
+    }
+  },
+
+  "x-ocu-tbd-bodies": {
+    "status": "tbd",
+    "reason": "No field-level source pins the per-operation request/response message bodies. Operation names, the three authorization axes, the ranged-read primitive (readFile carries a byte range), the recursive-list pagination cursor (listDirectory), and the chunked-transfer model (fileUpload streams numbered chunks; single-message inline content is not the transfer model) are known as concepts but their wire field names and shapes are not. Fill each entry below only when a field-level source exists; do not invent bodies.",
+    "known-shape-hints": {
+      "readFile": "carries an optional byte range (half-open [offset, offset+length)); exact subfield names unsourced",
+      "listDirectory": "supports recursive listing with an opaque pagination cursor; exact field names unsourced",
+      "fileUpload": "chunked streaming: numbered chunks reassembled by the broker; not a single inline-content body. Per-message RPC ceiling ~4MB; default read chunk 128M",
+      "createFile": "body unsourced",
+      "readMetadata": "body unsourced"
+    },
+    "operations": {}
+  },
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "op", "authorization_metadata"],
+  "properties": {
+    "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+    "op": { "$ref": "#/$defs/OperationName" },
+    "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" }
+  }
+}

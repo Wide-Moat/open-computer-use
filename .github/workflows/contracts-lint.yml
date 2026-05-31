@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Schema-lint for Layer-8 contract artifacts under `contracts/`.
+#
+# Enforces:
+#   - every *.schema.json is valid JSON and a valid JSON Schema 2020-12 document
+#     (ajv compile against the draft 2020-12 meta-schema).
+#   - every *.asyncapi.yaml is a valid AsyncAPI document (asyncapi validate).
+#   - no reverse-engineering provenance strings leak into a contract file.
+
+name: contracts-lint
+
+on:
+  pull_request:
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contracts-lint.yml"
+  push:
+    branches:
+      - next/v1
+
+permissions:
+  contents: read
+
+jobs:
+  json-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate JSON Schema 2020-12 documents
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          files=(contracts/**/*.schema.json)
+          if [ ${#files[@]} -eq 0 ]; then echo "no schema files"; exit 0; fi
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            # parse + meta-schema validate; --spec=draft2020 enforces the dialect.
+            npx --yes ajv-cli@5 compile --spec=draft2020 -s "$f"
+            echo "::endgroup::"
+          done
+
+  asyncapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate AsyncAPI documents
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          files=(contracts/**/*.asyncapi.yaml)
+          if [ ${#files[@]} -eq 0 ]; then echo "no asyncapi files"; exit 0; fi
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            npx --yes @asyncapi/cli@latest validate "$f"
+            echo "::endgroup::"
+          done
+
+  no-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject reverse-engineering provenance in contract files
+        run: |
+          set -euo pipefail
+          # Functional terms (a field name, a buffer size) are facts and allowed.
+          # What is forbidden is naming WHERE a fact came from.
+          if grep -rniE 'process_api|decompil|reverse[ -]?eng|sandboxd|references/|reconstruct|\brclone\b' contracts/; then
+            echo "::error::provenance string found in a contract file — state the fact, not its source"
+            exit 1
+          fi
+          echo "contracts/ is provenance-clean"

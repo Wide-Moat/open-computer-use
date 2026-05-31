@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/storage/mount-config.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation mount surface (Storage broker -> host -> Session sandbox): broker-side provisioning config (carries lease), guest-facing config (no lease). The per-operation file-op RPC bodies live in file-ops.schema.json. NFR-SEC-25. JSON Schema 2020-12 (json-schema.org).",
+  "title": "File-operation mount config",
+  "description": "Two mount-config variants: a broker-side provisioning config (carries the lease) and a guest-facing config (no lease). The transport substrate (FUSE/virtio-fs/9p) is a component-spec choice and is deliberately absent from this schema (NFR-SEC-25). No object-store/S3 fields. The file-op RPC message set is split out to file-ops.schema.json (status TBD).",
+
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Interface version. Breaking change increments major (NFR-IC-04).",
+      "type": "string",
+      "pattern": "^v[0-9]+(alpha|beta)?[0-9]*$",
+      "examples": ["v1alpha"]
+    },
+
+    "FilesystemId": {
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). Egress binds connection to this id (NFR-SEC-25).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "examples": ["session_01HXYZ_chat"]
+    },
+
+    "Octal": {
+      "description": "Host-set POSIX permission bits as an octal string. Agent (non-root) cannot change.",
+      "type": "string",
+      "pattern": "^0[0-7]{3}$",
+      "examples": ["0755", "0644"]
+    },
+
+    "Duration": {
+      "description": "Cache freshness window as a Go-style duration string.",
+      "type": "string",
+      "pattern": "^[0-9]+(ns|us|ms|s|m|h)$",
+      "examples": ["1s", "3s", "10s", "1h"]
+    },
+
+    "ByteSize": {
+      "description": "Local VFS cache cap as a size string. Files over the cap stream rather than cache.",
+      "type": "string",
+      "pattern": "^[0-9]+(B|K|M|G|T)?$",
+      "examples": ["1G", "512M"]
+    },
+
+    "VfsCacheMode": {
+      "description": "Page-cache policy for the mount.",
+      "type": "string",
+      "enum": ["off", "minimal", "writes", "full"]
+    },
+
+    "MountBase": {
+      "description": "Fields common to every mount. `writes` is the single RW/RO control (no inverse `readonly` field). RW vs RO is host-enforced; the agent cannot flip it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination",
+        "filesystem_id",
+        "writes",
+        "vfs_cache_mode",
+        "backend_cache_ttl",
+        "vfs_cache_max_size",
+        "dir_perms",
+        "file_perms"
+      ],
+      "properties": {
+        "destination": {
+          "description": "Absolute guest mountpoint.",
+          "type": "string",
+          "pattern": "^/.+",
+          "examples": ["/workspace/out"]
+        },
+        "source": {
+          "description": "Backend source path for this mount, host-set. Optional; defaults to a per-mount path under the filesystem scope.",
+          "type": "string",
+          "examples": ["/out", "/in"]
+        },
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "memory_store_id": {
+          "description": "Parallel scope id for memory-backed mounts; present only when the backing scope is a memory store rather than a filesystem.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "writes": {
+          "description": "true => read-write mount, false => read-only. Host-enforced. The provisioning struct carries RW vs RO as the split between the `mounts` (RW) and `readonly_mounts` (RO) arrays; this boolean is the per-mount projection of that split.",
+          "type": "boolean"
+        },
+        "vfs_cache_mode": { "$ref": "#/$defs/VfsCacheMode" },
+        "backend_cache_ttl": {
+          "description": "Backend cache freshness window. RO inputs use a short window (sub-second to seconds) so externally-written data appears promptly; RW outputs use a long window (up to an hour) since the agent is the writer and invalidates locally. Default 5m is too long for inputs.",
+          "$ref": "#/$defs/Duration"
+        },
+        "vfs_cache_max_size": {
+          "description": "Local VFS cache cap per mount. Files over the cap stream rather than cache.",
+          "$ref": "#/$defs/ByteSize"
+        },
+        "dir_perms": { "$ref": "#/$defs/Octal" },
+        "file_perms": { "$ref": "#/$defs/Octal" }
+      }
+    },
+
+    "GuestMountConfig": {
+      "description": "Host -> in-guest mount agent. Token-absent by construction: no field can carry an upstream credential (NFR-SEC-25, no-creds-in-guest invariant). The bearer credential is injected at the egress edge, never seen in the guest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "service_url", "mounts"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+        "service_url": {
+          "description": "Single allow-listed broker egress endpoint the mount agent dials.",
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "examples": ["https://broker.internal"]
+        },
+        "mounts": {
+          "description": "Read-write mounts provisioned in the guest.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/MountBase" }
+        },
+        "readonly_mounts": {
+          "description": "Read-only mounts. Same shape; `writes` MUST be false. RO is host-set; the agent cannot make a read-only mount writable.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/MountBase" },
+              { "properties": { "writes": { "const": false } } }
+            ]
+          },
+          "default": []
+        }
+      }
+    },
+
+    "ProvisionMountConfig": {
+      "description": "Storage broker -> host provisioning variant. Carries the broker-signed lease and the inspection-CA trust anchor. Never delivered into the guest as-is; the host strips the lease before handing the GuestMountConfig to the in-guest agent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "service_url", "filesystem_id", "auth_token", "ca_cert", "mounts"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+        "service_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "examples": ["https://broker.internal"]
+        },
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "auth_token": {
+          "description": "Broker-signed lease, opaque to the holder. Bound to filesystem_id and a TTL by the broker (lease semantics live in the Lease-pull surface). Present only in this broker-side variant; absent from GuestMountConfig.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ca_cert": {
+          "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress edge that injects the bearer credential.",
+          "type": "string",
+          "contentMediaType": "application/x-pem-file",
+          "pattern": "-----BEGIN CERTIFICATE-----"
+        },
+        "mounts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MountBase" }
+        },
+        "readonly_mounts": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/MountBase" },
+              { "properties": { "writes": { "const": false } } }
+            ]
+          },
+          "default": []
+        }
+      }
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/$defs/GuestMountConfig" },
+    { "$ref": "#/$defs/ProvisionMountConfig" }
+  ]
+}
