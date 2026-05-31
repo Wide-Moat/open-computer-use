@@ -266,7 +266,7 @@ components:
     AuthorizeSession:
       name: AuthorizeSession
       title: Authorize Session (OCSF 3003)
-      summary: Custody lease mint/rotate/scope/revoke (TTL <=15 min, NFR-SEC-29).
+      summary: Custody lease mint/rotate/scope/revoke (NFR-SEC-29).
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'

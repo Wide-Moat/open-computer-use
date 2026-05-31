@@ -76,7 +76,7 @@ jobs:
           set -euo pipefail
           # Functional terms (a field name, a buffer size) are facts and allowed.
           # What is forbidden is naming WHERE a fact came from.
-          if grep -rniE 'process_api|decompil|reverse[ -]?eng|sandboxd|references/|reconstruct|\brclone\b' contracts/; then
+          if grep -rniE 'process_api|decompil|reverse[ -]?eng|sandboxd|references/|reconstruct|\brclone\b|anthropic|\bobserved\b' contracts/; then
             echo "::error::provenance string found in a contract file — state the fact, not its source"
             exit 1
           fi

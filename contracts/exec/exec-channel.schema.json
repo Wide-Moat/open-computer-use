@@ -216,12 +216,12 @@
   },
 
   "x-ocu-open-questions": [
-    "ProcessCreatedV2 / AttachedToProcessV2 payload body: the V2 success tags exist but no source pins their frame body. A server-tracked status set (memory_usage_bytes, memory_cgroup_path, process_group_pid, internal_state with states CgroupCreated/Ready) is observed, but its carrier frame is unconfirmed. Pin the V2 payload (and whether it carries the status set) before hardening either tag's body beyond an open object.",
+    "ProcessCreatedV2 / AttachedToProcessV2 payload body: the V2 success tags exist but no source pins their frame body. A server-tracked status set (memory_usage_bytes, memory_cgroup_path, process_group_pid, internal_state with states CgroupCreated/Ready) is the expected payload, but its carrier frame is unconfirmed. Pin the V2 payload (and whether it carries the status set) before hardening either tag's body beyond an open object.",
     "TraceEvent field set: the tag is negotiated via supports_traces but no source pins its fields; define a trace contract before constraining the body."
   ],
 
-  "$comment-oneOf": "Two wire phases in one union. Branch 1 (ProcessConnection) is the phase-1 handshake frame, identified by its required process_id. Branches 2-3 are the post-handshake control frames, each a sole-property tagged object (maxProperties:1, additionalProperties:false) that cannot carry process_id. The branches are provably disjoint — a handshake frame matches only branch 1; a tagged frame matches only its own branch — so oneOf is exact, not first-match.",
-  "oneOf": [
+  "$comment-anyOf": "A frame is the phase-1 handshake (ProcessConnection, identified by its required process_id) or a post-handshake control frame. Frame direction — server-sent vs client-sent — is a transport property (which peer wrote it), not an envelope distinction, so the same tag may appear in both directions (e.g. TraceEvent flows both ways under a negotiated supports_traces). anyOf, not oneOf: a TraceEvent frame is a valid control frame in either direction, and the envelope does not assert mutual exclusivity the wire does not have.",
+  "anyOf": [
     { "$ref": "#/$defs/ProcessConnection" },
     { "$ref": "#/$defs/ServerMessage" },
     { "$ref": "#/$defs/ClientMessage" }

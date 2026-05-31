@@ -82,14 +82,14 @@ Drafted (not merged):
 
 Not built:
 
-- `contracts/openapi/` (operator REST + SOAR revoke) and `contracts/proto/` (session set-up + lease pull) — [#TBD].
-- The transparency-log submission envelope — [#TBD].
-- Mock / conformance servers per surface for consumer CI — [#TBD].
+- `contracts/openapi/` (operator REST + SOAR revoke) and `contracts/proto/` (session set-up + lease pull) — [#205](https://github.com/Wide-Moat/open-computer-use/issues/205).
+- The transparency-log submission envelope — [#151](https://github.com/Wide-Moat/open-computer-use/issues/151).
+- Mock / conformance servers per surface for consumer CI — [#206](https://github.com/Wide-Moat/open-computer-use/issues/206).
 - The `SkillProvider` contract is a v1 non-goal; skills load from a customer-provided registry, so no skill-format schema ships in v1.
 
 ## 6. Open questions
 
-1. Does NFR-IC-04 bind only the Control/operator API and internal gRPC, leaving the MCP gateway governed solely by date-revision negotiation, or does it need an explicit MCP-edge clause? — [#TBD].
-2. Is the inbound gateway contract MCP-only per NFR-FLEX-14, and is `REST fallback` (used in Layer 4 prose, undefined in glossary) dropped or promoted to a defined surface? — [#TBD].
-3. Does the broker file-operation contract (open/read/write/list) stay distinct from any object-store API at every shelf, and where is that boundary asserted? — [#TBD].
-4. The §4 additive-vs-breaking rules, transition window, RFC 9745/8594 headers, and the `oasdiff`/`buf breaking` CI gates extend NFR-IC-04 across two surfaces — should this versioning policy move to a dedicated ADR, leaving §4 a pointer? — [#TBD].
+1. Does NFR-IC-04 bind only the Control/operator API and internal gRPC, leaving the MCP gateway governed solely by date-revision negotiation, or does it need an explicit MCP-edge clause? — [#207](https://github.com/Wide-Moat/open-computer-use/issues/207).
+2. Is the inbound gateway contract MCP-only per NFR-FLEX-14, and is `REST fallback` (used in Layer 4 prose, undefined in glossary) dropped or promoted to a defined surface? — [#158](https://github.com/Wide-Moat/open-computer-use/issues/158).
+3. Does the broker file-operation contract (open/read/write/list) stay distinct from any object-store API at every shelf, and where is that boundary asserted? — [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).
+4. The §4 additive-vs-breaking rules, transition window, RFC 9745/8594 headers, and the `oasdiff`/`buf breaking` CI gates extend NFR-IC-04 across two surfaces — should this versioning policy move to a dedicated ADR, leaving §4 a pointer? — [#209](https://github.com/Wide-Moat/open-computer-use/issues/209).
