@@ -68,6 +68,8 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Frame-ancestors allowlist | every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (header-only, default `'none'`) | NFR-SEC-83 |
 | First-party session + CSRF | a state-mutating request requires a server-validated CSRF token; a missing/invalid session is 401 with no anonymous fallback | NFR-SEC-84 |
 | File-activity audit (north) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline, gateway-authored, fail-closed | NFR-SEC-79 |
+| Three-axis authz | resolve scope (`filesystem_id`) + intent (`read`/`write`/`preview`) + `downloadable` broker-side from the host-attested session, never a client-supplied claim; `intent=preview` is read-only and non-downloadable | NFR-SEC-49 |
+| Downloadable axis at read | the broker resolves `downloadable` at read on both faces; a non-downloadable object yields no egress-eligible artifact (preview ≠ remove-from-sandbox) | NFR-SEC-73 |
 
 The MCP edge carries the same five through a two-tier error model: a protocol error (`JSON-RPC error{code,message}`) never reaches the model and carries a reason code only; a tool-execution error (`result.isError: true` + content) reaches the model with sanitized output. Both are bounded by NFR-SEC-51.
 

@@ -283,14 +283,37 @@ components:
     FileSystemActivity:
       name: FileSystemActivity
       title: File System Activity (OCSF 1001)
-      summary: File-op mount list/read/write/create/stat (Surface C).
+      summary: >-
+        File activity on both broker faces — south-face mount
+        (list/read/write/create/stat) and north-face data plane
+        (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/file_activity"
+          allOf:
+            - $ref: "https://schema.ocsf.io/api/1.5.0/classes/file_activity"
+            - description: >-
+                NFR-SEC-79 required-field overlay on the OCSF base class:
+                every file-activity event on either face carries the OCU
+                mandatory set so intent and downloadable disposition are
+                non-optional. Field names mirror file-artifact-api.schema.json
+                FileActivityEvent.
+              type: object
+              required: [filesystem_id, intent, downloadable]
+              properties:
+                filesystem_id:
+                  type: string
+                  description: Session scope the activity targets.
+                intent:
+                  type: string
+                  enum: [read, write, preview]
+                  description: Operation intent axis (NFR-SEC-49).
+                downloadable:
+                  type: boolean
+                  description: Downloadable disposition resolved broker-side at read (NFR-SEC-73).
 
     ProcessActivity:
       name: ProcessActivity
