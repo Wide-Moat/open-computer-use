@@ -139,21 +139,14 @@
         "capabilities": {
           "type": "object",
           "required": ["tools"],
+          "additionalProperties": false,
           "properties": {
             "tools": {
               "type": "object",
               "properties": { "listChanged": { "const": false } }
             }
           },
-          "not": {
-            "anyOf": [
-              { "required": ["prompts"] },
-              { "required": ["resources"] },
-              { "required": ["logging"] },
-              { "required": ["completions"] }
-            ]
-          },
-          "$comment": "OCU emits the tools capability only. (NFR-SEC-03 audit goes via the AsyncAPI fan-in, not MCP logging.)"
+          "$comment": "OCU emits the tools capability only — additionalProperties:false rejects every other capability (prompts, resources, logging, completions, sampling, experimental, …), not just a named denylist. (NFR-SEC-03 audit goes via the AsyncAPI fan-in, not MCP logging.)"
         },
         "instructions": {
           "type": "string",

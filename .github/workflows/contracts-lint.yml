@@ -37,14 +37,15 @@ jobs:
           shopt -s globstar nullglob
           files=(contracts/**/*.schema.json)
           if [ ${#files[@]} -eq 0 ]; then echo "no schema files"; exit 0; fi
-          # ajv strict mode rejects spec-legal vendor keywords (x-ocu-*) and the
-          # $comment-* convention; --strict=false validates against the 2020-12
-          # meta-schema without keyword-policing. Unknown string "format" values
-          # are warned-and-ignored by ajv, not errors; the schemas pin the same
-          # constraints with explicit `pattern` regexes.
+          # --spec=draft2020 loads the 2020-12 meta-schema (ajv-cli@5 defaults to
+          # draft-07 and errors "no schema 2020-12" without it). --strict=false
+          # validates against that meta-schema without policing spec-legal vendor
+          # keywords (x-ocu-*) or the $comment-* convention. Unknown string
+          # "format" values are warned-and-ignored, not errors; the schemas pin
+          # the same constraints with explicit `pattern` regexes.
           for f in "${files[@]}"; do
             echo "::group::$f"
-            npx --yes ajv-cli@5 compile --spec=draft2020 --strict=false -s "$f"
+            npx --yes ajv-cli@5.0.0 compile --spec=draft2020 --strict=false -s "$f"
             echo "::endgroup::"
           done
 
@@ -63,7 +64,7 @@ jobs:
           if [ ${#files[@]} -eq 0 ]; then echo "no asyncapi files"; exit 0; fi
           for f in "${files[@]}"; do
             echo "::group::$f"
-            npx --yes @asyncapi/cli@latest validate "$f"
+            npx --yes @asyncapi/cli@6.0.0 validate "$f"
             echo "::endgroup::"
           done
 

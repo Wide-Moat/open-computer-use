@@ -54,13 +54,16 @@
       "additionalProperties": false,
       "required": [
         "destination",
-        "filesystem_id",
         "writes",
         "vfs_cache_mode",
         "backend_cache_ttl",
         "vfs_cache_max_size",
         "dir_perms",
         "file_perms"
+      ],
+      "oneOf": [
+        { "required": ["filesystem_id"], "not": { "required": ["memory_store_id"] } },
+        { "required": ["memory_store_id"], "not": { "required": ["filesystem_id"] } }
       ],
       "properties": {
         "destination": {
@@ -114,9 +117,14 @@
           "examples": ["https://broker.internal"]
         },
         "mounts": {
-          "description": "Read-write mounts provisioned in the guest.",
+          "description": "Read-write mounts provisioned in the guest. `writes` MUST be true; a read-only mount belongs in `readonly_mounts`.",
           "type": "array",
-          "items": { "$ref": "#/$defs/MountBase" }
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/MountBase" },
+              { "properties": { "writes": { "const": true } } }
+            ]
+          }
         },
         "readonly_mounts": {
           "description": "Read-only mounts. Same shape; `writes` MUST be false. RO is host-set; the agent cannot make a read-only mount writable.",

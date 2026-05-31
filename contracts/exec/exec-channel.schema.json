@@ -68,7 +68,7 @@
         "cols": { "type": "integer", "minimum": 0, "maximum": 65535 },
         "timeout": { "$comment": "wall-clock seconds; expiry -> ProcessTimedOut", "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "cpu_timeout": { "$comment": "CPU-time budget seconds; exhaustion -> ProcessCpuTimedOut", "type": "integer", "minimum": 0, "maximum": 4294967295 },
-        "memory_limit_bytes": { "$comment": "per-process cap; breach -> ProcessOutOfMemory", "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+        "memory_limit_bytes": { "$comment": "per-process cap (u64 bytes); breach -> ProcessOutOfMemory. The u64 ceiling (2^64-1) is not expressed as a JSON-number maximum — it exceeds IEEE-754 safe-integer range and a validator would round it; the 64-bit domain is enforced by the wire type.", "type": "integer", "minimum": 0 },
         "clear_env": { "type": "boolean", "default": false },
         "uid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "gid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
