@@ -1,0 +1,390 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/storage/file-artifact-api.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-artifact data plane, north face (Data-plane client -> Storage broker). HTTP+JSON REST plus the embeddable SPA, served on a dedicated file/UI ingress, NOT the MCP-tool-call listener. Distinct from the south face (file-ops.schema.json, sandbox->broker RPC). STATUS: TBD. Operation NAMES, the route shape, the three-axis authorization, the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are sourced (PoC route shape) or NFR-derived (x-ocu-design / x-ocu-default); per-operation request/response BODIES are not pinned by any field-level source and are left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-49, NFR-SEC-73, NFR-SEC-78, NFR-SEC-79, NFR-SEC-80, NFR-SEC-81, NFR-SEC-82, NFR-SEC-83, NFR-SEC-84.",
+  "title": "File-artifact data plane (north face, TBD)",
+  "description": "The data-plane client HTTP API and embeddable SPA fronted by the Storage broker. Operation set and the auth/response envelope are fixed; per-operation message bodies are TBD until a field-level source pins them. Do not invent bodies, opaque object ids, list pagination, resumable upload, or share-by-link capability URLs — none are sourced for this surface. Fill each operation only when sourced.",
+
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Interface version. Breaking change increments major (NFR-IC-04). Matches the v1alpha-style namespace of the sibling storage schemas.",
+      "type": "string",
+      "pattern": "^v[0-9]+(alpha|beta)?[0-9]*$",
+      "examples": ["v1alpha"]
+    },
+
+    "FilesystemId": {
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary), canonical across file-ops.schema.json and mount-config.schema.json. The PoC path parameter chat_id maps to this canonical scope id; the broker resolves access against it at accept (NFR-SEC-49).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "examples": ["session_01HXYZ_chat"]
+    },
+
+    "RelativePath": {
+      "description": "Object path relative to the filesystem scope; may include subdirectories. The broker rejects a resolved destination outside the named scope (traversal; NFR-SEC-80). Sourced from the PoC upload/list/download route shape.",
+      "type": "string",
+      "minLength": 1,
+      "examples": ["report.pdf", "out/figure-1.png"]
+    },
+
+    "Intent": {
+      "description": "Storage intent axis (NFR-SEC-49). On intent=preview the broker enforces read-only and treats the object as non-downloadable regardless of stored tag.",
+      "type": "string",
+      "enum": ["read", "write", "preview"]
+    },
+
+    "AuthorizationMetadata": {
+      "description": "Three-axis authorization resolved broker-side on every north-face operation: scope (filesystem_id) + intent + downloadable. Same axes as the south face; downloadable is resolved at READ on both faces (NFR-SEC-73). No backend credential and no upstream secret crosses to the caller or the browser (NFR-SEC-25, NFR-SEC-82).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem_id", "intent", "downloadable"],
+      "properties": {
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "intent": { "$ref": "#/$defs/Intent" },
+        "downloadable": {
+          "description": "Whether the object's bytes may leave the perimeter, resolved broker-side at read (NFR-SEC-73). A downloadable=false object is previewable in-session but no egress-eligible artifact is minted; the byte path to the browser is refused.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "OperationName": {
+      "description": "The north-face operation set, by name. Each maps to a PoC route shape, except `delete`, which exists by NFR (NFR-SEC-79 names upload/list/download/delete in the north-face activity set) but has no PoC route and no sourced wire body. Names/route-shapes are sourced; per-operation request/response bodies are TBD (see x-ocu-tbd-bodies).",
+      "type": "string",
+      "enum": [
+        "upload",
+        "listFiles",
+        "getManifest",
+        "download",
+        "downloadArchive",
+        "previewRender",
+        "delete"
+      ]
+    },
+
+    "FileEntry": {
+      "description": "List/metadata entry. Field names are sourced from the PoC list/outputs route shape; the union of the upload-list and output-list shapes. Object handle is the {filesystem_id, path} pair (the PoC addresses by chat-scope + relative path; it carries NO opaque object id, so none is modelled — inventing one is a P4-E3 traversal risk).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "size", "modified"],
+      "properties": {
+        "name": {
+          "description": "Leaf filename. SOURCED (PoC list/outputs).",
+          "type": "string",
+          "minLength": 1
+        },
+        "path": { "$ref": "#/$defs/RelativePath" },
+        "size": {
+          "description": "Object size in bytes. SOURCED (PoC stat.st_size).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "modified": {
+          "description": "Modification time. SOURCED (PoC st_mtime, a POSIX epoch-seconds number). The wire encoding (epoch vs RFC3339) is not re-pinned here; the PoC carries epoch seconds.",
+          "type": "number"
+        },
+        "type": {
+          "description": "File category. SOURCED (PoC outputs classify_file). Present on the outputs face; optional in the unified list.",
+          "type": "string"
+        },
+        "mime": {
+          "description": "Content type. SOURCED (PoC outputs classify_file / download mimetypes.guess_type). On ingest the broker-resolved type (magic-byte + declared) is authoritative (NFR-SEC-81); a declared/sniffed mismatch is recorded.",
+          "type": "string"
+        },
+        "checksum_md5": {
+          "description": "Per-object checksum. SOURCED (PoC manifest MD5 map). Whether checksums fold into listFiles or stay a separate getManifest operation is a design call not yet made (TBD).",
+          "type": "string"
+        }
+      }
+    },
+
+    "EmbedTokenVerify": {
+      "description": "Embed-token verify contract (NFR-SEC-82). The peer backend MINTS the token; the north face VERIFIES signature + expiry before setting any session state. No OCU upstream secret enters the browser. The exp ceiling is sourced to the NFR; the JWT/OIDC claim carriers are conventional (SEC-82 does not enumerate them); the binding claim is the open replay-binding question (#217).",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["exp"],
+      "properties": {
+        "exp": {
+          "description": "Token expiry, epoch seconds. The verifier rejects exp in the past and rejects a lifetime over the ceiling.",
+          "type": "integer",
+          "x-ocu-design": "exp - (iat or now) <= 120s ceiling, sourced to NFR-SEC-82; not frozen as a const."
+        },
+        "iat": {
+          "description": "Issued-at. OCU-DESIGN-conventional JWT carrier; SEC-82 does not enumerate it.",
+          "type": "integer",
+          "x-ocu-design": "JWT/OIDC convention; SEC-82 pins the property (signed, OIDC-asserted, exp<=120s), not this field name."
+        },
+        "iss": {
+          "description": "Issuer (the minting peer backend). OCU-DESIGN-conventional.",
+          "type": "string",
+          "x-ocu-design": "JWT/OIDC convention; not enumerated by SEC-82."
+        },
+        "aud": {
+          "description": "Audience naming this north-face surface. The verifier rejects a token whose audience does not name this surface (NFR-SEC-09 audience-validation, applied here). OCU-DESIGN-conventional carrier.",
+          "type": "string",
+          "x-ocu-design": "audience-validation property is NFR-SEC-09; the aud claim name is JWT/OIDC convention."
+        },
+        "sub": {
+          "description": "Subject (the asserted caller). OCU-DESIGN-conventional.",
+          "type": "string",
+          "x-ocu-design": "JWT/OIDC convention; not enumerated by SEC-82."
+        }
+      },
+      "x-ocu-tbd-binding-claim": {
+        "status": "tbd",
+        "issue": "https://github.com/Wide-Moat/open-computer-use/issues/217",
+        "reason": "What the embed token is bound to against replay/forgery (filesystem_id? caller? single-use nonce?) is the open replay-binding decision. Do not freeze a filesystem_id (or any) binding claim until #217 resolves."
+      }
+    },
+
+    "SessionResponseEnvelope": {
+      "description": "First-party session + framing controls the north face sets/requires on UI and data responses. Cookie attributes and CSP header values are SOURCED verbatim to NFR-SEC-83/84; the CSRF token wire name/transport is TBD (the NFR pins the property, not the name).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "set_cookie": {
+          "description": "First-party session cookie set after embed-token verification. Attributes SOURCED verbatim to NFR-SEC-84.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["same_site", "secure", "http_only"],
+          "properties": {
+            "same_site": { "type": "string", "const": "None" },
+            "secure": { "type": "boolean", "const": true },
+            "http_only": { "type": "boolean", "const": true }
+          }
+        },
+        "csrf_required": {
+          "description": "Every state-mutating request carries a server-validated CSRF token; a missing/invalid session returns 401 with no anonymous fallback. SOURCED (property) to NFR-SEC-84.",
+          "type": "boolean",
+          "const": true
+        },
+        "csrf_token": {
+          "description": "CSRF token. The presence + server-validation is sourced (NFR-SEC-84); the wire NAME and transport (request header vs body field) are TBD — the NFR pins the property, not the carrier.",
+          "type": "string",
+          "x-ocu-tbd": "CSRF token wire name/transport not pinned by NFR-SEC-84; do not freeze."
+        },
+        "csp_frame_ancestors": {
+          "description": "Content-Security-Policy: frame-ancestors set from a per-deployment allowlist on every UI/data response; header only, never <meta>; default 'none' until configured. SOURCED verbatim to NFR-SEC-83.",
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["'none'"],
+          "x-ocu-default": "frame-ancestors 'none' until a per-deployment allowlist entry exists (NFR-SEC-83); minimal shelf 'self'."
+        },
+        "x_frame_options": {
+          "description": "Legacy fallback for CSP-unaware browsers. SOURCED verbatim to NFR-SEC-83.",
+          "type": "string",
+          "const": "SAMEORIGIN"
+        },
+        "cross_origin_resource_policy": {
+          "description": "Set on served artifacts. SOURCED verbatim to NFR-SEC-83.",
+          "type": "string",
+          "const": "cross-origin"
+        },
+        "cross_origin_opener_policy_set": {
+          "description": "COOP is NOT set on UI responses, to preserve postMessage to the embedding page. SOURCED to NFR-SEC-83.",
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+
+    "ContentDisposition": {
+      "description": "Download disposition. SOURCED (PoC download_file): ?download=1 forces attachment (octet-stream); the default serves inline by the real MIME. This IS the downloadable-disposition wire mechanism, coupled to the broker-resolved downloadable axis (NFR-SEC-73): the broker refuses the byte path for a non-downloadable object regardless of this flag.",
+      "type": "string",
+      "enum": ["attachment", "inline"]
+    },
+
+    "InboundBound": {
+      "description": "North-face inbound byte-path bound (NFR-SEC-78). The gateway rejects an over-ceiling body before staging, never partially buffered; per-validated-caller rate limits apply distinctly from the per-sandbox quota (NFR-SEC-46) and the per-caller connection ceiling (NFR-SEC-53). Values are NFR-derived defaults, not frozen.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_request_bytes": {
+          "description": "Inbound request body ceiling; over-ceiling rejected pre-buffer with a structured deny.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 52428800,
+          "x-ocu-default": "<=50 MiB/request default, configurable per workload tier (NFR-SEC-78)."
+        },
+        "pre_buffer_reject": {
+          "description": "An over-ceiling body (including one exceeding the ceiling mid-stream without Content-Length) is rejected before staging, never partially buffered.",
+          "type": "boolean",
+          "const": true,
+          "x-ocu-design": "pre-buffer reject (NFR-SEC-78)."
+        }
+      }
+    },
+
+    "ArchiveValidation": {
+      "description": "Pre-extraction archive validation (NFR-SEC-80). Every rejection is pre-extraction with a structured deny + an OCSF event. Ceilings are NFR-derived defaults, not frozen.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_uncompressed_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1073741824,
+          "x-ocu-default": "<=1 GiB uncompressed total default; streaming formats halted at the ceiling mid-extract (NFR-SEC-80)."
+        },
+        "max_entry_count": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 100000,
+          "x-ocu-default": "<=100000 entries default (NFR-SEC-80)."
+        },
+        "reject_traversal": {
+          "type": "boolean",
+          "const": true,
+          "x-ocu-design": "entry resolving outside the named mount path is rejected (NFR-SEC-80)."
+        },
+        "reject_symlink_escape": {
+          "type": "boolean",
+          "const": true,
+          "x-ocu-design": "symlink resolving outside the destination is rejected (NFR-SEC-80)."
+        }
+      }
+    },
+
+    "ContentClassification": {
+      "description": "Ingest content classification (NFR-SEC-81): magic-byte sniff + declared media type, resolved type recorded on object metadata before mount-visibility; a declared/sniffed mismatch is recorded and surfaced into the OCSF event. A type the scope policy denies is rejected pre-stage. Default posture classify-and-record; policy-deny is opt-in.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolved_type", "declared_mismatch"],
+      "properties": {
+        "resolved_type": {
+          "description": "Broker-resolved content type (magic-byte + declared). Authoritative on metadata before any mount visibility.",
+          "type": "string"
+        },
+        "declared_mismatch": {
+          "description": "Whether the declared media type disagreed with the sniffed type; recorded and surfaced.",
+          "type": "boolean"
+        }
+      },
+      "x-ocu-design": "classify-and-record default; policy-deny opt-in per filesystem scope (NFR-SEC-81)."
+    },
+
+    "FileActivityEvent": {
+      "description": "North-face file-activity audit event (NFR-SEC-79), gateway-authored, hash-chained into the NFR-SEC-03 pipeline, fail-closed (operation denied if the audit write fails), under host-attested identity (NFR-SEC-09). OCSF File System Activity (class_uid 1001, category_uid 1). Mandatory fields enumerated verbatim by NFR-SEC-79. The activity_id assignment is OCU-DESIGN (OCSF has no native upload/download id; Create/Read/Delete/Open are the mapped ids). This is direct-fetch via embed-token + cookie, NOT share-by-link; no capability_id / two-event chain belongs here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class_uid",
+        "category_uid",
+        "activity_id",
+        "actor",
+        "filesystem_id",
+        "object_handle",
+        "byte_count",
+        "intent",
+        "downloadable",
+        "outcome"
+      ],
+      "properties": {
+        "class_uid": {
+          "description": "OCSF File System Activity class.",
+          "type": "integer",
+          "const": 1001
+        },
+        "category_uid": {
+          "description": "OCSF System Activity category.",
+          "type": "integer",
+          "const": 1
+        },
+        "activity_id": {
+          "description": "OCSF activity. Create(1)=upload, Read(2)=download/downloadArchive/list (listFiles and getManifest are Read-class), Delete(4)=delete, Open(14)=previewRender. OCU-DESIGN: OCSF carries no native upload/download id, so these are the mapped ids.",
+          "type": "integer",
+          "enum": [1, 2, 4, 14],
+          "x-ocu-design": "activity_id mapping for upload(1)/list(2)/download(2)/delete(4)/preview(14) (NFR-SEC-79); OCSF has no native upload/download id, list maps to Read(2)."
+        },
+        "actor": {
+          "description": "Authenticated caller resolved gateway-side (host-attested, NFR-SEC-09). The data-plane client is never the authoritative author of its own audit event (NFR-SEC-47 sibling for the north face).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "user_uid": { "type": "string" },
+            "session_uid": { "type": "string" }
+          }
+        },
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "object_handle": {
+          "description": "The {filesystem_id, path} handle (NOT an opaque object id — none exists in this surface).",
+          "$ref": "#/$defs/RelativePath"
+        },
+        "byte_count": {
+          "description": "Bytes transferred for the operation.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "intent": { "$ref": "#/$defs/Intent" },
+        "downloadable": {
+          "description": "Downloadable disposition resolved broker-side at read (NFR-SEC-73).",
+          "type": "boolean"
+        },
+        "outcome": {
+          "description": "allow/deny outcome; a deny carries the structured deny-reason.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["disposition_id"],
+          "properties": {
+            "disposition_id": {
+              "description": "OCSF outcome; allow vs deny.",
+              "type": "string",
+              "enum": ["allow", "deny"]
+            },
+            "x_deny_reason": { "$ref": "#/$defs/DenyReason" }
+          },
+          "if": { "properties": { "disposition_id": { "const": "deny" } }, "required": ["disposition_id"] },
+          "then": { "required": ["x_deny_reason"] }
+        }
+      }
+    },
+
+    "DenyReason": {
+      "description": "Structured deny vocabulary for the north face, carrying no internal topology (NFR-SEC-51, NFR-SEC-17). The south face (file-ops.schema.json) carries its own; the north-face-specific codes derive from NFR-SEC-78/80/81/82/84 and the three-axis authz. The PoC is open-no-auth and pins NO deny vocabulary, so this set is an OCU default pending NFR-SEC-51 sign-off, not frozen.",
+      "type": "string",
+      "x-ocu-default": "default-deny vocabulary, pending NFR-SEC-51 sign-off; not a frozen const set.",
+      "enum": [
+        "scope_mismatch",
+        "intent_denied",
+        "not_downloadable",
+        "embed_token_invalid",
+        "embed_token_expired",
+        "csrf_failed",
+        "no_session",
+        "body_too_large",
+        "rate_limited",
+        "archive_rejected",
+        "type_denied",
+        "not_found"
+      ]
+    }
+  },
+
+  "x-ocu-tbd-bodies": {
+    "status": "tbd",
+    "reason": "No field-level source pins the per-operation request/response message bodies. The operation set, the route shape (chat-scope + relative path; ?download=1 -> attachment vs inline-by-MIME), the sourced list/metadata fields (FileEntry), the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are known; full request/response bodies are not. Fill each entry below only when a field-level source exists; do not invent bodies, an opaque object id, list pagination, resumable/chunked upload, or share-by-link capability URLs — none are sourced for this surface.",
+    "operations": {
+      "upload": "POST to a {filesystem_id, path} target; multipart form field `file` (SOURCED). Response carries status + filename + size + md5 (SOURCED PoC shape). Bound by InboundBound (NFR-SEC-78); archive bodies validated pre-extraction (NFR-SEC-80); body classified on ingest (NFR-SEC-81). Full envelope TBD.",
+      "listFiles": "GET list under a filesystem scope; returns FileEntry[] + total (SOURCED union of PoC uploads-list and outputs-list shapes). The unification of the two PoC route families into one operation is OCU-DESIGN. NO pagination cursor (PoC returns the full list; do not adopt one without a source). Full envelope TBD.",
+      "getManifest": "GET checksum map under a filesystem scope; returns {relative-path: md5} (SOURCED PoC manifest). Whether this folds into listFiles metadata is a design call not yet made (TBD).",
+      "download": "GET a {filesystem_id, path} object; ?download=1 -> Content-Disposition: attachment (octet-stream), else inline by real MIME (SOURCED). Broker resolves downloadable at read (NFR-SEC-73); a non-downloadable object's byte path to the browser is refused. Full envelope TBD.",
+      "downloadArchive": "GET the outputs of a filesystem scope as a zip; Content-Disposition: attachment (SOURCED PoC). Full envelope TBD.",
+      "previewRender": "GET the embeddable SPA for a filesystem scope (SOURCED PoC SPA route). Render/parser isolation model is OCU-DESIGN with mechanism TBD (#218). Carries the SessionResponseEnvelope framing headers (NFR-SEC-83). Full envelope TBD.",
+      "delete": "NO PoC route. The operation exists by NFR (NFR-SEC-79 names delete in the north-face activity set), but its request/response wire body is TBD — no field-level source pins it. Needs its own tracking issue before the body is filled. Do not invent it."
+    },
+    "tbd-issues": {
+      "embed-token-replay-binding": "https://github.com/Wide-Moat/open-computer-use/issues/217",
+      "preview-render-parser-isolation": "https://github.com/Wide-Moat/open-computer-use/issues/218"
+    }
+  },
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "op", "authorization_metadata"],
+  "properties": {
+    "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+    "op": { "$ref": "#/$defs/OperationName" },
+    "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" }
+  }
+}

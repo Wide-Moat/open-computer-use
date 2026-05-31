@@ -1,0 +1,48 @@
+%% SPDX-License-Identifier: FSL-1.1-Apache-2.0
+%% Copyright (c) 2025 Open Computer Use Contributors
+%% Layer 8 (Contracts) overlay. Referenced from docs/architecture/08-contracts.md.
+%% Same seven containers as diagrams/c4-container.mmd; edge labels carry the CONTRACT FORMAT
+%% on each crossing, not the token/protocol. Zone shading is not redrawn — see Layer 3/6.
+%% Solid = OCU-defined or conform-inbound; dashed = external party owns the wire format.
+
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+
+    PEER["MCP-speaking caller"]:::ext
+    OPER["Operator (PAM-JIT)"]:::ext
+    UPSTREAM["Outbound endpoints"]:::ext
+    SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
+    DPC["Data-plane client<br/>(SPA / headless)"]:::ext
+
+    subgraph OCU["Open Computer Use"]
+        MCPG["MCP gateway"]
+        CTRL["Control / operator API"]
+        CUST["Credential custody"]
+        STORE["Storage broker"]
+        VM["Session sandbox [1..N]"]
+        EDGE["Egress trust-edge"]
+        AUD["Audit pipeline"]
+    end
+
+    PEER -->|"MCP JSON-Schema"| MCPG
+    OPER -->|"OpenAPI 3.1"| CTRL
+    MCPG -->|"Protobuf / gRPC"| CTRL
+    CTRL -->|"WebSocket (PTY+CDP)"| VM
+    STORE -->|"file-op mount (HTTP+JSON)"| VM
+    DPC -->|"OpenAPI 3.1 (file/artifact API)"| STORE
+    VM -->|"network policy"| EDGE
+    CUST -->|"Protobuf / gRPC"| EDGE
+    STORE -->|"network policy"| EDGE
+    EDGE -.->|"external backend protocol"| UPSTREAM
+
+    MCPG -->|"AsyncAPI 3.0 / OCSF"| AUD
+    CTRL -->|"AsyncAPI 3.0 / OCSF"| AUD
+    CUST -->|"AsyncAPI 3.0 / OCSF"| AUD
+    STORE -->|"AsyncAPI 3.0 / OCSF"| AUD
+    VM -->|"AsyncAPI 3.0 / OCSF"| AUD
+    EDGE -->|"AsyncAPI 3.0 / OCSF"| AUD
+    AUD -.->|"AsyncAPI 3.0 / OCSF"| SINK
+
+    classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
+    classDef extOpt fill:#fdecea,stroke:#c0392b,stroke-dasharray: 5 5;
+    style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px;

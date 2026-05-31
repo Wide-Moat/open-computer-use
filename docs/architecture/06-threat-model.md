@@ -12,7 +12,7 @@ STRIDE-per-element threat model over the Layer 6 container DFD, with each threat
 
 ## 1. Scope and DFD reference
 
-This model runs STRIDE-per-element over the seven containers, two data stores, five external actors, and twelve boundary-crossing flows fixed in [`05-c4-container.md`](05-c4-container.md) §3–§4 and drawn in [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd) — the DFD is not redrawn here. STRIDE letters apply per the Microsoft element-type mapping (§2); severity is qualitative Likelihood × Impact, and each row anchors to an NFR-SEC target with the per-zone framework cell from [`02-trust-boundaries.md`](02-trust-boundaries.md) §11.
+This model runs STRIDE-per-element over the seven containers, two data stores, five external actors, and twelve boundary-crossing flows fixed in [`05-c4-container.md`](05-c4-container.md) §3–§4. [`diagrams/c4-container.mmd`](diagrams/c4-container.mmd) draws the container/edge subset; the data-store and IdP/SOAR elements and the `F1`–`F12` flow labels are STRIDE elements named here, not nodes on that diagram — the DFD is not redrawn here. STRIDE letters apply per the Microsoft element-type mapping (§2); severity is qualitative Likelihood × Impact, and each row anchors to an NFR-SEC target with the per-zone framework cell from [`02-trust-boundaries.md`](02-trust-boundaries.md) §11.
 
 Each threat names the actor it is reachable by. The model inverts the usual ingress focus: the primary adversary is A1, so the high-value rows weight the sandbox's outbound and host-facing edges, not the inbound caller edge.
 

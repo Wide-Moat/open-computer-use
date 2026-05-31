@@ -30,9 +30,33 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 ## Storage broker
 
-Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key. The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, runs at the broker on plaintext, before signing. A zone distinct from [Credential custody](#credential-custody): it has a guest-facing interface (the mount) and governs an inbound data path, where custody has no guest interface and the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice.
+Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key. The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, runs at the broker on plaintext, before signing. A zone distinct from [Credential custody](#credential-custody): it has a guest-facing interface (the mount) and governs an inbound data path, where custody has no guest interface and the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. The broker has two faces on one object-store client: a [south face](#south-face--north-face) (the guest mount) and a [north face](#south-face--north-face) (the file-artifact data plane for a [Data-plane client](#data-plane-client)).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 / §7.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-25.
+
+## Data-plane client
+
+An external caller that reaches OCU's file-artifact data plane — the [Storage broker](#storage-broker) [north face](#south-face--north-face) — to upload, list, download, or preview-render files. It is either OCU's own authenticated SPA (embeddable cross-origin) or a headless caller of the file-artifact API; bytes flow client↔OCU directly, never through a calling peer and never to the object store. Distinct from the MCP caller (which drives the control plane) and the Operator (CLI / PAM-JIT). Absent in headless deployments.
+
+Used in: [`03-c4-context.md`](./03-c4-context.md) §4, [`05-c4-container.md`](./05-c4-container.md) §3-§4, [`06-threat-model.md`](./06-threat-model.md) §2, [`08-contracts.md`](./08-contracts.md) §1.
+
+## South face / north face
+
+The two faces of the one [Storage broker](#storage-broker) object-store client. The **south face** is the guest mount — a file-operation interface (open / read / write / list) the sandbox speaks, scoped by `filesystem_id`. The **north face** is the file-artifact data plane — OCU's HTTP file/artifact API and embeddable SPA, served on a dedicated file/UI ingress for a [Data-plane client](#data-plane-client), not the MCP listener. Both faces share the one backend credential and the one egress backend leg; neither the guest nor the data-plane client holds a backend credential.
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`04-bounded-contexts.md`](./04-bounded-contexts.md) §3, [`05-c4-container.md`](./05-c4-container.md) §3-§4, [`08-contracts.md`](./08-contracts.md) §1.
+
+## Downloadable
+
+The third storage-authorization axis (beyond scope and intent): a per-object disposition the broker resolves at read, separating "may read" from "may remove from the sandbox." A non-downloadable object is readable or previewable in-session but yields no egress-eligible artifact; the disposition reaches the Egress trust-edge as a deny signal. The preview-not-download exfiltration control.
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-73.
+
+## Embed token
+
+A signed short-TTL token (OIDC-asserted, `exp ≤ 120 s`) the calling peer's backend mints so its already-authenticated user opens OCU's embeddable SPA cross-origin without re-entering credentials. The [north face](#south-face--north-face) verifies the token signature and expiry, then sets a first-party session; OCU mints nothing and no OCU upstream secret enters the browser.
+
+Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-82.
 
 ## Egress trust-edge
 

@@ -1,0 +1,178 @@
+{
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | OCU constraint overlay (profile) on MCP revision 2025-06-18: conform-not-define. Pins the revision and layers OCU-side limits onto Tool/CallToolResult; does not restate the MCP base schema.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/mcp/2025-06-18/ocu-constraints.schema.json",
+  "title": "OCU MCP constraint profile (2025-06-18)",
+  "description": "Conform-not-define overlay. The wire contract is the public MCP revision 2025-06-18 (https://modelcontextprotocol.io/specification/2025-06-18, schema https://github.com/modelcontextprotocol/specification/blob/main/schema/2025-06-18/schema.json). OCU is a Conformist and does not redefine MCP types. This file pins the revision and the OCU-side constraints that the base schema leaves open: audience-validated authz (NFR-SEC-09), bounded error and tool-result verbosity (NFR-SEC-51), bounded payload size (NFR-SEC-46), sequential-default tool execution (NFR-IC-05), date-revision negotiation as the breaking signal (NFR-IC-04). Validators MUST apply the MCP base schema first, then this profile.",
+
+  "x-ocu-profile": {
+    "conformance": "conform-not-define",
+    "base-contract": {
+      "protocol": "MCP over JSON-RPC 2.0",
+      "revision": "2025-06-18",
+      "spec": "https://modelcontextprotocol.io/specification/2025-06-18",
+      "schema": "https://github.com/modelcontextprotocol/specification/blob/main/schema/2025-06-18/schema.json",
+      "tool-input-schema-dialect-default": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "authoritative-references": [
+      "https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle",
+      "https://modelcontextprotocol.io/specification/2025-06-18/basic/transports",
+      "https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization",
+      "https://modelcontextprotocol.io/specification/2025-06-18/server/tools",
+      "https://www.jsonrpc.org/specification",
+      "https://www.rfc-editor.org/rfc/rfc8707",
+      "https://www.rfc-editor.org/rfc/rfc9728"
+    ],
+    "server-capabilities-pinned": {
+      "tools": { "listChanged": false },
+      "x-note": "OCU exposes the tools capability only. prompts, resources, logging, completions, sampling, elicitation, roots are not emitted by the OCU server. listChanged is false: the OCU tool set is registered statically at server construction (a fixed tool set per session) and notifications/tools/list_changed is never sent. Confirmed: the tool set does not mutate within a session; per-session content variation rides InitializeResult.instructions, not a changed tool list."
+    },
+    "protocol-version-binding": {
+      "negotiated-field": "$.params.protocolVersion (initialize) / $.result.protocolVersion (InitializeResult)",
+      "value": "2025-06-18",
+      "http-header": "MCP-Protocol-Version",
+      "missing-header-policy": "reject",
+      "x-deviation": "MCP base SHOULD-fallback to 2025-03-26 on a missing MCP-Protocol-Version header only when the server has no other way to identify the version (the version is otherwise negotiated at initialize). OCU tightens this to reject (HTTP 400) to pin the revision. Intentional deviation. (NFR-IC-04)"
+    },
+    "concurrency": {
+      "mode": "sequential-default-per-session",
+      "carrier": "none (gateway behavior, not a wire field)",
+      "x-note": "MCP permits concurrent in-flight requests with distinct id. OCU serialises tool execution per session by default; parallelism is opt-in. Documented as a gateway constraint, not validated on the wire. (NFR-IC-05)"
+    }
+  },
+
+  "x-ocu-limits": {
+    "$comment": "Numeric caps the MCP base schema leaves unspecified. NFR-SEC-46 (bounded message/object size, chunk-above-ceiling) and NFR-SEC-51 (size-bounded, identifier-minimized errors/responses) MANDATE that these bounds exist, are enforced pre-buffer at the gateway, and are configurable per workload tier — but pin NO specific byte/length value for the MCP profile. The exec-channel transport bounds (per-frame WS buffer, per-stream stdio ceiling) live on the Exec surface, not here, and do not bind MCP CallToolResult/error/tool-description sizes. Each value is an operational default, NOT a frozen contract value: an enforced gateway default the operator may retune within the NFR-SEC-46/51 floor, pending numeric sign-off. This is a vendor-extension registry, not a validatable $def; the bounded* schemas below mirror these numbers as enforceable maxLength/maxItems keywords, and counts are code points, not bytes — the byte ceiling is the gateway's pre-buffer check.",
+    "maxErrorMessageBytes": { "value": 1024, "nfr": "NFR-SEC-51", "of": "JSON-RPC error.message; stable reason code only" },
+    "maxErrorDataBytes": { "value": 4096, "nfr": "NFR-SEC-51", "of": "JSON-RPC error.data; negotiation hint only, no stack/topology" },
+    "maxToolDescriptionBytes": { "value": 8192, "nfr": "NFR-SEC-51", "of": "Tool.description; bounded discovery surface" },
+    "maxInstructionsBytes": { "value": 8192, "nfr": "NFR-SEC-51", "of": "InitializeResult.instructions; bounded free text" },
+    "maxCallToolResultBytes": { "value": 1048576, "nfr": "NFR-SEC-46", "of": "total serialized CallToolResult; over-ceiling rejected pre-buffer, never partially staged" },
+    "maxContentBlocks": { "value": 256, "nfr": "NFR-SEC-46", "of": "CallToolResult.content block count" },
+    "maxToolArgumentsBytes": { "value": 262144, "nfr": "NFR-SEC-46/51", "of": "CallToolRequest.params.arguments; bounded, strict-validated input" }
+  },
+
+  "x-ocu-overlay-map": {
+    "$comment": "This file is a non-self-executing overlay: it has no root type, so a validator pointed at it alone accepts everything. The gateway applies each $def below to the named MCP base type per message. Conformance is this map, not prose.",
+    "boundedError": "JSON-RPC error object (Tier-1 protocol error)",
+    "boundedTool": "MCP Tool object (tools/list, tools/call definitions)",
+    "boundedCallToolResult": "MCP CallToolResult (Tier-2 tool error rides isError)",
+    "boundedInitializeResult": "MCP InitializeResult (capability + revision pin)",
+    "jsonRpcSingleMessage": "the HTTP request/response body envelope (batching removed)"
+  },
+
+  "$defs": {
+    "jsonRpcSingleMessage": {
+      "$comment": "Batching is removed in 2025-06-18: an HTTP body MUST be a single object, never an array.",
+      "type": "object",
+      "not": { "type": "array" }
+    },
+
+    "boundedError": {
+      "$comment": "JSON-RPC error object (Tier 1, protocol error). Never reaches the model. Carries a stable reason code only; no topology/stack. error.message and error.data length-bounded per NFR-SEC-51.",
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "$comment": "Standard JSON-RPC codes only. No MCP-specific numeric codes are defined in 2025-06-18; implementation range below -32000 is not invented here. -32602 covers unknown tool, invalid arguments, and unsupported protocol version.",
+          "enum": [-32700, -32600, -32601, -32602, -32603]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "$comment": "NFR-SEC-51: bounded; no internal detail. maxLength mirrors x-ocu-limits.maxErrorMessageBytes (a retunable default, not a frozen value)."
+        },
+        "data": {
+          "$comment": "NFR-SEC-51: optional, bounded by x-ocu-limits.maxErrorDataBytes at the gateway; carries the protocol-version negotiation hint {supported:[],requested} for -32602 and no stack/topology otherwise."
+        }
+      }
+    },
+
+    "boundedTool": {
+      "$comment": "OCU overlay on the MCP Tool object. Constrains only OCU-bounded fields; name/inputSchema/outputSchema/annotations semantics remain the MCP base.",
+      "type": "object",
+      "required": ["name", "inputSchema"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": {
+          "type": "string",
+          "maxLength": 8192,
+          "$comment": "NFR-SEC-51: bounded. maxLength mirrors x-ocu-limits.maxToolDescriptionBytes (a retunable default, not a frozen value)."
+        },
+        "inputSchema": {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "const": "object" } },
+          "$comment": "MCP requires type:object. Embedded dialect defaults to JSON Schema 2020-12; a declared $schema selects another dialect."
+        },
+        "annotations": {
+          "$comment": "ToolAnnotations are non-binding hints and UNTRUSTED unless from a trusted server. OCU as gateway sets/strips these and does not pass third-party hints through unvalidated. (Layer-7)"
+        }
+      }
+    },
+
+    "boundedCallToolResult": {
+      "$comment": "OCU overlay on the MCP CallToolResult. Tier-2 error model: isError:true is a tool-execution error returned to the model as sanitized, bounded content; protocol errors use boundedError instead. (NFR-SEC-51, NFR-SEC-46)",
+      "type": "object",
+      "required": ["content"],
+      "properties": {
+        "content": {
+          "type": "array",
+          "maxItems": 256,
+          "$comment": "NFR-SEC-46: block count and total serialized size bounded at the gateway (x-ocu-limits.maxCallToolResultBytes / maxContentBlocks). maxItems mirrors the block-count default; total-bytes is enforced at the gateway pre-buffer. Retunable defaults, not frozen values. The OCU tool surface emits only text and image content blocks (no audio, no embedded-resource blocks); per-block type is the MCP base ContentBlock union, OCU does not redefine it."
+        },
+        "structuredContent": {
+          "type": "object",
+          "$comment": "Present iff the tool declares outputSchema; MUST conform to it. The OCU tool surface returns text/image content blocks and does not currently declare per-tool outputSchema; this field is permitted (a future tool MAY declare one) but not required. TBD: per-tool outputSchema adoption — no source pins it."
+        },
+        "isError": { "type": "boolean", "default": false }
+      }
+    },
+
+    "boundedInitializeResult": {
+      "$comment": "OCU pins the negotiated revision and the tools-only capability set; bounds the free-text instructions field.",
+      "type": "object",
+      "required": ["protocolVersion", "capabilities", "serverInfo"],
+      "properties": {
+        "protocolVersion": { "const": "2025-06-18" },
+        "capabilities": {
+          "type": "object",
+          "required": ["tools"],
+          "additionalProperties": false,
+          "properties": {
+            "tools": {
+              "type": "object",
+              "properties": { "listChanged": { "const": false } }
+            }
+          },
+          "$comment": "OCU emits the tools capability only — additionalProperties:false rejects every other capability (prompts, resources, logging, completions, sampling, experimental, …), not just a named denylist. (NFR-SEC-03 audit goes via the AsyncAPI fan-in, not MCP logging.)"
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 8192,
+          "$comment": "NFR-SEC-51: bounded free text. maxLength mirrors x-ocu-limits.maxInstructionsBytes (a retunable default, not a frozen value)."
+        }
+      }
+    }
+  },
+
+  "x-ocu-authz": {
+    "$comment": "NFR-SEC-09 — audience-validated authz. Carried on the HTTP transport, not in the JSON-RPC body; documented here as a binding gateway rule.",
+    "model": "OAuth 2.1 Resource Server",
+    "credential-header": "Authorization: Bearer <token>",
+    "rules": [
+      "Token MUST name this MCP server in its audience claim (RFC 8707); reject otherwise with HTTP 401.",
+      "Bearer token MUST NOT appear in the URI query.",
+      "The caller token MUST NOT be passed through to upstream or the sandbox; the trust edge injects custody credentials (NFR-SEC-23, NFR-SEC-27).",
+      "On 401, WWW-Authenticate points to the RFC 9728 resource-metadata URL.",
+      "Origin header MUST be validated (DNS-rebinding); local binds use 127.0.0.1 not 0.0.0.0 (NFR-SEC-43)."
+    ]
+  },
+
+  "x-ocu-error-model": {
+    "$comment": "Two-tier error model pinned per 08-contracts §3.",
+    "tier-1-protocol-error": "JSON-RPC error{code,message,data?}; never reaches the model; reason code only; bounded by boundedError (NFR-SEC-51).",
+    "tier-2-tool-error": "CallToolResult{isError:true, content}; reaches the model; sanitized + bounded (NFR-SEC-51, NFR-SEC-46). Sandbox/exec failures from the Exec surface map here."
+  }
+}
