@@ -37,10 +37,14 @@ jobs:
           shopt -s globstar nullglob
           files=(contracts/**/*.schema.json)
           if [ ${#files[@]} -eq 0 ]; then echo "no schema files"; exit 0; fi
+          # ajv strict mode rejects spec-legal vendor keywords (x-ocu-*) and the
+          # $comment-* convention; --strict=false validates against the 2020-12
+          # meta-schema without keyword-policing. Unknown string "format" values
+          # are warned-and-ignored by ajv, not errors; the schemas pin the same
+          # constraints with explicit `pattern` regexes.
           for f in "${files[@]}"; do
             echo "::group::$f"
-            # parse + meta-schema validate; --spec=draft2020 enforces the dialect.
-            npx --yes ajv-cli@5 compile --spec=draft2020 -s "$f"
+            npx --yes ajv-cli@5 compile --spec=draft2020 --strict=false -s "$f"
             echo "::endgroup::"
           done
 
