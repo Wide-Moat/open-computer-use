@@ -3,7 +3,7 @@
 
 ---
 status: proposed
-last-reviewed: 2026-05-30
+last-reviewed: 2026-05-31
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -70,7 +70,7 @@ The six zones group into two core contexts. The mismatch is deliberate: five zon
 
 The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution.
 
-Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. Credential custody (custody terms: `upstream-credential`, `rotation`, `lease`, `delegated-STS`), the Storage broker (mount terms: `filesystem_id`, `resource-handle`, `backend-credential`), and the Egress trust-edge (enforcement and injection terms: `SNI pre-filter`, `MITM mode`, `x-deny-reason`, `auth-injection`) speak narrower sub-languages; they sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). Whether custody earns its own context is tracked in §5.
+Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. Credential custody (custody terms: `upstream-credential`, `rotation`, `lease`, `delegated-STS`), the Storage broker (mount terms: `filesystem_id`, `resource-handle`, `backend-credential`; north-face delivery terms: `artifact`, `preview`, `downloadable`, `SPA-render`), and the Egress trust-edge (enforcement and injection terms: `SNI pre-filter`, `MITM mode`, `x-deny-reason`, `auth-injection`) speak narrower sub-languages; they sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). Whether custody earns its own context is tracked in §5.
 
 The supporting and generic contexts are not Layer 3 zones we own. Of the three generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM). Policy evaluation is not yet drawn in Layer 3; it is consumed at two sub-zones of Agent Execution — the Egress trust-edge (egress allow-list) and Credential custody (credential-scope selection) — and Layer 6 splits the anti-corruption layer accordingly. The remaining Layer 3 §3 actors are not new contexts: Customer SIEM, SOAR, and the transparency log are downstream consumers of the Compliance Evidence context (§4); the customer outbound proxy and DLP-ICAP are configurations of the Egress trust-edge already inside Agent Execution. An LLM, if a sandbox tool reaches one, is just another allow-listed egress endpoint behind that edge — not a context we model.
 
