@@ -1,7 +1,7 @@
 {
   "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | OCU constraint overlay (profile) on MCP revision 2025-06-18: conform-not-define. Pins the revision and layers OCU-side limits onto Tool/CallToolResult; does not restate the MCP base schema.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.open-computer-use.org/mcp/2025-06-18/ocu-constraints.schema.json",
+  "$id": "https://schemas.open-computer-use.dev/mcp/2025-06-18/ocu-constraints.schema.json",
   "title": "OCU MCP constraint profile (2025-06-18)",
   "description": "Conform-not-define overlay. The wire contract is the public MCP revision 2025-06-18 (https://modelcontextprotocol.io/specification/2025-06-18, schema https://github.com/modelcontextprotocol/specification/blob/main/schema/2025-06-18/schema.json). OCU is a Conformist and does not redefine MCP types. This file pins the revision and the OCU-side constraints that the base schema leaves open: audience-validated authz (NFR-SEC-09), bounded error and tool-result verbosity (NFR-SEC-51), bounded payload size (NFR-SEC-46), sequential-default tool execution (NFR-IC-05), date-revision negotiation as the breaking signal (NFR-IC-04). Validators MUST apply the MCP base schema first, then this profile.",
 
@@ -32,7 +32,7 @@
       "value": "2025-06-18",
       "http-header": "MCP-Protocol-Version",
       "missing-header-policy": "reject",
-      "x-deviation": "MCP base SHOULD-fallback to 2025-03-26 on a missing MCP-Protocol-Version header. OCU tightens this to reject (HTTP 400) to pin the revision. Intentional deviation. (NFR-IC-04)"
+      "x-deviation": "MCP base SHOULD-fallback to 2025-03-26 on a missing MCP-Protocol-Version header only when the server has no other way to identify the version (the version is otherwise negotiated at initialize). OCU tightens this to reject (HTTP 400) to pin the revision. Intentional deviation. (NFR-IC-04)"
     },
     "concurrency": {
       "mode": "sequential-default-per-session",

@@ -54,7 +54,7 @@ channels:
 
   storageBrokerAudit:
     address: audit.ingest.storage-broker
-    description: SB — File System Activity (mount/list/read/write/create/stat).
+    description: SB — File System Activity on both broker faces — south-face mount (list/read/write/create/stat) and north-face data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
     messages:
       fileSystemActivity:
         $ref: '#/components/messages/FileSystemActivity'
@@ -193,22 +193,27 @@ components:
           type: string
           maxLength: 128
           description: UUID/hex correlation id; carried as correlationId.
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
         session_id:
           type: string
           maxLength: 128
           description: Container binding (Surface D).
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
         actor_id:
           type: string
           maxLength: 256
           description: Host-attested operator/service identity (NFR-SEC-09).
+          x-ocu-design: "<=256 chars; bound is an NFR-SEC-51-derived default, not frozen."
         resource:
           type: string
           maxLength: 1024
           description: Target object.
+          x-ocu-design: "<=1024 chars; bound is an NFR-SEC-51-derived default, not frozen."
         action:
           type: string
           maxLength: 128
           description: Privileged/lifecycle action.
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
         outcome:
           type: string
           enum: [success, failure, unknown]

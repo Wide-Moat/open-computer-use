@@ -89,11 +89,11 @@
 
   "x-ocu-tbd-bodies": {
     "status": "tbd",
-    "reason": "No field-level source pins the per-operation request/response message bodies. Operation names, the three authorization axes, the ranged-read primitive (readFile carries a byte range), the recursive-list pagination cursor (listDirectory), and the chunked-transfer model (fileUpload streams numbered chunks; single-message inline content is not the transfer model) are known as concepts but their wire field names and shapes are not. Fill each entry below only when a field-level source exists; do not invent bodies.",
+    "reason": "No field-level source pins the per-operation request/response message bodies. Operation names, the three authorization axes, and the ranged-read primitive (readFile carries a byte range) are known as concepts; transfers above the single-message ceiling MUST be chunked (NFR-SEC-46) but the chunk framing, numbering, and whether small bodies travel inline are unsourced. Fill each entry below only when a field-level source exists; do not invent bodies, a pagination cursor, or a chunk/ceiling figure.",
     "known-shape-hints": {
       "readFile": "carries an optional byte range (half-open [offset, offset+length)); exact subfield names unsourced",
-      "listDirectory": "supports recursive listing with an opaque pagination cursor; exact field names unsourced",
-      "fileUpload": "chunked streaming: numbered chunks reassembled by the broker; not a single inline-content body. Per-message RPC ceiling ~4MB; default read chunk 128M",
+      "listDirectory": "recursive listing; the PoC list returns the full set, so no pagination cursor is adopted without a source; exact field names unsourced",
+      "fileUpload": "transfers above the single-message ceiling are chunked (NFR-SEC-46, which states no figure); the chunk framing/numbering and the per-message and read-chunk sizes are unsourced",
       "createFile": "body unsourced",
       "readMetadata": "body unsourced"
     },

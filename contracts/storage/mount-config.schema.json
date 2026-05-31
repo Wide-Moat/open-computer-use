@@ -75,7 +75,8 @@
         "source": {
           "description": "Backend source path for this mount, host-set. Optional; defaults to a per-mount path under the filesystem scope.",
           "type": "string",
-          "examples": ["/out", "/in"]
+          "examples": ["/out", "/in"],
+          "x-ocu-tbd": "Not pinned by the field-level mount-config source; left as a design-derived optional until a source pins the host-set source-path field. Do not treat as a frozen sourced field."
         },
         "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
         "memory_store_id": {
@@ -144,7 +145,7 @@
       "description": "Storage broker -> host provisioning variant. Carries the broker-signed lease and the inspection-CA trust anchor. Never delivered into the guest as-is; the host strips the lease before handing the GuestMountConfig to the in-guest agent.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "service_url", "filesystem_id", "auth_token", "ca_cert", "mounts"],
+      "required": ["schema_version", "service_url", "filesystem_id", "auth_token", "ca_cert_pem", "mounts"],
       "properties": {
         "schema_version": { "$ref": "#/$defs/SchemaVersion" },
         "service_url": {
@@ -159,7 +160,7 @@
           "type": "string",
           "minLength": 1
         },
-        "ca_cert": {
+        "ca_cert_pem": {
           "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress edge that injects the bearer credential.",
           "type": "string",
           "contentMediaType": "application/x-pem-file",
