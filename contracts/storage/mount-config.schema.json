@@ -100,7 +100,7 @@
         "file_perms": { "$ref": "#/$defs/Octal" }
       },
       "$comment": "RW/RO is carried by `writes` and the structural `mounts` (RW) / `readonly_mounts` (RO) split, host-enforced. cache_duration_s sets the per-mount directional window (short for RO inputs, long for the RW sink; defaults pinned in CacheDurationSeconds, tunable per deployment). The backend source path is broker-derived from filesystem_id + the mount's RW/RO intent and is deliberately off the wire (least-data, NFR-SEC-25) — not a guest- or host-facing mount field. NFR-SEC-25.",
-      "$comment-no-role": "An earlier draft carried a `role` enum (uploads/tool_results/transcripts/outputs) bound to `writes`/cache. It was dropped: the provisioning struct has no role field — RW/RO is structural (the readonly_mounts split) and the directional window is cache_duration_s itself — so role only duplicated values already carried, with no source. The role names survive as the directional-window vocabulary in CacheDurationSeconds."
+      "$comment-no-role": "No `role` field. RW/RO is structural (the mounts / readonly_mounts split) and the directional cache window is cache_duration_s itself; a role enum (uploads/tool_results/transcripts/outputs) bound to writes/cache would only duplicate values already carried by `writes` and cache_duration_s, with no source. The role names survive solely as the directional-window vocabulary in CacheDurationSeconds."
     },
 
     "GuestMountConfig": {
@@ -168,7 +168,12 @@
         },
         "mounts": {
           "type": "array",
-          "items": { "$ref": "#/$defs/MountBase" }
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/MountBase" },
+              { "properties": { "writes": { "const": true } } }
+            ]
+          }
         },
         "readonly_mounts": {
           "type": "array",
