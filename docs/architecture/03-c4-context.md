@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-30
+last-reviewed: 2026-05-31
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -37,12 +37,13 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 | **Customer DLP-ICAP service** | ICAP req-mod / resp-mod hook inside the MITM-inspecting egress mode | optional — engaged only in MITM mode | [NFR-COMP-28](manifesto/02-nfrs.md) |
 | **SOAR** (incident automation) | Bidirectional: signed webhook from OCU on alert, admin API back for revoke | optional | — |
 | **Transparency log** | Daily Merkle-head submission for tamper-evident audit | optional — choose public or customer-private | [NFR-SEC-03](manifesto/02-nfrs.md) |
+| **Data-plane client** (OCU SPA or headless caller) | Reaches OCU's own authenticated SPA — file preview and artifact render — and the headless upload/list/download API; bytes flow client↔OCU directly, never through a peer and never to the object store. May be driven by a human; the operator control plane is separate and CLI-only | optional — absent in headless / automated deployments; OIDC-embed token required on the full shelf | [NFR-SEC-09](manifesto/02-nfrs.md), [NFR-SEC-49](manifesto/02-nfrs.md), [NFR-SEC-73](manifesto/02-nfrs.md), [NFR-SEC-82](manifesto/02-nfrs.md), [NFR-SEC-83](manifesto/02-nfrs.md) |
 
 Regulator citations and measurable targets for each row land in [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md), not here.
 
 Outbound endpoints behind the egress policy (LLM upstream, customer MCP servers, object stores, internal APIs) are not actors against OCU's contracts — the Egress trust-edge gates them and injects the upstream authorization from Credential custody ([`02-trust-boundaries.md`](02-trust-boundaries.md) §3 preamble).
 
-Humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a custom client); direct human-to-OCU UI is a v1 non-goal.
+A human drives OCU's control plane only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a custom client); the operator control plane stays CLI-only. The data plane is separate: OCU serves its own authenticated SPA for file preview and artifact render, plus the headless upload/list/download API. The SPA is embeddable cross-origin in a calling peer ([NFR-SEC-82](manifesto/02-nfrs.md), [NFR-SEC-83](manifesto/02-nfrs.md)). Rendering this data-plane surface is OCU's; the calling client's chat/workflow surface is separate.
 
 ## 5. Scope out
 
@@ -50,9 +51,11 @@ Humans drive OCU only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a c
 - **Chat surface** — peers like Open WebUI call OCU as an MCP client; they live in their own repos.
 - **Hosted LLM serving, model selection, and the agent loop** — the calling client owns all three. If a sandbox tool needs an LLM, it reaches it as one allow-listed egress endpoint, not through OCU.
 - **Skill registry and skill-pack catalog** — v1 non-goal; `SkillProvider` abstraction reserved.
-- **Admin web UI** — v1 non-goal; CLI (`occ`) + GitOps + Grafana cover operations.
+- **Operator / control-plane console** — v1 non-goal; CLI (`occ`) + GitOps + Grafana cover operator operations. OCU's data-plane preview / artifact-render SPA is in scope (§4).
 - **AI-guardrail / prompt-content policy** — customer's AI gateway, not OCU ([`02-trust-boundaries.md`](02-trust-boundaries.md) §2 zone 5).
 
 ## 6. Open questions
 
 1. Bundling status of n8n and Open WebUI on `next/v1` — [#154](https://github.com/Wide-Moat/open-computer-use/issues/154) — Wide-Moat bundle composition is open; Layer 4 names the integration shape but does not lock the packaging.
+2. Browser/terminal live-view surfaced to a human (CDP screencast / PTY) — [#210](https://github.com/Wide-Moat/open-computer-use/issues/210) — v2, deferred. The data-plane SPA (file preview + artifact render) is v1 and in scope per §4; the machine-facing PTY+CDP WebSocket ([NFR-IC-03](manifesto/02-nfrs.md)) is v1 and machine-to-machine only. A human live-view, when taken up, follows the host-proxied ([NFR-SEC-43](manifesto/02-nfrs.md)) shape — host-side termination, never an inbound listener on the guest.
+3. Sharing a file by link (a capability URL a recipient redeems without an OCU session) is out of v1 — the data-plane API covers upload / list / download for an identity-bound client only. Share semantics (capability mint, TTL, revocation, audit) land when taken up — [#211](https://github.com/Wide-Moat/open-computer-use/issues/211).
