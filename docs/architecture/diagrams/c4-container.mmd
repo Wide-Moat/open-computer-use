@@ -13,6 +13,7 @@ flowchart LR
     %% ─── external (drawn for orientation; contracts in 03-c4-context.md §4) ───
     PEER["MCP-speaking caller<br/>(runs the loop)"]:::ext
     OPER["Operator<br/>(PAM-JIT human)"]:::ext
+    FILE["Data-plane client<br/>(OCU SPA · file/artifact API)"]:::extOpt
     UPSTREAM["Outbound endpoints<br/>(LLM · object store · internal API)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
 
@@ -21,7 +22,7 @@ flowchart LR
         MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
         CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
         CUST["Credential custody<br/>upstream creds · rotation · STS · host-side"]
-        STORE["Storage broker<br/>object-store client · signs own requests<br/>serves the guest mount"]
+        STORE["Storage broker<br/>object-store client · signs own requests<br/>guest mount (south) + SPA · file/artifact API · preview (north)"]
         VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
         EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth from custody"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
@@ -35,6 +36,7 @@ flowchart LR
     %% ─── control + storage reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
     CTRL -->|"Session JWT bound to container_name<br/>rotated · host dials guest"| VM
     STORE -->|"mount · resource handle (filesystem_id)"| VM
+    FILE -.->|"SPA · file/artifact API (north)<br/>embed token → first-party session · bytes direct"| STORE
 
     %% ─── egress: guest sends unauthenticated; on injection-needing legs the edge
     %%     pulls a custody lease and injects (MITM mode only — see 05 §3, §6) ───
