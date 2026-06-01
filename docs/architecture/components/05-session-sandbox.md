@@ -30,7 +30,7 @@ Intra-container, the container is one process tree rooted at the guest agent (PI
 | guest → host | stdout/stderr binary frames + result/EOF | exec supervisor | length-prefixed, bounded per call (Invariants) |
 | host → guest | Session JWT (selects session identity) | guest agent | Session JWT class, TTL per [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 |
 | broker → guest | file-operation mount + Storage-mount handle | guest agent (mount client) | guest names file-op verbs, never the object-store protocol; substrate is named by role |
-| guest → edge | the one outbound network leg | guest agent | guest sends an unauthenticated request; this route is the container's sole egress (invariant 4) |
+| guest → edge | outbound network leg | guest agent | guest sends an unauthenticated request; this route is the container's sole egress (invariant 4) |
 | guest → audit | OCSF tool-call events (fan-in flow F11, defined in [`06-threat-model.md`](../06-threat-model.md) §1) | exec supervisor / runtime-monitor | host-authored, not guest-authored (Operational concerns) |
 
 The inbound exec/PTY+CDP edge, the broker mount edge, and the outbound egress leg are the boundaries [`05-c4-container.md`](../05-c4-container.md) §4 names; their `F6`/`F7`/`F9` flow labels are defined in [`06-threat-model.md`](../06-threat-model.md) §1.
