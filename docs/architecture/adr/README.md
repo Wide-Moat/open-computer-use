@@ -19,6 +19,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | Number | Title | Status | Supersedes | Last-reviewed |
 |---|---|---|---|---|
 | [0001](0001-layer-0-gate-legacy-exclusion.md) | Layer 0 gate — legacy exclusion | accepted | — | 2026-05-24 |
+| [0002](0002-session-view-descriptor.md) | Session view is descriptor-driven | proposed | — | 2026-06-01 |
 
 ## Lifecycle
 
