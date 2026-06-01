@@ -92,13 +92,13 @@ Config surface: the `filesystem_id`→prefix map, the north-face ingress binding
 
 The container emits OCSF on the audit fan-in flow F11, fail-closed, per the audit contract ([`audit-fanin`](../../../contracts/audit/audit-fanin.asyncapi.yaml)) and NFR-SEC-03 / NFR-SEC-79 — both faces author the same File System Activity event class.
 
-Scaling axis: per-tenant instantiation (NFR-SEC-76) — one broker principal per tenant filesystem scope. Whether that principal is also per-sandbox-host or per-deployment, and whether that changes the container diagram, is open ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)). Capacity is bounded by the per-session file-op and inbound-byte ceilings (NFR-SEC-46, NFR-SEC-78); a one-per-host broker serving many sessions is a shared DoS surface, which is why those ceilings are per-session, not per-broker.
+Scaling axis: per-tenant instantiation (NFR-SEC-76) — one broker principal per tenant filesystem scope. In v1 that principal is one per deployment with no diagram change; a per-sandbox-host split ([1..N] behind sharding) is deferred ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)). Capacity is bounded by the per-session file-op and inbound-byte ceilings (NFR-SEC-46, NFR-SEC-78); a one-per-host broker serving many sessions is a shared DoS surface, which is why those ceilings are per-session, not per-broker.
 
 Shelf delta (from [`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf holds a host-local backend credential, admitted only under `workload_trust_profile = trusted_operator` and single-tenant (NFR-SEC-60); the full shelf uses a customer-PKI workload identity with STS scoped per session (NFR-SEC-25). All invariants hold on both shelves; only the credential substrate and its blast radius (P4-S2 / P4-I1 residual) change. The runtime tier that hosts the broker and the build-vs-buy of the object-store engine are deferred (`needs ADR:` object-store engine selection; `needs ADR:` broker runtime tier); this spec records the two-face split and the cardinality question, it picks no engine or tier.
 
 ## Open questions
 
-1. Is the broker one instance per deployment or one per sandbox host, and does the answer change the container diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).
+1. v1 is one broker per deployment with no diagram change; the per-sandbox-host split is deferred behind sharding ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)).
 2. Does the broker file-operation contract stay distinct from any object-store API at every shelf, and where is that boundary asserted? — [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).
 3. Embed-token replay-binding (`jti`/nonce single-use or token↔channel binding) within the `exp` window — [#217](https://github.com/Wide-Moat/open-computer-use/issues/217).
 4. Preview-render parser isolation for untrusted artifact bodies on the north face — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).

@@ -88,4 +88,4 @@ Two seams diverge from the field by design, for an in-perimeter regulated buyer 
 ## 7. Open questions
 
 1. Does the Session sandbox warrant a sub-container split once the workload-trust tier and guest-agent protocol are specified, or stay one container with internal components? — [#174](https://github.com/Wide-Moat/open-computer-use/issues/174).
-2. Is Credential custody (and the Storage broker) one container per deployment or one per sandbox host, and does the answer change the diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).
+2. Credential custody and the Storage broker are one container per deployment in v1 with no diagram change; the per-sandbox-host split ([1..N] behind sharding) is deferred ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)).

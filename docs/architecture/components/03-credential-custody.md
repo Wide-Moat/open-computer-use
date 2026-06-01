@@ -81,7 +81,7 @@ Config surface: the upstream-resource catalogue (which bucket prefixes / API-key
 
 Observability and audit: custody emits OCSF on the fan-in flow `F11` for every lease mint, rotate, scope-change, and revoke — system-initiated issues under [NFR-SEC-72](../manifesto/02-nfrs.md), operator-forced actions under [NFR-SEC-45](../manifesto/02-nfrs.md) — written via the durable bus on the critical path ([NFR-REL-12](../manifesto/02-nfrs.md)) into the hash-chained store under the retention floor ([NFR-COMP-01](../manifesto/02-nfrs.md)). The lease-issue event is a host-authored record; it is not the NFR-SEC-47 out-of-band evidence set for in-sandbox actions, which is the audit pipeline's concern.
 
-Scaling axis: per-deployment or per-sandbox-host, open at [#175](https://github.com/Wide-Moat/open-computer-use/issues/175), which also decides whether the container diagram changes. Capacity is bounded by lease-issuance rate; the lease issuer never buffers a root in a returnable response. No REL NFR pins a custody RTO/RPO; the accepted gap is recorded in Open questions rather than invented here.
+Scaling axis: one instance per deployment in v1; a per-sandbox-host split ([1..N] behind sharding) is deferred ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)) and does not change the v1 container diagram. Capacity is bounded by lease-issuance rate; the lease issuer never buffers a root in a returnable response. No REL NFR pins a custody RTO/RPO; the accepted gap is recorded in Open questions rather than invented here.
 
 Rotation discipline: rotating the root is custody-internal and does not invalidate in-flight leases — those self-expire and revoke per the TTL and audit invariants above; the one new fact is that root rotation is independent of live-lease validity.
 
@@ -89,7 +89,7 @@ Shelf delta from [`05-c4-container.md`](../05-c4-container.md) §5: minimal shel
 
 ## Open questions
 
-1. One custody per deployment or one per sandbox host, and does the answer change the container diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).
+1. v1 is one custody per deployment with no diagram change; the per-sandbox-host split is deferred behind sharding ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)).
 2. Does Credential custody collapse into a generic Secrets-custody context, and the build-vs-buy call for the secret store / delegated-STS issuer? — [#169](https://github.com/Wide-Moat/open-computer-use/issues/169).
 3. Minimum lease scope per tool/action below resource-class (least-privilege) — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
 4. Custody-side credential class and lease discipline for mTLS / cert-pin / DPoP upstreams the edge re-originates — [#176](https://github.com/Wide-Moat/open-computer-use/issues/176).
