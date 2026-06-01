@@ -19,6 +19,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | Number | Title | Status | Supersedes | Last-reviewed |
 |---|---|---|---|---|
 | [0001](0001-layer-0-gate-legacy-exclusion.md) | Layer 0 gate — legacy exclusion | accepted | — | 2026-05-24 |
+| [0003](0003-sandbox-runtime-tier-ladder.md) | Sandbox runtime tier ladder | proposed | — | 2026-06-01 |
 
 ## Lifecycle
 

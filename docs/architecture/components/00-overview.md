@@ -37,7 +37,7 @@ The guest agent is the process that constitutes the Session sandbox container ([
 All seven are at `draft`. The ones a contract or a pending decision already pins harden to `proposed`/`accepted` first, because their spec has the least free design left and the most to verify against:
 
 1. **Storage broker** — three contracts and seven NFR anchors already fix its surface; the spec records the two-face component split and the per-tenant instantiation question ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)).
-2. **Session sandbox** — the exec-channel contract fixes its machine edge; the runtime-tier-by-`workload_trust_profile` decision is ADR-bearing and the sub-container split is open ([#174](https://github.com/Wide-Moat/open-computer-use/issues/174)).
+2. **Session sandbox** — the exec-channel contract fixes its machine edge; the runtime-tier-by-`workload_trust_profile` decision is fixed by [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) and the sub-container split is open ([#174](https://github.com/Wide-Moat/open-computer-use/issues/174)).
 3. **Egress trust-edge** — no built contract yet, but the deny-reason and MITM-mode behaviour are NFR-anchored and cross the broker and custody boundaries.
 
 The other four reach `accepted` once these three settle their shared invariants and the ADRs their `adr:` keys await (runtime tier, operator-auth, object-store engine) land.

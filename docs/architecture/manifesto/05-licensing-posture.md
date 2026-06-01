@@ -37,7 +37,12 @@ Each accepted dependency is recorded as bundled or not-bundled when an ADR or co
 - **Bundled** — OCU ships the binary, image, or library as part of a release. OCU owns its CVE response, version pinning, vulnerability scanning, and SBOM entry.
 - **Not bundled** — the customer provides it over a standard API (for example an IdP, a secret store, a SIEM, or a customer KMS). OCU documents the integration contract; the customer owns the lifecycle.
 
-The Bill of Materials is the table of accepted dependencies with this flag. It is not pre-populated: a row is added when the ADR or component spec that adopts a dependency lands, so the bundled/not-bundled call is made with the rationale that needs it, not in advance. Until the first such ADR lands, the only firm entries are the rejections below.
+The Bill of Materials is the table of accepted dependencies with this flag. It is not pre-populated: a row is added when the ADR or component spec that adopts a dependency lands, so the bundled/not-bundled call is made with the rationale that needs it, not in advance.
+
+| Dependency | Licence | Bundled | Adopted by |
+|---|---|---|---|
+| runc | Apache-2.0 | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
+| gVisor (`runsc`) | Apache-2.0 (per-file MIT/BSD) | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
 
 ## Rejected dependencies
 
