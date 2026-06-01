@@ -41,7 +41,7 @@ The Bill of Materials is the table of accepted dependencies with this flag. It i
 
 ## Rejected dependencies
 
-A rejection is first-class: recorded so it is not re-proposed. Each row names the reject reason and the path OCU takes instead. Licence facts were checked against each project's own LICENSE on 2026-06-01; the adopting ADR re-verifies before it cites a row.
+A rejection is first-class: recorded so it is not re-proposed. Each row names the reject reason and the path OCU takes instead. The adopting ADR re-verifies a row's licence fact against the dependency's own LICENSE before it cites the row.
 
 | Dependency | Reason | Instead |
 |---|---|---|
