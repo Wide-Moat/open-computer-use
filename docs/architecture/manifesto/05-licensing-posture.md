@@ -43,7 +43,7 @@ The Bill of Materials is the table of accepted dependencies with this flag. It i
 |---|---|---|---|
 | runc | Apache-2.0 | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
 | gVisor (`runsc`) | Apache-2.0 (per-file MIT/BSD) | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
-| Envoy | Apache-2.0 | bundled | [ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md) |
+| Envoy | Apache-2.0 | bundled | [ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md), [ADR-0006](../adr/0006-egress-forward-proxy-substrate.md) |
 
 ## Rejected dependencies
 

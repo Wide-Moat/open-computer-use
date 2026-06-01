@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: null
-adr: [0005]
+adr: [0005, 0006]
 ---
 
 The sandbox's sole outbound network path: it enforces a deny-by-default destination allow-list, emits a structured deny reason, and on the legs that need it attaches the upstream authorization received over Envoy SDS so the guest sends an unauthenticated request. Audience: engineers and security reviewers wiring or auditing egress policy.
@@ -83,12 +83,12 @@ Residual, by [`06-threat-model.md`](../06-threat-model.md) §5 register: the tra
 
 **Rotation / lifecycle.** The edge receives the credential from SDS per-connection and drops it after use; rotation belongs to the SDS source, not the edge ([NFR-SEC-04](../manifesto/02-nfrs.md)). On sandbox teardown the host-driven finalizer drops the network-bound egress route host-side even if the guest is unresponsive ([NFR-SEC-65](../manifesto/02-nfrs.md)).
 
-**Shelf delta** ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf runs transparent pass-through (static-file SDS source, one-click solo path) and cannot inject; the full shelf adds opt-in MITM-inspecting mode with a customer CA in the sandbox trust store and a customer-provided SDS source, attaching an upstream credential on the edge-originated leg. The boundary properties in the Invariants section hold on both shelves; the SDS source and the TLS-termination capability change with the mode. Envoy is the forward-proxy substrate ([ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md)); the MITM-termination substrate is a future ADR — `needs ADR:` (see Open questions).
+**Shelf delta** ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf runs transparent pass-through (static-file SDS source, one-click solo path) and cannot inject; the full shelf adds opt-in MITM-inspecting mode with a customer CA in the sandbox trust store and a customer-provided SDS source, attaching an upstream credential on the edge-originated leg. The boundary properties in the Invariants section hold on both shelves; the SDS source and the TLS-termination capability change with the mode. Envoy is the forward-proxy substrate ([ADR-0006](../adr/0006-egress-forward-proxy-substrate.md)); the MITM-termination substrate is a future ADR — `needs ADR:` (see Open questions).
 
 ## Open questions
 
 1. Envoy's `credential_injector` filter and its OAuth2 extension carry an upstream maturity caveat — not substantial production burn-in, an unknown security posture, intended for trusted-on-both-ends paths — while a third-party LLM API is an untrusted upstream. The regulated-tier posture for this filter is deferred pending a security review — needs issue.
-2. MITM-termination technology is undecided — needs ADR: record the termination substrate (role named here only, never decided in prose), coupled to [NFR-FLEX-15](../manifesto/02-nfrs.md) / [NFR-COMP-28](../manifesto/02-nfrs.md).
+2. The forward-proxy substrate is fixed by [ADR-0006](../adr/0006-egress-forward-proxy-substrate.md); MITM-termination technology (per-SNI on-the-fly leaf-cert generation) remains undecided — needs ADR, coupled to [NFR-FLEX-15](../manifesto/02-nfrs.md) / [NFR-COMP-28](../manifesto/02-nfrs.md).
 3. SNI/Host consistency on the transparent (non-inspected) leg, where the SNI pre-filter alone misses domain-fronting — [#198](https://github.com/Wide-Moat/open-computer-use/issues/198).
 4. No-credential-in-response stripping, edge-binary/config attestation, and plaintext-zeroization for the MITM mode lack an explicit NFR — [#197](https://github.com/Wide-Moat/open-computer-use/issues/197).
 5. mTLS / cert-pin / DPoP upstreams the edge cannot serve by injection, and the guest-resident-key schemes declared unsupported — [#176](https://github.com/Wide-Moat/open-computer-use/issues/176).
