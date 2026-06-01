@@ -23,6 +23,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0003](0003-sandbox-runtime-tier-ladder.md) | Sandbox runtime tier ladder | proposed | — | 2026-06-01 |
 | [0004](0004-operator-authentication-substrate.md) | Operator authentication substrate | proposed | — | 2026-06-01 |
 | [0005](0005-egress-credential-delivery-envoy-sds.md) | Egress credential delivery is off-the-shelf Envoy SDS | proposed | — | 2026-06-01 |
+| [0006](0006-egress-forward-proxy-substrate.md) | Egress forward-proxy substrate | proposed | — | 2026-06-01 |
 
 ## Lifecycle
 
