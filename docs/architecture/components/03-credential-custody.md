@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: null
-adr: []
+adr: [0005]
 ---
 
 The host-side custodian of upstream credentials: it mints a scoped, short-lived lease for the Egress trust-edge at injection time and holds no guest-reachable surface. Audience: engineers and security reviewers implementing or auditing credential custody.
@@ -90,7 +90,7 @@ Shelf delta from [`05-c4-container.md`](../05-c4-container.md) §5: minimal shel
 ## Open questions
 
 1. One custody per deployment or one per sandbox host, and does the answer change the container diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).
-2. Does Credential custody collapse into a generic Secrets-custody context, and the build-vs-buy call for the secret store / delegated-STS issuer? — [#169](https://github.com/Wide-Moat/open-computer-use/issues/169).
+2. [ADR-0005](../adr/0005-credential-store-substrate.md) keeps custody domain-specific behind a `SecretsProvider` abstraction (bundled AEAD-file default + not-bundled external-store adapter); the external-store product choice opens under [#169](https://github.com/Wide-Moat/open-computer-use/issues/169).
 3. Minimum lease scope per tool/action below resource-class (least-privilege) — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
 4. Custody-side credential class and lease discipline for mTLS / cert-pin / DPoP upstreams the edge re-originates — [#176](https://github.com/Wide-Moat/open-computer-use/issues/176).
 5. needs issue: define a custody availability target (RTO/RPO) for the lease-issuance path, given that an unreachable custody fails closed and drops upstream-authenticated traffic for in-flight sessions at lease TTL (P3-D1 names no RTO/RPO at this element; resource-exhaustion containment is #188).
