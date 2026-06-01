@@ -23,7 +23,7 @@ Fixes how a human operator and an automated SOAR caller authenticate to the Cont
 
 ## Context
 
-The Control / operator API ([component 02](../components/02-control-operator-api.md)) is the only privileged plane: it reaches the kill switch, the denylist authority, and tier admission. Two principals call it — a human operator and an automated SOAR responder — and the component marks operator-auth as `needs ADR` in its Boundaries, Operational concerns, and Open question #5 (tracked [#225](https://github.com/Wide-Moat/open-computer-use/issues/225)). This ADR closes that question.
+The Control / operator API ([component 02](../components/02-control-operator-api.md)) is the privileged plane: it reaches the kill switch, the denylist authority, and tier admission. Two principals call it — a human operator and an automated SOAR responder — and the component marks operator-auth as `needs ADR` in its Boundaries, Operational concerns, and Open question #5 (tracked [#225](https://github.com/Wide-Moat/open-computer-use/issues/225)). This ADR closes that question.
 
 The one-click solo install is an NFR-shaping invariant: the default deployment runs single-operator, no IdP, no KVM, and must not pay for a bank's identity machinery to start. The substrate has to scale from that floor up to a customer with a federated identity provider and a PAM tool, without forking the contract.
 
