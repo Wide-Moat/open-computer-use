@@ -47,7 +47,7 @@ The Egress trust-edge runs an Apache-2.0/MIT/BSD forward proxy — Envoy is the 
 
 - **Squid (GPL-2.0+)** — mature forward proxy with SslBump for the later MITM leg; clears the allow-list, but a bundled GPL binary triggers the distribution review noted in [`manifesto/05-licensing-posture.md`](../manifesto/05-licensing-posture.md), and its config model fits the deny-by-default floor less directly than Envoy's filter chain.
 - **HAProxy (GPL-2.0+ / LGPL)** — passes the allow-list and handles SNI routing, but bundling carries the same GPL distribution review and it lacks a first-class external-authorization seam equivalent to `ext_authz`.
-- **Hand-rolled CONNECT proxy** — a minimal Go/Rust proxy owned end to end. Rejected: re-implementing resolver pinning, filter chains, and an `ext_authz` seam is net-new attack surface a bank InfoSec review would not credit against a vendor-backed proxy.
+- **Hand-rolled CONNECT proxy** — a minimal Go/Rust proxy owned end to end. Rejected: re-implementing resolver pinning, filter chains, and an `ext_authz` seam is net-new attack surface a regulated-enterprise InfoSec review would not credit against a vendor-backed proxy.
 
 ## Compliance impact
 
