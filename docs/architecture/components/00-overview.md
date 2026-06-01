@@ -24,7 +24,6 @@ Each row links the container's responsibility (Layer 6) and lists the spec file,
 |---|---|---|---|---|---|
 | 01 | MCP gateway (agent-facing) | [`01-mcp-gateway.md`](01-mcp-gateway.md) | draft | — | [`mcp/ocu-constraints`](../../../contracts/mcp/2025-06-18/ocu-constraints.schema.json) |
 | 02 | Control / operator API | [`02-control-operator-api.md`](02-control-operator-api.md) | draft | — | — |
-| 03 | Credential custody | [`03-credential-custody.md`](03-credential-custody.md) | draft | — | — |
 | 04 | Storage broker | [`04-storage-broker.md`](04-storage-broker.md) | draft | — | [`storage/mount-config`](../../../contracts/storage/mount-config.schema.json), [`storage/file-ops`](../../../contracts/storage/file-ops.schema.json), [`storage/file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json) |
 | 05 | Session sandbox `[1..N]` | [`05-session-sandbox.md`](05-session-sandbox.md) | draft | — | [`exec/exec-channel`](../../../contracts/exec/exec-channel.schema.json) |
 | 06 | Egress trust-edge proxy | [`06-egress-trust-edge.md`](06-egress-trust-edge.md) | draft | — | — |
@@ -34,10 +33,10 @@ The guest agent is the process that constitutes the Session sandbox container ([
 
 ## 3. Maturation order
 
-All seven are at `draft`. The ones a contract or a pending decision already pins harden to `proposed`/`accepted` first, because their spec has the least free design left and the most to verify against:
+All six are at `draft`. The ones a contract or a pending decision already pins harden to `proposed`/`accepted` first, because their spec has the least free design left and the most to verify against:
 
 1. **Storage broker** — three contracts and seven NFR anchors already fix its surface; the spec records the two-face component split and the per-tenant instantiation question ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)).
 2. **Session sandbox** — the exec-channel contract fixes its machine edge; the runtime-tier-by-`workload_trust_profile` decision is fixed by [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) and the sub-container split is open ([#174](https://github.com/Wide-Moat/open-computer-use/issues/174)).
-3. **Egress trust-edge** — no built contract yet, but the deny-reason and MITM-mode behaviour are NFR-anchored and cross the broker and custody boundaries.
+3. **Egress trust-edge** — no built contract yet, but the deny-reason and MITM-mode behaviour are NFR-anchored and cross the broker boundary; the upstream credential arrives over off-the-shelf Envoy SDS.
 
-The other four reach `accepted` once these three settle their shared invariants and the ADRs their `adr:` keys await (runtime tier, operator-auth, object-store engine) land.
+The other three reach `accepted` once these three settle their shared invariants and the ADRs their `adr:` keys await (runtime tier, operator-auth, object-store engine) land.

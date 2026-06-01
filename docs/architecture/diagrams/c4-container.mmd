@@ -2,9 +2,9 @@
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
 %% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
-%% Seven containers across six Layer-3 trust zones: the Control plane splits into an agent-facing
+%% Six containers across five Layer-3 trust zones: the Control plane splits into an agent-facing
 %% MCP gateway and an operator/lifecycle API (the kill-switch lives only on the latter); the other
-%% five zones map 1:1. Substrate differs by shelf (see 05-c4-container.md §5); the count does not.
+%% four zones map 1:1. Substrate differs by shelf (see 05-c4-container.md §5); the count does not.
 %% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
 
 %%{init: {"theme": "neutral"} }%%
@@ -16,15 +16,15 @@ flowchart LR
     FILE["Data-plane client<br/>(OCU SPA · file/artifact API)"]:::extOpt
     UPSTREAM["Outbound endpoints<br/>(LLM · object store · internal API)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
+    SDS["SDS source<br/>(static file solo · customer store enterprise)"]:::extOpt
 
     %% ─── containers inside the system under design ───
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
         CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
-        CUST["Credential custody<br/>upstream creds · rotation · STS · host-side"]
         STORE["Storage broker<br/>object-store client · signs own requests<br/>guest mount (south) + SPA · file/artifact API · preview (north)"]
         VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
-        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth from custody"]
+        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth (Envoy SDS + credential_injector)"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
@@ -39,16 +39,15 @@ flowchart LR
     FILE -.->|"SPA · file/artifact API (north)<br/>embed token → first-party session · bytes direct"| STORE
 
     %% ─── egress: guest sends unauthenticated; on injection-needing legs the edge
-    %%     pulls a custody lease and injects (MITM mode only — see 05 §3, §6) ───
+    %%     receives the credential over SDS and injects (MITM mode only — see 05 §3, §6) ───
     VM -->|"single outbound · no credential in request"| EDGE
-    CUST -->|"credential lease<br/>fetched at injection (MITM legs)"| EDGE
+    SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (MITM legs)"| EDGE
     STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
     EDGE -->|"injection-needing leg: upstream auth injected (MITM mode)"| UPSTREAM
 
     %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
     MCPG -->|OCSF| AUD
     CTRL -->|OCSF| AUD
-    CUST -->|OCSF| AUD
     STORE -->|OCSF| AUD
     VM -->|OCSF| AUD
     EDGE -->|OCSF| AUD

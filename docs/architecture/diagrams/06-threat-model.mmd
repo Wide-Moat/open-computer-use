@@ -7,10 +7,10 @@ flowchart LR
     PEER["MCP caller"]:::ext
     OPER["Operator"]:::ext
     DPC["Data-plane client<br/>(SPA / headless)"]:::ext
+    SDS["SDS source<br/>(static file / customer store)"]:::ext
     subgraph OCU["Open Computer Use — STRIDE overlay"]
         MCPG["MCP gateway"]
         CTRL["Control / operator API"]
-        CUST["Credential custody"]
         STORE["Storage broker"]
         VM["Session sandbox [1..N]"]
         EDGE["Egress trust-edge proxy"]
@@ -21,9 +21,9 @@ flowchart LR
     MCPG --> CTRL
     CTRL --> VM
     STORE --> VM
-    DPC -->|"north face (F12)"| STORE
+    DPC -->|"north face (F11)"| STORE
     VM --> EDGE
-    CUST --> EDGE
+    SDS -->|"credential over SDS"| EDGE
     STORE --> EDGE
     VM -.OCSF.-> AUD
     EDGE -.OCSF.-> AUD
@@ -31,7 +31,6 @@ flowchart LR
     PEND["NFR specified, impl tracked<br/>#148 #149 #150 #176 #181 #182<br/>#183 #184 #185 #186 #187 #188<br/>#217 #218"]:::pend
     MCPG -. P1-I1 P1-E2 .-> PEND
     CTRL -. P2-R1 .-> PEND
-    CUST -. P3-R1 P3-I2 P3-T2 .-> PEND
     STORE -. "P4-D1 (south) · P4-S3 P4-T3 P4-I3 P4-D3 P4-R2 P4-E3 (north)" .-> PEND
     VM -. P5-T1 P5-I1 P5-I2 P5-I3 P5-R1 .-> PEND
     EDGE -. P6-I1 P6-D1 P6-D3 P6-E3 .-> PEND

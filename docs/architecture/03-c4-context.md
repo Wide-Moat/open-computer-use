@@ -16,7 +16,7 @@ OCU is one component of the Wide-Moat opinionated bundle (other peers in the bun
 
 ## 2. Inside the box
 
-OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Credential custody + Storage broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
+OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Storage broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
 
 ## 3. C4 Context diagram
 
@@ -41,7 +41,7 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 
 Regulator citations and measurable targets for each row land in [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md), not here.
 
-Outbound endpoints behind the egress policy (LLM upstream, customer MCP servers, object stores, internal APIs) are not actors against OCU's contracts — the Egress trust-edge gates them and injects the upstream authorization from Credential custody ([`02-trust-boundaries.md`](02-trust-boundaries.md) §3 preamble).
+Outbound endpoints behind the egress policy (LLM upstream, customer MCP servers, object stores, internal APIs) are not actors against OCU's contracts — the Egress trust-edge gates them and attaches the upstream authorization received over Envoy SDS from a static file (solo) or a customer store (enterprise) ([`02-trust-boundaries.md`](02-trust-boundaries.md) §3 preamble).
 
 A human drives OCU's control plane only through an MCP-speaking peer (e.g. Open WebUI, n8n, or a custom client); the operator control plane stays CLI-only. The data plane is separate: OCU serves its own authenticated SPA for file preview and artifact render, plus the headless upload/list/download API. The SPA is embeddable cross-origin in a calling peer ([NFR-SEC-82](manifesto/02-nfrs.md), [NFR-SEC-83](manifesto/02-nfrs.md)). Rendering this data-plane surface is OCU's; the calling client's chat/workflow surface is separate.
 
