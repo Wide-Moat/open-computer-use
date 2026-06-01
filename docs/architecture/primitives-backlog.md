@@ -40,7 +40,7 @@ Removed because the primitive landed in §02 with a measurable target:
 - Tamper-evident audit log → NFR-SEC-03.
 - WORM audit retention 7y/10y → NFR-COMP-01.
 - BYOK / HYOK via PKCS#11 + KMIP → NFR-SEC-04 + NFR-FLEX-04.
-- Identity = SPIFFE workload + SAML/OIDC + SCIM → NFR-SEC-09 + NFR-FLEX-03.
+- Identity = SPIFFE workload + OIDC + SCIM → NFR-SEC-09 + NFR-FLEX-03.
 - Single forward-proxy egress with customer-CA-injectable trust (MITM-inspecting opt-in) → NFR-SEC-05.
 - Egress allow-list (deny-by-default; any destination type) → NFR-SEC-08.
 

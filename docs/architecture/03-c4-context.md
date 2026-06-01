@@ -29,8 +29,8 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 | Actor | Role | Required-or-optional | NFR anchor |
 |---|---|---|---|
 | **MCP-speaking peer** (n8n, Open WebUI, custom MCP client) | Inbound calls into OCU's MCP server | required | — |
-| **Admin / Operator** (PAM-JIT human) | Operates OCU; host-rooted local credential on the minimal shelf, short-lived SAML-asserted attribute on the full shelf — no shared service accounts on either | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
-| **Customer IdP** (SAML / OIDC) | Authenticates inbound peers and operators on the full shelf; OCU is a relying party | not on the minimal shelf (operators use a host-rooted local credential) — required on the full-capability shelf | — |
+| **Admin / Operator** (PAM-JIT human) | Operates OCU; host-rooted local credential on the minimal shelf, short-lived OIDC-asserted claim on the full shelf — no shared service accounts on either | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
+| **Customer IdP** (OIDC) | Authenticates inbound peers and operators on the full shelf; OCU is a relying party; a SAML-only IdP federates in through Dex or Keycloak | not on the minimal shelf (operators use a host-rooted local credential) — required on the full-capability shelf | — |
 | **Customer SIEM** | OCSF v1.x event bridge consumed by the customer's SIEM | optional on minimal shelf (file-system sink); required where SIEM is the system of record | [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
 | **Customer KMS / HSM** | Key custody for the broker and audit signing chain on the full-capability shelf | optional — full shelf only; minimal shelf uses host-local keys | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | **Customer outbound proxy** | Chained-proxy hop for egress; OCU's trust-edge proxy speaks the chained contract | optional | — |

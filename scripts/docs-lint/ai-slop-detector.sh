@@ -175,6 +175,19 @@ check() {
     echo "FAIL: $file frames the audience as 'bank' — use 'regulated enterprise'; a bank is allowed only as a named example (tier-1 US/EU bank)"
     fail=1
   fi
+
+  # 16. SAML as a platform identity surface. OCU's identity surface is
+  #     OIDC-only; a SAML-only customer IdP federates in through Dex or
+  #     Keycloak, never an OCU SAML endpoint. Any SAML mention must be in a
+  #     federation/legacy-fallback clause, not asserted as something OCU
+  #     speaks. Allowlist the federation phrasing; everything else fails.
+  if grep -nEi '\bSAML\b' "$file" \
+       | grep -vEi 'SAML-only (customer )?(idp|pam)|federates? in through (dex|keycloak)|never an OCU SAML|through Dex or Keycloak' > /dev/null; then
+    grep -nEi '\bSAML\b' "$file" \
+      | grep -vEi 'SAML-only (customer )?(idp|pam)|federates? in through (dex|keycloak)|never an OCU SAML|through Dex or Keycloak'
+    echo "FAIL: $file asserts SAML as a platform surface — OCU is OIDC-only; a SAML-only IdP federates in via Dex/Keycloak"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do

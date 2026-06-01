@@ -112,6 +112,27 @@ else
   ok "bank named-example (tier-1) correctly accepted"
 fi
 
+# SAML-as-surface fixture: asserting SAML must flag, a federation clause must pass.
+slop_saml="$TMP/slop_saml.md"
+cat > "$slop_saml" <<'EOF'
+Human action requires SAML/OIDC on the full shelf.
+EOF
+saml_allow='SAML-only (customer )?(idp|pam)|federates? in through (dex|keycloak)|never an OCU SAML|through Dex or Keycloak'
+if grep -nEi '\bSAML\b' "$slop_saml" | grep -vEi "$saml_allow" | grep -q .; then
+  ok "SAML-as-surface detection works"
+else
+  err "SAML regex didn't catch fixture"
+fi
+slop_saml_ok="$TMP/slop_saml_ok.md"
+cat > "$slop_saml_ok" <<'EOF'
+A SAML-only customer IdP federates in through Dex or Keycloak, never an OCU SAML surface.
+EOF
+if grep -nEi '\bSAML\b' "$slop_saml_ok" | grep -vEi "$saml_allow" | grep -q .; then
+  err "SAML regex wrongly flagged the federation clause"
+else
+  ok "SAML federation clause correctly accepted"
+fi
+
 # -------- ascii-diagram-detector --------
 echo "Testing ascii-diagram-detector.sh:"
 
