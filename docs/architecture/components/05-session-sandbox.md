@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: contracts/exec/exec-channel.schema.json
-adr: []
+adr: [0003]
 ---
 
 Internal design of the per-session execution container, for engineers implementing and auditing the guest agent and its host-side edges. The guest agent is the process that constitutes this container ([`05-c4-container.md`](../05-c4-container.md) §3): it is PID 1 and dies with the session.
