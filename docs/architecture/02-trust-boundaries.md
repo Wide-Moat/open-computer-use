@@ -49,13 +49,13 @@ Outbound endpoints behind the egress policy — LLM upstream, customer MCP serve
 | Actor | Boundary it crosses | Contract | Optional? |
 |---|---|---|---|
 | MCP client (the thing that calls our MCP server) | client → Control plane | MCP authorization spec, audience-validated tokens | required |
-| Customer IdP (SAML / OIDC) | IdP → Control plane | relying-party (we are RP) | required on the full shelf; minimal shelf uses a host-rooted local operator credential |
+| Customer IdP (OIDC) | IdP → Control plane | relying-party (we are RP) | required on the full shelf; minimal shelf uses a host-rooted local operator credential; a SAML-only IdP federates in through Dex or Keycloak |
 | Customer SIEM | Audit pipeline → SIEM | OCSF schema + bridge transport (transports per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md)) | optional bridge — file-system sink on the minimal shelf |
 | Customer KMS / HSM | Credential custody / Audit pipeline → KMS | PKCS#11 + KMIP | optional — full shelf only; minimal shelf uses host-local keys |
 | Customer outbound proxy | Egress trust-edge → customer proxy | chained-proxy contract | optional |
 | Customer DLP-ICAP service | Egress trust-edge → ICAP | ICAP req-mod + resp-mod | optional — engaged only in MITM-inspecting mode |
 | SOAR (incident automation) | Control plane ↔ SOAR | signed webhook + admin API | optional |
-| Admin / Operator (PAM-JIT human) | Operator → Control plane | host-rooted local credential on the minimal shelf; short-lived SAML-asserted attribute claim on the full shelf; no shared service accounts on either ([NFR-COMP-29](manifesto/02-nfrs.md)) | required |
+| Admin / Operator (PAM-JIT human) | Operator → Control plane | host-rooted local credential on the minimal shelf; short-lived OIDC-asserted claim on the full shelf; no shared service accounts on either ([NFR-COMP-29](manifesto/02-nfrs.md)) | required |
 | Data-plane client (OCU SPA or headless caller) | client → Storage broker north face | file-artifact data plane (upload / list / download / preview-render); embed token verified → first-party session ([NFR-SEC-78](manifesto/02-nfrs.md), [NFR-SEC-82](manifesto/02-nfrs.md)) | optional — absent in headless deployments |
 | Transparency log | Audit pipeline → transparency log | submission envelope; log operator signs the Merkle head (§12 Open question 4) | optional — choose public or customer-private |
 

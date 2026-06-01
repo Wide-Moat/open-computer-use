@@ -90,6 +90,49 @@ else
   err "stub-heading regex didn't catch fixture"
 fi
 
+# bank-as-framing fixture: a framing use must flag, a named example must pass.
+slop_bank="$TMP/slop_bank.md"
+cat > "$slop_bank" <<'EOF'
+The bank already runs an audited store, so the platform targets banks.
+EOF
+bank_re="bank's|\bthe bank\b|\ba bank\b|targets? banks|bank-(required|grade|specific|facing|side)|bank (infosec|ciso|reviewer|procurement|architect|auditor)"
+bank_allow='tier-1 (us or eu )?bank|tier-1 banks|US or EU bank|retail-banking|banking convention|banking-vendor convention'
+if grep -nEi "$bank_re" "$slop_bank" | grep -vEi "$bank_allow" | grep -q .; then
+  ok "bank-as-framing detection works"
+else
+  err "bank-framing regex didn't catch fixture"
+fi
+slop_bank_ok="$TMP/slop_bank_ok.md"
+cat > "$slop_bank_ok" <<'EOF'
+The capability ceiling targets a tier-1 US or EU bank as the named example.
+EOF
+if grep -nEi "$bank_re" "$slop_bank_ok" | grep -vEi "$bank_allow" | grep -q .; then
+  err "bank-framing regex wrongly flagged the tier-1 named example"
+else
+  ok "bank named-example (tier-1) correctly accepted"
+fi
+
+# SAML-as-surface fixture: asserting SAML must flag, a federation clause must pass.
+slop_saml="$TMP/slop_saml.md"
+cat > "$slop_saml" <<'EOF'
+Human action requires SAML/OIDC on the full shelf.
+EOF
+saml_allow='SAML-only (customer )?(idp|pam)|federates? in through (dex|keycloak)|never an OCU SAML|through Dex or Keycloak'
+if grep -nEi '\bSAML\b' "$slop_saml" | grep -vEi "$saml_allow" | grep -q .; then
+  ok "SAML-as-surface detection works"
+else
+  err "SAML regex didn't catch fixture"
+fi
+slop_saml_ok="$TMP/slop_saml_ok.md"
+cat > "$slop_saml_ok" <<'EOF'
+A SAML-only customer IdP federates in through Dex or Keycloak, never an OCU SAML surface.
+EOF
+if grep -nEi '\bSAML\b' "$slop_saml_ok" | grep -vEi "$saml_allow" | grep -q .; then
+  err "SAML regex wrongly flagged the federation clause"
+else
+  ok "SAML federation clause correctly accepted"
+fi
+
 # -------- ascii-diagram-detector --------
 echo "Testing ascii-diagram-detector.sh:"
 

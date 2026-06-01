@@ -53,7 +53,7 @@ A rejection is first-class: recorded so it is not re-proposed. Each row names th
 | HashiCorp Vault | BUSL — reject as a bundled dependency | OpenBao (MPL-2.0) bundled; Vault permitted only as a customer-provided drop-in |
 | HashiCorp Boundary | BUSL (Community edition) | Customer-provided PAM/access plane; OCU stays a relying party |
 | Teleport | AGPLv3 source + commercial-only Community binaries | Customer-provided access plane; OCU stays a relying party |
-| Infisical (enterprise) | Core is MIT, but SSO/audit features are under a commercial licence | Treat as integrate-only; the bank-required audit/SSO features are behind the commercial gate |
+| Infisical (enterprise) | Core is MIT, but SSO/audit features are under a commercial licence | Treat as integrate-only; the audit/SSO features a regulated enterprise requires are behind the commercial gate |
 | MinIO | AGPL community edition | Customer S3-compatible store; Ceph RGW as the reference object store |
 | Zitadel (as primary IdP) | AGPL-3.0 | Keycloak (Apache-2.0) as the reference IdP relying-party target |
 | Redpanda | BSL | NATS JetStream (Apache-2.0) for the event bus |

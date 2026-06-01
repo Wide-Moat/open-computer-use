@@ -14,13 +14,13 @@ Names every boundary that carries a wire contract, the format each uses, and whe
 
 A contract at this layer is the typed, versioned shape that crosses a boundary — the methods, payloads, errors, and auth a caller may rely on. This overview owns the inventory, the format choice, and the policy; the per-surface schema files (§5) own the field-level types. Surfaces are the [internal boundaries](05-c4-container.md) (Layer 6 §4) plus the [external actors](03-c4-context.md) (Layer 4 §4); their token classes and zones live in those layers and are not restated here. [`diagrams/08-contracts.mmd`](diagrams/08-contracts.mmd) overlays the format on each crossing of the container diagram; the table below is the full surface list.
 
-OCU does not define every contract it speaks. Five external surfaces are integration contracts the platform consumes — naming a bespoke OCU format for them would contradict the [context map](04-bounded-contexts.md) (Layer 5 §4): MCP authorization (Conformist), SAML/OIDC (relying-party), PKCS#11/KMIP (relying-party), chained-proxy, and ICAP. The overview presents these as conform/relying-party, citing the public spec, not an OCU schema.
+OCU does not define every contract it speaks. Five external surfaces are integration contracts the platform consumes — naming a bespoke OCU format for them would contradict the [context map](04-bounded-contexts.md) (Layer 5 §4): MCP authorization (Conformist), OIDC (relying-party), PKCS#11/KMIP (relying-party), chained-proxy, and ICAP. The overview presents these as conform/relying-party, citing the public spec, not an OCU schema.
 
 | Surface | Boundary (canonical name) | Format | Role | NFR anchor |
 |---|---|---|---|---|
 | Agent tool-call ingress | Caller → MCP gateway | MCP JSON-Schema | conform | NFR-FLEX-14, NFR-IC-04 |
 | Operator REST | Operator → Control / operator API | OpenAPI 3.1 | define | — |
-| IdP assertion | Customer IdP → Control / operator API | SAML/OIDC | relying-party | NFR-COMP-29 |
+| IdP assertion | Customer IdP → Control / operator API | OIDC | relying-party | NFR-COMP-29 |
 | SOAR revoke (inbound) | SOAR → Control / operator API | OpenAPI 3.1 | define | NFR-SEC-01 |
 | Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
