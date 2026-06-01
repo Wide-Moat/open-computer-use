@@ -26,15 +26,15 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
 | File-operation mount | Storage broker → Session sandbox | file-operation interface — HTTP+JSON mount config (`filesystem_id`, broker-signed lease) over a FUSE/virtio-fs/9p substrate | define | NFR-SEC-25 |
 | File / artifact data plane (north face) | Data-plane client → Storage broker (north face) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
-| Lease pull | Credential custody → Egress trust-edge | Protobuf/gRPC | define | NFR-SEC-29 |
+| Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | off-the-shelf (no OCU contract) | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
 | Broker backend leg | Storage broker → Egress trust-edge → backend | external backend protocol | conform | NFR-SEC-16 |
-| Audit fan-in / SIEM | six containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
+| Audit fan-in / SIEM | five containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
 | SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-COMP-27 |
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
-Protobuf/gRPC is the unary session set-up and lease legs only (create, route, destroy a session; pull a lease). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (Connect-RPC over HTTP/2) is a component-spec choice, not part of the contract.
+Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (Connect-RPC over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
 
 The broker backend leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend's API or the log operator's Merkle-head signing.
 
@@ -46,7 +46,7 @@ Five formats cover every surface OCU defines; the choice follows the boundary sh
 
 - **MCP JSON-Schema (over JSON-RPC 2.0)** — the agent tool surface. The protocol fixes the format; OCU does not choose it. Tool definitions carry JSON Schema; an embedded schema defaults to JSON Schema 2020-12 and may declare another dialect with `$schema`, so the validator honours the declared dialect and falls back to 2020-12 ([MCP spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
 - **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke) and the north-face file/artifact data plane (upload/list/download/getManifest/preview-render), an HTTP+JSON surface served on a dedicated ingress. SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
-- **Protobuf/gRPC** — unary internal RPC between OCU containers, where both ends version together: session set-up and lease pull. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy.
+- **Protobuf/gRPC** — unary internal RPC between OCU containers, where both ends version together: session set-up. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy. Egress secret delivery is Envoy SDS (gRPC xDS), an off-the-shelf path between Envoy and the SDS source, not an OCU RPC surface.
 - **WebSocket** — the bidirectional exec/PTY+CDP surface, one socket per session. A PTY carries interleaved stdin/stdout/stderr bytes plus in-band resize and signal control, so the frame is tagged-JSON control alongside raw binary stream frames, not a unary call (NFR-IC-03). gRPC fits request/response, not a live byte stream, which is why this surface is WebSocket and the set-up RPC is not.
 - **AsyncAPI 3.0** — one-directional decoupled event fan-in to the Audit pipeline and fan-out to SIEM. Payload is the OCSF Published Language; AsyncAPI names the channel, OCSF types the event ([AsyncAPI 3.0](https://www.asyncapi.com/docs/concepts/asyncapi-document/define-payload)).
 
@@ -56,7 +56,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 
 | Mitigation | Property the contract must carry | NFR |
 |---|---|---|
-| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §3](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects custody credentials (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
+| Audience-validated authz | reject any token not naming this surface in its audience ([trust-boundaries §3](02-trust-boundaries.md)); no token passthrough to upstream — the edge injects the SDS-delivered credential (NFR-SEC-23, NFR-SEC-27) | NFR-SEC-09 |
 | Bounded error verbosity | caller gets a stable reason code; `error.message`/`error.data` leak no internal topology or stack | NFR-SEC-51 |
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |
@@ -93,7 +93,7 @@ Drafted (not merged):
 
 Not built:
 
-- `contracts/openapi/` (operator REST + SOAR revoke) and `contracts/proto/` (session set-up + lease pull) — [#205](https://github.com/Wide-Moat/open-computer-use/issues/205).
+- `contracts/openapi/` (operator REST + SOAR revoke) and `contracts/proto/` (session set-up) — [#205](https://github.com/Wide-Moat/open-computer-use/issues/205). Egress secret delivery is off-the-shelf Envoy SDS, not an OCU contract file.
 - The transparency-log submission envelope — [#151](https://github.com/Wide-Moat/open-computer-use/issues/151).
 - Mock / conformance servers per surface for consumer CI — [#206](https://github.com/Wide-Moat/open-computer-use/issues/206).
 - The `SkillProvider` contract is a v1 non-goal; skills load from a customer-provided registry, so no skill-format schema ships in v1.

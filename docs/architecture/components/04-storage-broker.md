@@ -41,7 +41,7 @@ The south-face mount adapter terminates the `filesystem_id`-scoped file-operatio
 
 | Owns (sole custodian) | Provably does NOT hold |
 |---|---|
-| The backend object-store credential | No upstream-API credential (that is Credential custody) |
+| The backend object-store credential | No upstream-API credential (that reaches the Egress trust-edge over Envoy SDS) |
 | The `filesystem_id` → backend prefix mapping | No kill-switch state and no route to the denylist (those are the Control / operator API) |
 | Per-object `downloadable` disposition, resolved at read | No second outbound path; a direct broker→backend dial bypassing the edge is forbidden (NFR-SEC-16) |
 | The north-face first-party session minted after embed-token verify | No long-lived caller identity: it verifies a peer-minted embed token, it does not issue it |

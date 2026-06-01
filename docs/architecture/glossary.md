@@ -22,15 +22,9 @@ The session sandbox zone — one sandbox per session, lifecycle bound to the ses
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
-## Credential custody
-
-Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from custody and injects it on the outbound leg. Distinct from a customer PAM tool — when §02 NFR-COMP-29 says "PAM brokers", it means the customer's privileged-access-management tool, not this component.
-
-Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
-
 ## Storage broker
 
-Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key. The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, runs at the broker on plaintext, before signing. A zone distinct from [Credential custody](#credential-custody): it has a guest-facing interface (the mount) and governs an inbound data path, where custody has no guest interface and the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. The broker has two faces on one object-store client: a [south face](#south-face--north-face) (the guest mount) and a [north face](#south-face--north-face) (the file-artifact data plane for a [Data-plane client](#data-plane-client)).
+Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key. The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, runs at the broker on plaintext, before signing. It has a guest-facing interface (the mount) and governs an inbound data path, where the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. The broker has two faces on one object-store client: a [south face](#south-face--north-face) (the guest mount) and a [north face](#south-face--north-face) (the file-artifact data plane for a [Data-plane client](#data-plane-client)).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 / §7.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-25.
 
@@ -60,7 +54,7 @@ Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`
 
 ## Egress trust-edge
 
-The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, fetched from Credential custody, on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped.
+The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, received over Envoy SDS from a static file (solo) or a customer store (enterprise), on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md). Spelled `egress proxy` when referring to the component implementation; `Egress trust-edge` when referring to the zone.
 
@@ -117,13 +111,13 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §7, [`manifesto/0
 
 ## Session JWT
 
-Per-session session-identity token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 60 min and rotated while the session is active. It proves session identity to the Control plane; it is not an upstream credential and never leaves toward an upstream. The only token the guest holds. The TTL is an anti-replay window, not a session length — session idle (≤15 min, NFR-SEC-40) and absolute (≤12 h, NFR-SEC-41) limits are separate. Distinct from the custody credential lease (TTL ≤ 15 min, per upstream resource, held by the Egress trust-edge — never the guest) and the generic internal RPC token (TTL ≤ 60 min, inter-component, host-side).
+Per-session session-identity token issued by the Control plane to the guest agent, bound to `container_name`, TTL ≤ 60 min and rotated while the session is active. It proves session identity to the Control plane; it is not an upstream credential and never leaves toward an upstream. The only token the guest holds. The TTL is an anti-replay window, not a session length — session idle (≤15 min, NFR-SEC-40) and absolute (≤12 h, NFR-SEC-41) limits are separate. Distinct from the SDS-delivered upstream credential (attached by the Egress trust-edge, never the guest) and the generic internal RPC token (TTL ≤ 60 min, inter-component, host-side).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §5 / §8 / §8.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-10/23/29.
 
 ## Generic internal token
 
-Host-side service-to-service RPC token authenticating one internal component to another (Control plane ↔ Credential custody ↔ Audit pipeline), TTL ≤ 60 min. It never reaches the guest and carries no operator scope or upstream credential. Distinct from the [Session JWT](#session-jwt) (guest-held, per session) and the custody credential lease (per upstream resource, held by the Egress trust-edge).
+Host-side service-to-service RPC token authenticating one internal component to another (Control plane ↔ Audit pipeline), TTL ≤ 60 min. It never reaches the guest and carries no operator scope or upstream credential. Distinct from the [Session JWT](#session-jwt) (guest-held, per session) and the SDS-delivered upstream credential (attached by the Egress trust-edge).
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §8, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-23.
 

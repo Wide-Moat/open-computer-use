@@ -37,7 +37,7 @@ flowchart LR
     FANOUT --> SINK[customer SIEM / FS]
 ```
 
-The pipeline receives over six channels: five external host-attested producer channels — control-plane (carrying both MCP-gateway and Control/operator-API events), credential-custody, storage-broker, session-sandbox, egress-edge — each an mTLS-terminated peer, plus the pipeline's own self-emit channel for compute-metering and saturation events.
+The pipeline receives over five channels: four external host-attested producer channels — control-plane (carrying both MCP-gateway and Control/operator-API events), storage-broker, session-sandbox, egress-edge — each an mTLS-terminated peer, plus the pipeline's own self-emit channel for compute-metering and saturation events.
 
 - **Ingest face** terminates the five external channels (one address per source), verifies the per-source mTLS peer identity, binds the OCSF `source` to that verified identity, and discards any payload-supplied source claim. The self-emit metering/saturation channel is internally originated, not an mTLS-terminated wire peer. Per-source ingest fairness is applied before admission.
 - **Durable bus** holds admitted events ordered and append-only; an event is committed here before the source's publish is acknowledged.
@@ -49,7 +49,7 @@ The pipeline receives over six channels: five external host-attested producer ch
 
 The container is sole custodian of the **audit store** (threat-model element D2) — the hash-linked append-only log and its hot/cold tiers — and of the **Merkle-head accumulator** and the **envelope signing key**. The store is write-once from the chain writer's view: no internal path rewrites or deletes a committed record.
 
-It holds **no upstream credential, no custody lease, no kill-switch route, and no session-mutation path**. The fan-in contract models every source operation as `receive` and the SIEM fan-out as a separate `send` surface, so no event admitted here can issue a control-plane or egress action (Invariant 1). The hash-chain linkage (`prev_hash`/`chain_hash`) is authored at ingest, not part of any source's publish payload, so a source cannot pre-compute or forge chain position.
+It holds **no upstream credential, no kill-switch route, and no session-mutation path**. The fan-in contract models every source operation as `receive` and the SIEM fan-out as a separate `send` surface, so no event admitted here can issue a control-plane or egress action (Invariant 1). The hash-chain linkage (`prev_hash`/`chain_hash`) is authored at ingest, not part of any source's publish payload, so a source cannot pre-compute or forge chain position.
 
 ### Wire surface
 

@@ -10,7 +10,7 @@ applies-to: next/v1
 
 ## 1. Purpose and scope
 
-Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → Egress trust-edge + Credential custody + Storage broker`. Everything else is either an external actor (§3) or an outbound endpoint behind the egress policy.
+Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → Egress trust-edge + Storage broker`. Everything else is either an external actor (§3) or an outbound endpoint subject to the egress policy enforced by the Egress trust-edge.
 
 Ownership per row is named in [`02-nfrs.md`](manifesto/02-nfrs.md) §"Scope ownership": DELIVER (we ship + are accountable), ENABLE (we publish the contract/telemetry, customer owns the policy), REVISIT (claims more than our scope; flagged for re-cut). §02 marks each REVISIT row inline as `[REVISIT — non-gating]` so CI and verifier passes do not enforce it; the substantive re-cut of those rows lands in a follow-up PR.
 
@@ -23,19 +23,17 @@ Measurable targets are in [`02-nfrs.md`](manifesto/02-nfrs.md); component intern
 | # | Zone | One-line role | §02 anchor |
 |---|---|---|---|
 | 1 | **Control plane** | Orchestrator + session lifecycle, exposing two interfaces of one zone: an agent-facing MCP interface (tool calls) and an operator/lifecycle interface (session lifecycle, quota, kill-switch). The kill-switch is reachable only on the operator interface, never over MCP. Single instance per deployment. Holds no outbound path to upstream; all upstream traffic originates in the Compute plane and traverses the Egress trust-edge. The Control plane is not a model proxy. The agent-facing / operator split becomes two containers at Layer 6; here it is one zone. | [NFR-IC-04](manifesto/02-nfrs.md) |
-| 2 | **Credential custody** | Host-side store of the real upstream credentials, with rotation and delegated STS. Holds the real creds; the guest never does and has no channel to it. The Egress trust-edge fetches a scoped credential from here at injection time. | [NFR-SEC-23](manifesto/02-nfrs.md) |
-| 3 | **Storage broker** | Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox ever rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key ([NFR-SEC-25](manifesto/02-nfrs.md)). The broker's read authorization carries a third axis beyond scope and operation intent (`read` / `write` / `preview`) — a per-object `downloadable` tag resolved at read; a non-downloadable object is readable in-session but yields no egress-eligible artifact, and the tag reaches the Egress trust-edge as a deny signal, separating "may read" from "may remove from the sandbox" ([NFR-SEC-73](manifesto/02-nfrs.md)). The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, happens at the broker on plaintext, before signing. The broker has two faces on one object-store client: the **south face** is the guest mount above; the **north face** is a data-plane client ingress — OCU's own file-artifact API and embeddable SPA — served on a dedicated file/UI ingress, not the MCP listener ([NFR-SEC-78](manifesto/02-nfrs.md)). The north face is a boundary crossing in its own right: an external Data-plane client (§3) reaches the host-side broker, the broker verifies a peer-minted embed token and sets a first-party session ([NFR-SEC-82](manifesto/02-nfrs.md)), and an uploaded body is archive-validated and content-classified before it becomes mount-visible ([NFR-SEC-80](manifesto/02-nfrs.md), [NFR-SEC-81](manifesto/02-nfrs.md)). Both faces emit OCSF file-activity, fail-closed ([NFR-SEC-79](manifesto/02-nfrs.md)). For multi-tenant deployments the broker is instantiated per tenant — one broker principal per tenant filesystem scope, not a single multiplexed broker ([NFR-SEC-76](manifesto/02-nfrs.md)). Drawn as a zone distinct from Credential custody: it has a guest-facing interface (the mount) that custody does not, and it governs inbound data paths (the guest mount and the north-face client ingest) where the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. | [NFR-SEC-25](manifesto/02-nfrs.md) |
-| 4 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Runtime tier per [§02 "Sandbox tier — workload-driven selection"](manifesto/02-nfrs.md): `runc` for solo / dev; `gVisor` for v1 hardened; microVM (hardware-virt) for post-v1. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md) |
-| 5 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Attaches the upstream authorization on the outbound leg, fetched from Credential custody (MITM-inspecting mode only — transparent pass-through cannot inject; see §7); the guest sends an unauthenticated request. Transparent pass-through by default; MITM with customer CA opt-in (DLP-ICAP is a configuration of MITM, not a third mode). Egress allow-list enforcement sits here (deny-by-default; an MCP server, LLM API, or object store is one allow-listed destination, not a separate control). AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md) |
-| 6 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from Control plane, so it is its own zone. Compute-time metering emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md) |
+| 2 | **Storage broker** | Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox ever rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key ([NFR-SEC-25](manifesto/02-nfrs.md)). The broker's read authorization carries a third axis beyond scope and operation intent (`read` / `write` / `preview`) — a per-object `downloadable` tag resolved at read; a non-downloadable object is readable in-session but yields no egress-eligible artifact, and the tag reaches the Egress trust-edge as a deny signal, separating "may read" from "may remove from the sandbox" ([NFR-SEC-73](manifesto/02-nfrs.md)). The broker's backend traffic traverses the Egress trust-edge as one allow-list destination, in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, happens at the broker on plaintext, before signing. The broker has two faces on one object-store client: the **south face** is the guest mount above; the **north face** is a data-plane client ingress — OCU's own file-artifact API and embeddable SPA — served on a dedicated file/UI ingress, not the MCP listener ([NFR-SEC-78](manifesto/02-nfrs.md)). The north face is a boundary crossing in its own right: an external Data-plane client (§3) reaches the host-side broker, the broker verifies a peer-minted embed token and sets a first-party session ([NFR-SEC-82](manifesto/02-nfrs.md)), and an uploaded body is archive-validated and content-classified before it becomes mount-visible ([NFR-SEC-80](manifesto/02-nfrs.md), [NFR-SEC-81](manifesto/02-nfrs.md)). Both faces emit OCSF file-activity, fail-closed ([NFR-SEC-79](manifesto/02-nfrs.md)). For multi-tenant deployments the broker is instantiated per tenant — one broker principal per tenant filesystem scope, not a single multiplexed broker ([NFR-SEC-76](manifesto/02-nfrs.md)). It governs inbound data paths (the guest mount and the north-face client ingest) where the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. | [NFR-SEC-25](manifesto/02-nfrs.md) |
+| 3 | **Compute plane** | Session sandbox, one per session, lifecycle bound to session. Runtime tier per [§02 "Sandbox tier — workload-driven selection"](manifesto/02-nfrs.md): `runc` for solo / dev; `gVisor` for v1 hardened; microVM (hardware-virt) for post-v1. Guest agent is PID 1. Cross-session network reachability disabled per [NFR-SEC-22](manifesto/02-nfrs.md); per-tenant network isolation is a deployment property of this zone. | [NFR-SEC-02](manifesto/02-nfrs.md) |
+| 4 | **Egress trust-edge** | Single outbound path. Network-bound egress identity per [NFR-SEC-27](manifesto/02-nfrs.md) — request arrival from the sandbox is the identity. Attaches the upstream authorization on the outbound leg, received over Envoy SDS from a static file (solo) or a customer-provided SDS-compatible store (enterprise) (MITM-inspecting mode only — transparent pass-through cannot inject; see §7); the guest sends an unauthenticated request. Transparent pass-through by default; MITM with customer CA opt-in (DLP-ICAP is a configuration of MITM, not a third mode). Egress allow-list enforcement sits here (deny-by-default; an MCP server, LLM API, or object store is one allow-listed destination, not a separate control). AI-guardrail / prompt-content policy is customer's own AI gateway, not ours ([NFR-COMP-26](manifesto/02-nfrs.md) revisit). | [NFR-SEC-05](manifesto/02-nfrs.md) |
+| 5 | **Audit pipeline** | Durable bus + hash-chained store + bridges to customer sinks. Retention floor, RPO, and tamper-evidence differ from Control plane, so it is its own zone. Compute-time metering emits as audit events on this pipeline. | [NFR-SEC-03](manifesto/02-nfrs.md) |
 
 Secondary NFR anchors per zone (consolidated to satisfy the CLAUDE.md ≤ 3-links-per-H2 rule):
 
 - Control plane — [NFR-FLEX-14](manifesto/02-nfrs.md), [NFR-REL-01](manifesto/02-nfrs.md).
-- Credential custody — [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-30](manifesto/02-nfrs.md).
 - Storage broker — [NFR-SEC-25](manifesto/02-nfrs.md), [NFR-SEC-15](manifesto/02-nfrs.md), [NFR-SEC-79](manifesto/02-nfrs.md); north face — [NFR-SEC-78](manifesto/02-nfrs.md), [NFR-SEC-80](manifesto/02-nfrs.md), [NFR-SEC-81](manifesto/02-nfrs.md), [NFR-SEC-82](manifesto/02-nfrs.md), [NFR-SEC-83](manifesto/02-nfrs.md), [NFR-SEC-84](manifesto/02-nfrs.md), [NFR-SEC-76](manifesto/02-nfrs.md).
 - Compute plane — [NFR-SEC-14](manifesto/02-nfrs.md), [NFR-SEC-22](manifesto/02-nfrs.md), [NFR-FLEX-02](manifesto/02-nfrs.md). Performance targets for this zone live in component specs.
-- Egress trust-edge — [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md).
+- Egress trust-edge — [NFR-SEC-08](manifesto/02-nfrs.md), [NFR-SEC-17](manifesto/02-nfrs.md), [NFR-SEC-23](manifesto/02-nfrs.md), [NFR-SEC-27](manifesto/02-nfrs.md), [NFR-SEC-29](manifesto/02-nfrs.md), [NFR-SEC-30](manifesto/02-nfrs.md), [NFR-FLEX-15](manifesto/02-nfrs.md), [NFR-COMP-28](manifesto/02-nfrs.md).
 - Audit pipeline — [NFR-REL-12](manifesto/02-nfrs.md), [NFR-REL-03](manifesto/02-nfrs.md), [NFR-COMP-01](manifesto/02-nfrs.md), [NFR-COST-05](manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
 
 **Skill registry boundary** is reserved as a TBD-stub per CLAUDE.md §v1-non-goals.
@@ -44,14 +42,14 @@ Cross-component encryption-in-transit invariant per [NFR-SEC-37](manifesto/02-nf
 
 ## 3. External actors
 
-Outbound endpoints behind the egress policy — LLM upstream, customer MCP servers, object stores, internal APIs — are drawn in the diagram for visual orientation only. They are not actors against our contracts: the Egress trust-edge gates them and injects the upstream authorization, fetched from Credential custody.
+Outbound endpoints behind the egress policy — LLM upstream, customer MCP servers, object stores, internal APIs — are drawn in the diagram for visual orientation only. They are not actors against our contracts: the Egress trust-edge gates them and attaches the upstream authorization, received over Envoy SDS from a static file (solo) or a customer-provided SDS-compatible store (enterprise).
 
 | Actor | Boundary it crosses | Contract | Optional? |
 |---|---|---|---|
 | MCP client (the thing that calls our MCP server) | client → Control plane | MCP authorization spec, audience-validated tokens | required |
 | Customer IdP (OIDC) | IdP → Control plane | relying-party (we are RP) | required on the full shelf; minimal shelf uses a host-rooted local operator credential; a SAML-only IdP federates in through Dex or Keycloak |
 | Customer SIEM | Audit pipeline → SIEM | OCSF schema + bridge transport (transports per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md)) | optional bridge — file-system sink on the minimal shelf |
-| Customer KMS / HSM | Credential custody / Audit pipeline → KMS | PKCS#11 + KMIP | optional — full shelf only; minimal shelf uses host-local keys |
+| Customer KMS / HSM | Storage broker / Audit pipeline → KMS | PKCS#11 + KMIP | optional — full shelf only; minimal shelf uses host-local keys |
 | Customer outbound proxy | Egress trust-edge → customer proxy | chained-proxy contract | optional |
 | Customer DLP-ICAP service | Egress trust-edge → ICAP | ICAP req-mod + resp-mod | optional — engaged only in MITM-inspecting mode |
 | SOAR (incident automation) | Control plane ↔ SOAR | signed webhook + admin API | optional |
@@ -82,20 +80,20 @@ Boundary properties in §5–§11 hold for every tier; the tier picks the substr
 flowchart LR
     EXT[external actors]
     CP[Control plane<br/>MCP + operator interfaces]
-    BR[Credential custody]
     SB[Storage broker]
     VM[Compute plane]
     EDGE[Egress trust-edge]
+    SDS[SDS source<br/>static file or customer store]
     AUDIT[Audit pipeline]
     EXT -- "MCP (agent) · operator API" --> CP
     CP -- "Session JWT (≤60min)" --> VM
     CP -- "resource handle (scopes mount)" --> SB
     SB -- "mount · resource handle only" --> VM
     VM -- "single egress (no credential)" --> EDGE
-    BR -- "credential lease (≤15min)" --> EDGE
+    SDS -- "credential over SDS" --> EDGE
     SB -- "backend traffic" --> EDGE
     EDGE -- "auth injected" --> EXT
-    CP & BR & SB & VM & EDGE -- "OCSF" --> AUDIT
+    CP & SB & VM & EDGE -- "OCSF" --> AUDIT
     AUDIT --> EXT
 ```
 
@@ -137,7 +135,7 @@ Fail-closed: if the egress proxy is unreachable, the Compute plane drops outboun
 
 Egress denials carry a structured reason header (`x-deny-reason`) so audit and SOAR can classify outcomes without parsing free-text logs. Unallowed destinations are dropped at SNI pre-filter before TLS handshake (cheaper, lower forensic value); allowed destinations are inspected at L7 (richer, more expensive).
 
-Revoke is independent of IdP reachability. The Control plane holds a session denylist (kill-switch state). On the Compute-plane path the denylist is checked directly on every RPC. On the Egress trust-edge path the denylist stops injection: the edge will not attach upstream authorization for a revoked session. Three numbers bound the path, smallest first — custody revokes the session's credential lease within ≤1 min ([NFR-SEC-29](manifesto/02-nfrs.md)); the denylist itself propagates platform-wide within ≤5 min ([NFR-SEC-04](manifesto/02-nfrs.md)); and absent any revoke, a lease self-expires at its ≤15 min TTL. So an explicit revoke cuts upstream access within ≤5 min, not ≤15 min — the 15-min TTL is only the ceiling for a session that was never revoked. Kill switch ([NFR-SEC-01](manifesto/02-nfrs.md)) shares the same denylist; its ≤30 s p99 SLA covers Compute-plane stop, not the slower upstream-credential revoke path. The IdP participates in token issue, not in revoke — that is why ≤5 min revoke holds even during an IdP outage, which is the incident the target exists for.
+Revoke is independent of IdP reachability. The Control plane holds a session denylist (kill-switch state). On the Compute-plane path the denylist is checked directly on every RPC. On the Egress trust-edge path the denylist stops injection: the edge attaches no upstream authorization for a revoked session, independent of the credential's own validity window. The denylist propagates platform-wide within ≤5 min ([NFR-SEC-04](manifesto/02-nfrs.md)), so an explicit revoke cuts upstream access within ≤5 min. Upstream credential lifecycle — mint, rotation, revocation, and the credential's own TTL — belongs to the SDS source (a customer store on the enterprise shelf, a static file on the solo shelf), not to OCU ([NFR-SEC-29](manifesto/02-nfrs.md)). Kill switch ([NFR-SEC-01](manifesto/02-nfrs.md)) shares the same denylist; its ≤30 s p99 SLA covers Compute-plane stop. The IdP participates in token issue, not in revoke — that is why ≤5 min revoke holds even during an IdP outage, which is the incident the target exists for.
 
 Component-spec wiring lands under [`components/`](./components/) per [PROCESS.md](./PROCESS.md) when the egress-proxy spec opens.
 
@@ -147,27 +145,26 @@ The guest reaches data over two paths with different trust roots:
 
 | Path | Direction | Zone | What the guest holds | Where the real credential lives |
 |---|---|---|---|---|
-| **Storage mount** | inbound + outbound to user-data | Storage broker (§2 zone 3) | session resource handle (`filesystem_id`) | host-side Storage broker |
-| **Egress** | outbound to upstreams | Egress trust-edge (§2 zone 5) | nothing — unauthenticated request | Credential custody, injected at the edge |
+| **Storage mount** | inbound + outbound to user-data | Storage broker (§2 zone 2) | session resource handle (`filesystem_id`) | host-side Storage broker |
+| **Egress** | outbound to upstreams | Egress trust-edge (§2 zone 4) | nothing — unauthenticated request | SDS source (static file or customer store), injected at the edge |
 
 The guest speaks a file-operation interface to the broker, not the object-store protocol. The broker is the object-store client: it holds the credential and signs its own backend requests, so the request signature is produced once, at the broker, and nothing downstream rewrites it. The broker's backend leg leaves through the Egress trust-edge as one allow-list destination — in allow-list-only mode (no TLS termination), so the signature survives the hop, and the guest never sees that leg. Where file-content inspection is required, it runs at the broker on plaintext, before signing — not at the Egress trust-edge, which sees only ciphertext on this leg. Both paths share one invariant the table makes concrete: the guest holds a session-scoped handle at most ([NFR-SEC-25](manifesto/02-nfrs.md), [NFR-SEC-23](manifesto/02-nfrs.md)).
 
 The broker does not open a second outbound path of its own: a direct broker-to-object-store dial that bypasses the Egress trust-edge is forbidden ([NFR-SEC-16](manifesto/02-nfrs.md)), because it would be an outbound path the single egress control cannot see.
 
-These are the two **guest** data paths. The broker also fronts a third, non-guest path — its north face (§2 zone 3): an external Data-plane client (§3) reaches the host-side broker over the file-artifact ingress. That path is caller↔broker, host-side, not a guest channel, so the host-dials-guest invariant ([NFR-SEC-43](manifesto/02-nfrs.md)) is unaffected; its authorization (embed token, three-axis claim) and inbound-body controls (archive validation, content classification) are the north-face NFRs anchored in §2 zone 3.
+These are the two **guest** data paths. The broker also fronts a third, non-guest path — its north face (§2 zone 2): an external Data-plane client (§3) reaches the host-side broker over the file-artifact ingress. That path is caller↔broker, host-side, not a guest channel, so the host-dials-guest invariant ([NFR-SEC-43](manifesto/02-nfrs.md)) is unaffected; its authorization (embed token, three-axis claim) and inbound-body controls (archive validation, content classification) are the north-face NFRs anchored in §2 zone 2.
 
 The skill-mount path (read-only shared content vs per-session mutable data) is governed by the `SkillProvider` abstraction, which is post-v1 ([NFR-SEC-24](manifesto/02-nfrs.md), [NFR-SEC-42](manifesto/02-nfrs.md)); its boundary is specified with that ADR, not here.
 
 ## 8. Workload-identity floor
 
-Token taxonomy is canonical here; the four classes, their scopes, and their TTLs match [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md) §"Token TTL taxonomy". Each is named with its own scope, TTL, signer, and consumer. The guest holds only session-scoped tokens — the session JWT and a storage-mount handle; the two host-side classes (internal token, custody lease) never reach it.
+Token taxonomy is canonical here; the three classes, their scopes, and their TTLs match [`manifesto/02-nfrs.md`](manifesto/02-nfrs.md) §"Token TTL taxonomy". Each is named with its own scope, TTL, signer, and consumer. The guest holds only session-scoped tokens — the session JWT and a storage-mount handle; the host-side generic internal token never reaches it. The upstream credential the Egress trust-edge attaches is not an OCU-issued token class: it is delivered over Envoy SDS from a static file (solo) or a customer-provided SDS-compatible store (enterprise), and its scope and TTL are the source's.
 
 | Token class | Scope | TTL | Consumer | §02 anchor |
 |---|---|---|---|---|
 | **Session JWT** | per session (Control plane → Compute plane; bound to `container_name`) | ≤ 60 min, rotated | Compute plane (guest agent), proving session identity to the Control plane | NFR-SEC-10 |
 | **Storage-mount handle** | per session, scoped to one filesystem (a `filesystem_id`) | session-scoped (expires with the session) | Compute plane (guest), presented to the Storage broker; selects the mount, carries no backend credential | NFR-SEC-25 |
-| **Generic internal token** | inter-component RPC (Control plane ↔ custody ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | NFR-SEC-23 |
-| **Custody credential lease** | per upstream resource (one bucket prefix / one API-key class) | ≤ 15 min | Egress trust-edge (fetched from custody at injection; never the guest) | NFR-SEC-29 |
+| **Generic internal token** | inter-component RPC (Control plane ↔ audit, host-side) | ≤ 60 min | host-side service-to-service | NFR-SEC-23 |
 
 | Property | Minimal shelf | Full shelf | §02 anchor |
 |---|---|---|---|
@@ -206,7 +203,6 @@ Mapping is **indicative, not verbatim**. Verify every cell against the source te
 | Our zone / boundary | NIST SP 800-207 | NYDFS Part 500 | DORA | EU AI Act | CCM v4 |
 |---|---|---|---|---|---|
 | Control plane | implicit-trust zone (§2.1) | § 500.7 access privileges (PAM) | Art. 6 ICT risk-management framework | Art. 14 human oversight | IAM-06 |
-| Credential custody | PEP / PDP independence (§3, §3.2) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general | Art. 15 cybersecurity | CEK-08 |
 | Storage broker | implicit-trust zone (custody of storage-backend credential) | § 500.15(a) encryption + key custody | Art. 28 ICT third-party general | Art. 10 data governance | CEK-08, DSP-01 |
 | Compute plane (sandbox) | implicit-trust zone, scoped small | § 500.7 + § 500.15 | Art. 28(4) ITS register of information | Art. 15(4) accuracy, robustness, cybersecurity | IVS-06, IVS-09 |
 | Egress trust-edge | PEP (§3.4.1) | § 500.5 vulnerability scanning (segmentation surfaces here, not § 500.7) | Art. 30 key contractual provisions (location of processing) | Art. 14 oversight | IVS-09 segmentation, DSP-05 DLP |
