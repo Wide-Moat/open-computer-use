@@ -141,14 +141,14 @@ For every dependency added to the project (build, runtime, or dev):
 3. **Bundled vs not-bundled.** Recorded in the Bill of Materials in `manifesto/05-licensing-posture.md`:
    - **Bundled** = we ship the binary/image/lib as part of our release. Carries full responsibility: vuln-scanning, version pinning, CVE response.
    - **Not bundled** = customer provides via standard API (Keycloak, OpenBao, Splunk, customer KMS). We document the integration contract; customer owns the lifecycle.
-4. **Enterprise-grade requirement.** When in doubt between a heavier, vendor-backed, audited tool and a lighter, sole-maintainer one — pick the heavier. The platform targets banks; lightweight-but-undocumented loses every InfoSec review.
+4. **Enterprise-grade requirement.** When in doubt between a heavier, vendor-backed, audited tool and a lighter, sole-maintainer one — pick the heavier. The platform targets regulated enterprises; lightweight-but-undocumented loses every InfoSec review.
 5. **Reject reasons are first-class.** If we reject something, record it in the rejection table in `manifesto/05-licensing-posture.md` so future contributors don't re-propose it.
 
 ## Testing & QA discipline (next/v1)
 
 Foundation rule: every gate ships in the Layer 0 commits of `next/v1`, before any architectural content. "We'll add tests later" never happens at this stage.
 
-Top three CI gates a bank auditor opens first — without these the repo is not auditable at all:
+Top three CI gates a regulated-enterprise auditor opens first — without these the repo is not auditable at all:
 
 1. **Secrets scan blocks merge.** gitleaks + trufflehog on every commit + pre-receive hook. Any hit = red.
 2. **SAST/SCA CRITICAL blocks merge.** Semgrep + CodeQL HIGH/CRITICAL on changed files; Trivy/Grype CRITICAL on deps and container images. HIGH allowed for 14 days with a tracked exception file.

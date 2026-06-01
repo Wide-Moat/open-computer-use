@@ -27,7 +27,7 @@ The Session sandbox ([component 05](../components/05-session-sandbox.md)) runs a
 
 Two axes compete to drive the choice: data classification (stronger tier for more sensitive data) versus workload trust (the tier follows who supplies the prompts the agent executes). §02 and AP-13 already record the split — data classification governs retention, custody, and residency; workload trust governs the tier. The remaining question is the product-level one this ADR closes: which tiers v1 GA ships and which it defers.
 
-The one-click solo install is an NFR-shaping invariant: the default deployment runs single-operator, no IdP, no KVM, and must not pay for a bank's isolation or audit machinery to start.
+The one-click solo install is an NFR-shaping invariant: the default deployment runs single-operator, no IdP, no KVM, and must not pay for a regulated enterprise's isolation or audit machinery to start.
 
 ## Decision
 

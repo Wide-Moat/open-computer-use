@@ -90,6 +90,28 @@ else
   err "stub-heading regex didn't catch fixture"
 fi
 
+# bank-as-framing fixture: a framing use must flag, a named example must pass.
+slop_bank="$TMP/slop_bank.md"
+cat > "$slop_bank" <<'EOF'
+The bank already runs an audited store, so the platform targets banks.
+EOF
+bank_re="bank's|\bthe bank\b|\ba bank\b|targets? banks|bank-(required|grade|specific|facing|side)|bank (infosec|ciso|reviewer|procurement|architect|auditor)"
+bank_allow='tier-1 (us or eu )?bank|tier-1 banks|US or EU bank|retail-banking|banking convention|banking-vendor convention'
+if grep -nEi "$bank_re" "$slop_bank" | grep -vEi "$bank_allow" | grep -q .; then
+  ok "bank-as-framing detection works"
+else
+  err "bank-framing regex didn't catch fixture"
+fi
+slop_bank_ok="$TMP/slop_bank_ok.md"
+cat > "$slop_bank_ok" <<'EOF'
+The capability ceiling targets a tier-1 US or EU bank as the named example.
+EOF
+if grep -nEi "$bank_re" "$slop_bank_ok" | grep -vEi "$bank_allow" | grep -q .; then
+  err "bank-framing regex wrongly flagged the tier-1 named example"
+else
+  ok "bank named-example (tier-1) correctly accepted"
+fi
+
 # -------- ascii-diagram-detector --------
 echo "Testing ascii-diagram-detector.sh:"
 

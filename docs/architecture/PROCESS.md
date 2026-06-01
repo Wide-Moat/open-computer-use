@@ -37,7 +37,7 @@ ADRs are reserved for decisions that are load-bearing, hard to reverse, or cross
 2. Add a row to the BoM table in `manifesto/05-licensing-posture.md`: name, license, bundled/not-bundled, version pin policy, supply-chain attestation (SBOM / signed / reproducible).
 3. Reject if any of the following holds: AGPL (any flavour, except as a separate process with stable API and explicit note), BSL, BUSL (other than past versions of our own code), SSPL, CC-NC, commercial-only-source, sole-maintainer npm/PyPI package with no provenance.
 
-Heavier and vendor-backed beats lighter and unknown. The platform targets banks; "lightweight but undocumented" loses every InfoSec review.
+Heavier and vendor-backed beats lighter and unknown. The platform targets regulated enterprises; "lightweight but undocumented" loses every InfoSec review.
 
 ## Marking content as TBD
 

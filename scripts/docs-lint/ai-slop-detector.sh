@@ -158,6 +158,23 @@ check() {
     echo "FAIL: $file leaks internal research-artifact phrasing (Anthropic-srt / sandbox-runtime / sandboxd path / reverse-engineering wording)"
     fail=1
   fi
+
+  # 15. "bank" as the framing subject, not a named example. The default
+  #     audience term is "regulated enterprise"; a bank is allowed only as
+  #     one named example (e.g. "tier-1 US or EU bank"). Framing tells —
+  #     a bank as the sentence's subject, possessive, or an adjective —
+  #     widen wrongly: "the bank already runs", "a bank's machinery",
+  #     "targets banks", "bank-required", "bank-grade", "bank InfoSec/CISO".
+  #     The example-allowlist file carries the lines that legitimately name
+  #     a bank as an example; everything else fails.
+  if grep -nEiw 'bank|banks|banking' "$file" \
+       | grep -vEi 'tier-1 (us or eu )?bank|tier-1 banks|US or EU bank|retail-banking|banking convention|banking-vendor convention|named example.*bank|bank[,.) ]+(for example|e\.g\.|as one|as the named)' \
+       | grep -nEi "bank's|\bthe bank\b|\ba bank\b|targets? banks|bank-(required|grade|specific|facing|side)|bank (infosec|ciso|reviewer|procurement|architect|auditor)" > /dev/null; then
+    grep -nEi "bank's|\bthe bank\b|\ba bank\b|targets? banks|bank-(required|grade|specific|facing|side)|bank (infosec|ciso|reviewer|procurement|architect|auditor)" "$file" \
+      | grep -vEi 'tier-1 (us or eu )?bank|tier-1 banks|US or EU bank|retail-banking|banking convention|banking-vendor convention'
+    echo "FAIL: $file frames the audience as 'bank' — use 'regulated enterprise'; a bank is allowed only as a named example (tier-1 US/EU bank)"
+    fail=1
+  fi
 }
 
 for f in "${files[@]}"; do
