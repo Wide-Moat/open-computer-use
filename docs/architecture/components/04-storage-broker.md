@@ -8,7 +8,7 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
-contract: contracts/storage/mount-config.schema.json
+contract: [contracts/storage/mount-config.schema.json, contracts/storage/file-ops.schema.json, contracts/storage/file-artifact-api.schema.json]
 adr: []
 ---
 
