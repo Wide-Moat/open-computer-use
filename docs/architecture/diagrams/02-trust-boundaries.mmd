@@ -39,8 +39,9 @@ flowchart LR
         VM[session sandbox<br/>guest agent PID 1<br/>runc minimal · gVisor full · microVM post-v1<br/>one per session · ephemeral<br/>rootfs + tooling = read-only, host-attached at boot/restore]
     end
 
+    %% Posture is the §7 ladder, not two modes; injection at the egress-wide-bump rung. See ADR-0007.
     subgraph EDGE[Egress trust-edge]
-        PROXY[egress proxy<br/>transparent pass-through default<br/>MITM customer-CA opt-in<br/>DLP-ICAP is MITM config<br/>egress allow-list · deny-by-default]
+        PROXY[egress proxy<br/>posture ladder: deny-all · transparent · egress-wide bump · external SDS<br/>bump default when an upstream credential is configured<br/>per-SNI leaf from per-deployment CA · Envoy data plane + SDS minter<br/>DLP-ICAP is a bump-rung config · egress allow-list · deny-by-default]
     end
 
     subgraph AUDIT[Audit pipeline]
@@ -59,7 +60,7 @@ flowchart LR
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
     ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤60min · rotated"| VM
     ORCH -->|"session resource handle<br/>scopes the mount · NFR-SEC-25"| SB
-    SDS -->|"upstream credential over SDS<br/>source owns mint · rotate · revoke<br/>NFR-SEC-23 · ADR-0005"| PROXY
+    SDS -->|"upstream credential over SDS<br/>source owns mint · rotate · revoke<br/>NFR-SEC-23 · ADR-0005 · ADR-0007"| PROXY
 
     %% ─── storage-mount path (second guest-data boundary: in vs out) ───
     %% Distinct from egress. The guest reads/writes mutable user-data through a
@@ -78,7 +79,7 @@ flowchart LR
     ORCH -.->|"revoke (denylist check)<br/>NFR-SEC-04 ≤5 min"| VM
 
     %% ─── egress edges ───
-    VM -->|"single outbound path<br/>no credential in request<br/>NFR-SEC-27"| PROXY
+    VM -->|"single outbound path<br/>no long-lived upstream secret in request<br/>credential attached at edge on a presented scoped credential<br/>NFR-SEC-27 · ADR-0007"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected (SDS-delivered)<br/>fail-closed"| LLM
     PROXY -->|"object-store leg is the broker's, not the guest's<br/>broker-signed · allow-list-only, no TLS termination<br/>signature intact · fail-closed"| OBJ
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY

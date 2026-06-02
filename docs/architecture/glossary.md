@@ -54,7 +54,7 @@ Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`
 
 ## Egress trust-edge
 
-The single outbound zone. Every outbound request from the Compute plane goes through here. The guest sends an unauthenticated request; the edge attaches the upstream authorization, received over Envoy SDS from a static file (solo) or a customer store (enterprise), on the outbound leg (injection needs the MITM-inspecting mode — see [Egress posture](#egress-posture)). Network-bound identity (NFR-SEC-27): the fact that traffic arrived from the sandbox at all is the identity. Fail-closed: proxy unreachable → outbound traffic dropped.
+The single outbound zone. Every outbound request from the Compute plane goes through here. The guest holds no long-lived upstream secret (it may hold a short-lived session-scoped handle to a host-side mediator); the edge attaches the upstream authorization, received over Envoy SDS from a static file (solo) or a customer store (enterprise), on the re-originated leg at the egress-wide-bump rung (see [Egress posture](#egress-posture)). Injection is gated on a presented scoped credential carried by the request, never on network origin — a request presenting none receives none ([ADR-0007](./adr/0007-egress-auth-mechanism.md), the P6-E2 anti-pattern). Fail-closed: proxy unreachable → outbound traffic dropped.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md). Spelled `egress proxy` when referring to the component implementation; `Egress trust-edge` when referring to the zone.
 
@@ -100,12 +100,14 @@ Used in: [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) §"Sandbox tier — wo
 
 ## Egress posture
 
-The mode the Egress trust-edge runs in. Two modes:
+A ladder of rungs the Egress trust-edge runs at, chosen by what the deployment needs ([ADR-0007](./adr/0007-egress-auth-mechanism.md)):
 
-- **Transparent pass-through** — proxy in path, does not terminate TLS, no customer CA needed. Default.
-- **MITM-inspecting** — proxy terminates TLS at the customer-CA root; required for any in-path content inspection (DLP-ICAP, prompt-content classification). Opt-in.
+- **deny-all** — no outbound need; egress off.
+- **transparent pass-through** — proxy in path, does not terminate TLS, no CA; reaches unauthenticated endpoints only.
+- **egress-wide bump** — proxy terminates TLS at a per-deployment CA (auto-generated, public cert auto-injected into the sandbox trust store at start) and attaches the upstream credential on the re-originated leg; enables in-path content inspection (DLP-ICAP). The default rung once an upstream credential is configured.
+- **external SDS source** — enterprise: the credential lifecycle is owned by a customer store off-box.
 
-DLP-ICAP is a configuration of the MITM mode, not a third mode.
+Bump is the default only when an upstream credential is configured, never imposed on a deployment that needs none, so the one-click solo path holds at every rung. DLP-ICAP is a configuration of the bump rung, not a separate rung.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §7, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-FLEX-15.
 
