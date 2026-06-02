@@ -25,6 +25,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0005](0005-egress-credential-delivery-envoy-sds.md) | Egress credential delivery is off-the-shelf Envoy SDS | proposed | — | 2026-06-01 |
 | [0006](0006-egress-forward-proxy-substrate.md) | Egress forward-proxy substrate | proposed | — | 2026-06-01 |
 | [0007](0007-egress-auth-mechanism.md) | Egress auth mechanism — edge-inject vs protocol-broker | proposed | — | 2026-06-01 |
+| [0008](0008-session-egress-attribution.md) | Session-to-egress attribution by presented token | proposed | — | 2026-06-02 |
 
 ## Lifecycle
 
