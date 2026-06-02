@@ -27,7 +27,7 @@ The Egress trust-edge ([component 06](../components/06-egress-trust-edge.md)) is
 
 The component spec carries no substrate decision (`adr: []`) and an open question on which proxy provides it (open-Q#2). A purpose-built forward proxy supplies connect-time allow-listing, a controllable resolver, and an external-authorization seam. The risk is over-buying: pulling in TLS termination, dynamic config distribution, or an inline content-inspection path that the v1 floor does not need and that would tax the solo default.
 
-MITM termination — per-SNI on-the-fly leaf certificates — is a separate, deferred decision (component 06 open question #2, the MITM-termination half) and is not in scope here.
+MITM termination — per-SNI on-the-fly leaf certificates — was a separate decision deferred at the time of this ADR (component 06 open question #2, the MITM-termination half); it is now decided in [ADR-0007](0007-egress-auth-mechanism.md) on the same Envoy substrate plus a self-hosted SDS minting service. This ADR fixes only the forward-proxy substrate and the deny-by-default floor.
 
 ## Decision
 
@@ -40,12 +40,12 @@ The Egress trust-edge runs an Apache-2.0/MIT/BSD forward proxy — Envoy is the 
 - The credential-origination hook is the seam where the edge attaches the upstream authorization received over Envoy SDS ([ADR-0005](0005-egress-credential-delivery-envoy-sds.md)); it fires only on a leg that needs it, never on the transparent default route. No CA, cert-issuer, ICAP, or credential wiring lands on the transparent path.
 - The broker backend leg ([component 04](../components/04-storage-broker.md), F10) traverses the proxy as one allow-list destination with no TLS termination, so the broker-signed request is forwarded byte-intact per NFR-SEC-25.
 - Every allow and every deny is emitted as an OCSF event through the Audit pipeline ([component 07](../components/07-audit-pipeline.md)); the payload-independent exfil tripwire (NFR-SEC-57) runs on this path with no CA. This ADR adds no requirement to either.
-- The egress posture stays mode-selectable per NFR-FLEX-15: this ADR fixes the transparent default; MITM-mode origination (NFR-SEC-30, NFR-SEC-37, NFR-SEC-50) and DLP/ICAP as a MITM config (NFR-COMP-28) ride the same substrate but are decided in the deferred MITM-termination ADR (component 06 open question #2).
+- The egress posture is the NFR-FLEX-15 ladder (deny-all / transparent pass-through / egress-wide bump / external SDS): this ADR fixes the forward-proxy substrate and the deny-by-default floor that every rung shares; egress-wide-bump origination (NFR-SEC-30, NFR-SEC-37, NFR-SEC-50) and DLP/ICAP as a bump-rung config (NFR-COMP-28) ride the same substrate and are decided in [ADR-0007](0007-egress-auth-mechanism.md) (which resolves component 06 open question #2).
 - xDS dynamic config and per-node sharding ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)) are deferred seams this ADR names but does not design.
 
 ## Alternatives considered
 
-- **Squid (GPL-2.0+)** — mature forward proxy with SslBump for the later MITM leg; clears the allow-list, but a bundled GPL binary triggers the distribution review noted in [`manifesto/05-licensing-posture.md`](../manifesto/05-licensing-posture.md), and its config model fits the deny-by-default floor less directly than Envoy's filter chain.
+- **Squid (GPL-2.0+)** — mature forward proxy with SslBump for the later egress-wide-bump leg; clears the allow-list, but a bundled GPL binary triggers the distribution review noted in [`manifesto/05-licensing-posture.md`](../manifesto/05-licensing-posture.md), and its config model fits the deny-by-default floor less directly than Envoy's filter chain.
 - **HAProxy (GPL-2.0+ / LGPL)** — passes the allow-list and handles SNI routing, but bundling carries the same GPL distribution review and it lacks a first-class external-authorization seam equivalent to `ext_authz`.
 - **Hand-rolled CONNECT proxy** — a minimal Go/Rust proxy owned end to end. Rejected: re-implementing resolver pinning, filter chains, and an `ext_authz` seam is net-new attack surface a regulated-enterprise InfoSec review would not credit against a vendor-backed proxy.
 

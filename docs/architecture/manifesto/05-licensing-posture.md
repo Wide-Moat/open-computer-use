@@ -58,3 +58,4 @@ A rejection is first-class: recorded so it is not re-proposed. Each row names th
 | MinIO | AGPL community edition | Customer S3-compatible store; Ceph RGW as the reference object store |
 | Zitadel (as primary IdP) | AGPL-3.0 | Keycloak (Apache-2.0) as the reference IdP relying-party target |
 | Redpanda | BSL | NATS JetStream (Apache-2.0) for the event bus |
+| mitmproxy / Squid ssl-bump (as the bump engine) | BSD / GPL-2.0+ — licence is not the blocker; adopting either as the egress bump engine drops the Envoy data plane (allow-list, OCSF audit, `ext_authz`) ADR-0006 placed there | Envoy data plane + a self-hosted SDS minting service for per-SNI leaves ([ADR-0007](../adr/0007-egress-auth-mechanism.md)); mitmproxy (BSD) recorded only as the fallback engine where the Envoy data plane is not needed |

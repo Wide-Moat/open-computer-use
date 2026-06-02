@@ -24,7 +24,7 @@ flowchart LR
         CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
         STORE["Storage broker<br/>object-store client · signs own requests<br/>guest mount (south) + SPA · file/artifact API · preview (north)"]
         VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
-        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>injects upstream auth (Envoy SDS + credential_injector)"]
+        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>edge-inject via Envoy SDS (Envoy data plane + SDS minter)"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
@@ -38,12 +38,12 @@ flowchart LR
     STORE -->|"mount · resource handle (filesystem_id)"| VM
     FILE -.->|"SPA · file/artifact API (north)<br/>embed token → first-party session · bytes direct"| STORE
 
-    %% ─── egress: guest sends unauthenticated; on injection-needing legs the edge
-    %%     receives the credential over SDS and injects (MITM mode only — see 05 §3, §6) ───
-    VM -->|"single outbound · no credential in request"| EDGE
-    SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (MITM legs)"| EDGE
+    %% ─── egress: guest carries no long-lived upstream secret; on injection-needing legs the edge
+    %%     receives the credential over SDS and injects at the egress-wide-bump rung (see 05 §3, §6; ADR-0007) ───
+    VM -->|"single outbound · no long-lived upstream secret"| EDGE
+    SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (bump rung)"| EDGE
     STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
-    EDGE -->|"injection-needing leg: upstream auth injected (MITM mode)"| UPSTREAM
+    EDGE -->|"injection-needing leg: upstream auth injected (bump rung)"| UPSTREAM
 
     %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
     MCPG -->|OCSF| AUD
