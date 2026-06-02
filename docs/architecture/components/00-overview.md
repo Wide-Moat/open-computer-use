@@ -23,7 +23,7 @@ Each row links the container's responsibility (Layer 6) and lists the spec file,
 | NN | Container | Spec | Status | Bound ADRs | Bound contracts |
 |---|---|---|---|---|---|
 | 01 | MCP gateway (agent-facing) | [`01-mcp-gateway.md`](01-mcp-gateway.md) | draft | — | [`mcp/ocu-constraints`](../../../contracts/mcp/2025-06-18/ocu-constraints.schema.json) |
-| 02 | Control / operator API | [`02-control-operator-api.md`](02-control-operator-api.md) | draft | — | — |
+| 02 | Control / operator API | [`02-control-operator-api.md`](02-control-operator-api.md) | draft | [0004](../adr/0004-operator-authentication-substrate.md) | — |
 | 04 | Storage broker | [`04-storage-broker.md`](04-storage-broker.md) | draft | — | [`storage/mount-config`](../../../contracts/storage/mount-config.schema.json), [`storage/file-ops`](../../../contracts/storage/file-ops.schema.json), [`storage/file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json) |
 | 05 | Session sandbox `[1..N]` | [`05-session-sandbox.md`](05-session-sandbox.md) | draft | — | [`exec/exec-channel`](../../../contracts/exec/exec-channel.schema.json) |
 | 06 | Egress trust-edge proxy | [`06-egress-trust-edge.md`](06-egress-trust-edge.md) | draft | [0005](../adr/0005-egress-credential-delivery-envoy-sds.md), [0006](../adr/0006-egress-forward-proxy-substrate.md), [0007](../adr/0007-egress-auth-mechanism.md) | — |
