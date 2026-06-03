@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-03
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
@@ -88,7 +88,7 @@ Residual, by [`06-threat-model.md`](../06-threat-model.md) §5 register: the tra
 
 ## Open questions
 
-1. Envoy's `credential_injector` filter and its OAuth2 extension carry an upstream maturity caveat — not substantial production burn-in, an unknown security posture, intended for trusted-on-both-ends paths — while a third-party LLM API is an untrusted upstream. The regulated-tier posture for this filter is deferred pending a security review — needs issue.
+1. Envoy's `credential_injector` filter and its OAuth2 extension carry an upstream maturity caveat — not substantial production burn-in, an unknown security posture, intended for trusted-on-both-ends paths — while a third-party LLM API is an untrusted upstream. The regulated-tier posture for this filter is deferred pending a security review ([#240](https://github.com/Wide-Moat/open-computer-use/issues/240)).
 2. ~~MITM-termination technology undecided.~~ Resolved by [ADR-0007](../adr/0007-egress-auth-mechanism.md): the bump rung terminates with a leaf minted per SNI from a per-deployment CA, served by the Envoy data plane plus a self-hosted SDS minting service; a config-time-enumerable allow-list uses pre-minted leaves over a file SDS source instead. Selection between edge-inject and a protocol broker is per upstream; v1 ships edge-inject only.
 3. SNI/Host consistency on the transparent (non-inspected) leg, where the SNI pre-filter alone misses domain-fronting — [#198](https://github.com/Wide-Moat/open-computer-use/issues/198).
 4. No-credential-in-response stripping, edge-binary/config attestation, and plaintext-zeroization for the bump rung lack an explicit NFR — [#197](https://github.com/Wide-Moat/open-computer-use/issues/197).

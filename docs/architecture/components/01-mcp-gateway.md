@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-03
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
@@ -77,4 +77,4 @@ Shelf delta ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal she
 1. Does NFR-IC-04 bind only the Control/operator API and internal RPC, leaving the MCP edge governed solely by date-revision negotiation, or does it need an explicit MCP-edge clause? — [#207](https://github.com/Wide-Moat/open-computer-use/issues/207).
 2. Per-action / per-tool authorization at the gateway (deny-by-default keyed on caller, tool name, action parameters) — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
 3. Outbound error/discovery identifier-minimization and size-bound enforcement at the gateway decoder — [#149](https://github.com/Wide-Moat/open-computer-use/issues/149).
-4. Whether the per-session sequential-execution serializer (the NFR-IC-05 carrier, today a gateway behaviour with no wire field) needs its own versioned conformance fixture so opt-in parallelism is testable independently of the MCP profile — needs issue: gateway-side serializer test surface.
+4. Whether the per-session sequential-execution serializer (the NFR-IC-05 carrier, today a gateway behaviour with no wire field) needs its own versioned conformance fixture so opt-in parallelism is testable independently of the MCP profile ([#239](https://github.com/Wide-Moat/open-computer-use/issues/239)).
