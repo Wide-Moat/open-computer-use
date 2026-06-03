@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: stub
-last-reviewed: 2026-05-24
+status: draft
+last-reviewed: 2026-06-02
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -12,19 +12,23 @@ The Architecture Manifesto for open-computer-use `next/v1`. This file is the rea
 
 ## Status
 
-Stub. Sections appear one at a time via PRs on `next/v1`. Each section is reviewed and signed off before the next is opened. No bulk-generation.
+Draft. Sections appear one at a time via PRs on `next/v1`. Each section is reviewed before the next is opened. No bulk-generation.
 
-## Planned sections (filled progressively, not now)
+## Sections
 
-1. Purpose & audience
-2. Buyer's checklist
-3. Non-negotiables (with anti-examples)
-4. Non-goals (v1)
-5. Licensing posture (FSL-1.1-Apache-2.0 details + dependency policy)
-6. Starter-mode policy
-7. Governance & decision-recording protocol
+The expanded sections live under [`manifesto/`](./manifesto/); this file stays the ≤ 400-line read-first map.
 
-Expanded versions of each live under [`manifesto/`](./manifesto/). The TL;DR in this file stays ≤ 400 lines.
+| # | Section | File | Status |
+|---|---|---|---|
+| 1–2 | Purpose, audience & buyer's checklist | [`01-audience-and-buyer.md`](./manifesto/01-audience-and-buyer.md) | draft |
+| — | NFRs / quality goals | [`02-nfrs.md`](./manifesto/02-nfrs.md) | draft |
+| 3 | Non-negotiables (with anti-examples) | [`03-non-negotiables.md`](./manifesto/03-non-negotiables.md) | draft |
+| 4 | Non-goals (v1) | [`04-non-goals.md`](./manifesto/04-non-goals.md) | draft |
+| 5 | Licensing posture (FSL-1.1-Apache-2.0 + dependency policy) | [`05-licensing-posture.md`](./manifesto/05-licensing-posture.md) | draft |
+| 6 | Starter-mode policy | [`06-starter-mode-policy.md`](./manifesto/06-starter-mode-policy.md) | draft |
+| 7 | Governance & decision-recording protocol | [`07-governance.md`](./manifesto/07-governance.md) | draft |
+
+The NFR catalogue carries no MANIFESTO section number — it is the measurable-quality layer the numbered sections reference, kept in `02-nfrs.md`.
 
 ## Hard rules already locked
 

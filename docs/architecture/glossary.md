@@ -18,7 +18,7 @@ Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/0
 
 ## Compute plane
 
-The session sandbox zone — one sandbox per session, lifecycle bound to the session, guest agent as PID 1. Substrate is set by the [Sandbox tier](#sandbox-tier): `runc` on the minimal-capability shelf, `gVisor` on the full-capability shelf in v1 (microVM post-v1). Cross-session network reachability disabled.
+The session sandbox zone — one sandbox per session, lifecycle bound to the session, guest agent as PID 1. Substrate is set by the [Sandbox tier](#sandbox-tier) — `runc`, gVisor, or microVM — selected by `workload_trust_profile`, orthogonal to the [shelf](#capability-shelf): both shelves carry every tier the host supports. Cross-session network reachability disabled.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
