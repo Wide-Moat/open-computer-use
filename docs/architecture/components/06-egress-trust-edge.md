@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: null
-adr: [0005, 0006, 0007]
+adr: [0005, 0006, 0007, 0008]
 ---
 
 The sandbox's sole outbound network path: it enforces a deny-by-default destination allow-list, emits a structured deny reason, and on the legs that need it attaches the upstream authorization received over Envoy SDS so the guest carries no long-lived upstream secret on the egress leg. Audience: engineers and security reviewers wiring or auditing egress policy.
