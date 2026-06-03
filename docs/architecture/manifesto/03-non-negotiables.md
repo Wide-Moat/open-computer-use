@@ -12,9 +12,9 @@ Principles every architectural decision must respect. Audience: reviewers and ar
 
 ## Non-negotiable principles
 
-**OCU does not orchestrate the agent loop.** OCU never hosts, selects, or proxies a model, and runs no loop of its own — model query, response handling, and reflection belong to the loop's owner. That owner is the calling MCP client, or a workload the customer runs inside the sandbox (their own agent, e.g. a coding agent); either way OCU executes the tool calls it receives and routes the workload's LLM traffic out through the Egress trust-edge. Anti-example: OCU as an LLM proxy that selects the model and runs the tool-execution loop on the platform's behalf.
+**Agent loop stays outside OCU.** The loop — model query, response handling, reflection — runs in the calling client, never in OCU. Anti-example: OCU as an LLM proxy that selects the model and runs the tool-execution loop internally.
 
-**Model agnostic by construction.** OCU does not host, select, or provision LLMs; the model choice belongs to whoever owns the loop — the caller or the in-sandbox workload. A sandbox tool or workload that needs an LLM reaches it as one allow-listed egress endpoint, governed by the Egress trust-edge like any other upstream. Anti-example: a default bundled model or a model-selection API.
+**Model agnostic by construction.** OCU does not host, select, or provision LLMs; the model choice is the caller's. A sandbox tool that needs an LLM reaches it as one allow-listed egress endpoint, governed by the Egress trust-edge like any other upstream. Anti-example: a default bundled model or a model-selection API.
 
 **Guest holds no long-lived upstream secret.** The sandbox never holds a credential that reaches a backend outside OCU (storage, SDS, KMS, LLM); a session-scoped handle is acceptable, the upstream key stays host-side and injects at the trust-edge only ([NFR-SEC-23](02-nfrs.md), [ADR-0007](../adr/0007-egress-auth-mechanism.md)). Anti-example: the guest receiving an object-store access key or a hardcoded API token.
 
