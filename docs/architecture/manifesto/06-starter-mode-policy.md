@@ -14,8 +14,10 @@ When a feature limitation is an acceptable minimal-shelf trade-off versus a sile
 
 Both tiers ship the same six containers ([05-c4-container.md](../05-c4-container.md) §5); only the substrate and credential management differ.
 
-- **Minimal shelf** — single operator, self-signed per-deployment CA, file-system audit, host-rooted operator credential, `runc`. The one-click `docker-compose up` path: no external IdP, no cloud credential, no pre-staged key.
-- **Full shelf** — customer IdP-asserted operator identity, customer-PKI-rooted signers, hardened runtimes, external SIEM sink, dynamic SDS credential minting.
+- **Minimal shelf** — single operator, self-signed per-deployment CA, file-system audit, host-rooted operator credential. The one-click `docker-compose up` path: no external IdP, no cloud credential, no pre-staged key.
+- **Full shelf** — customer IdP-asserted operator identity, customer-PKI-rooted signers, external SIEM sink, dynamic SDS credential minting.
+
+The runtime tier (`runc` / gVisor / microVM) is selected orthogonally by `workload_trust_profile`, not by the shelf (§"Tier versus shelf").
 
 The feature set is the same on both; every v1 GA feature must be demonstrable on the minimal shelf with defaults in place.
 
@@ -25,7 +27,7 @@ A limitation is acceptable only if it meets all three:
 
 1. **The minimal-shelf default does not block the primary workflow.** A solo developer or a hardening pilot builds agents, runs sessions, calls tools, and reads results with no configuration beyond `docker-compose up`.
 2. **The limitation is discoverable in config and docs.** Enabling an optional feature (external SIEM, credential rotation, DLP, a higher runtime tier) states what the minimal shelf trades away — a config comment or a startup log line, not silence.
-3. **No threat-model invariant erodes without explicit operator choice.** The solo path keeps the core locked in code: the guest holds no long-lived upstream secret ([NFR-SEC-23](02-nfrs.md)), audit events are hash-linked ([NFR-SEC-03](02-nfrs.md)), the kill-switch is reachable ([NFR-SEC-01](02-nfrs.md)), and session limits hold — idle ≤15 min ([NFR-SEC-40](02-nfrs.md)), absolute ≤12 h ([NFR-SEC-41](02-nfrs.md)).
+3. **No threat-model invariant erodes without explicit operator choice.** The solo path keeps the core locked in code: the guest holds no long-lived upstream secret ([NFR-SEC-23](02-nfrs.md)), audit events are hash-linked ([NFR-SEC-03](02-nfrs.md)), the kill-switch stays operative on the single-instance shelf ([NFR-SEC-01](02-nfrs.md), [NFR-SEC-55](02-nfrs.md)), and session limits hold — idle ≤15 min ([NFR-SEC-40](02-nfrs.md)), absolute ≤12 h ([NFR-SEC-41](02-nfrs.md)).
 
 ## Unacceptable limitation
 
