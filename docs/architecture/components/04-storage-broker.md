@@ -3,13 +3,13 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-03
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/storage/mount-config.schema.json, contracts/storage/file-ops.schema.json, contracts/storage/file-artifact-api.schema.json]
-adr: []
+adr: [0002]
 ---
 
 The host-side object-store client that custodies the backend credential and resolves file authorization for the guest mount and an external data-plane client, so neither holds a backend key. Audience: engineers and security reviewers implementing or auditing the storage surface.
@@ -35,7 +35,7 @@ flowchart LR
     AUTHZ --> OSC
 ```
 
-The south-face mount adapter terminates the `filesystem_id`-scoped file-operation interface from the guest; the north-face component terminates the file/artifact API plus the authenticated SPA and the preview-render path. Both call one authz resolver, which calls one object-store client — the sole component that speaks the backend protocol and signs every backend request. The substrate under the mount (FUSE / virtio-fs / 9p) and the message-set transport are component-spec choices, not contract.
+The south-face mount adapter terminates the `filesystem_id`-scoped file-operation interface from the guest; the north-face component terminates the file/artifact API plus the authenticated SPA and the preview-render path. The files surface is one entry in the data-plane UI's descriptor-driven view list ([ADR-0002](../adr/0002-session-view-descriptor.md)); the broker serves that entry, while the descriptor shell and the deferred live-view surfaces sit outside this container. Both call one authz resolver, which calls one object-store client — the sole component that speaks the backend protocol and signs every backend request. The substrate under the mount (FUSE / virtio-fs / 9p) and the message-set transport are component-spec choices, not contract.
 
 ### Owned state
 

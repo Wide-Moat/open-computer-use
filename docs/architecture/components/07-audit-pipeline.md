@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-03
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
@@ -107,4 +107,4 @@ Backpressure behaviour is spill, not block: events commit to the durable bus and
 2. Transparency-log publishing path (auth, retry, RPO if the log is unreachable) and whether the minimal shelf publishes at all — [#151](https://github.com/Wide-Moat/open-computer-use/issues/151).
 3. Out-of-band evidence for in-sandbox actions and host-attested binding of the OCSF source at ingestion (the P7-S1 / P7-R2 residual) — [#181](https://github.com/Wide-Moat/open-computer-use/issues/181).
 4. Per-source retention-budget cap and forensic-dilution-within-budget at the audit fan-in — [#188](https://github.com/Wide-Moat/open-computer-use/issues/188).
-5. ComputeMetering / SaturationEvent payload schema: OCSF v1.x ships no metering or saturation class, so the channel surface is stable but the payload `$ref` is held TBD. needs issue: split the metering/saturation OCSF-class payload-schema TBD off [#150](https://github.com/Wide-Moat/open-computer-use/issues/150) so the Published-Language gap is tracked separately from SIEM-bridge transport.
+5. ComputeMetering / SaturationEvent payload schema: OCSF v1.x ships no metering or saturation class, so the channel surface is stable but the payload `$ref` is held TBD, split off [#150](https://github.com/Wide-Moat/open-computer-use/issues/150) so the Published-Language gap is tracked separately from SIEM-bridge transport ([#241](https://github.com/Wide-Moat/open-computer-use/issues/241)).
