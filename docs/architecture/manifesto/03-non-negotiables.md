@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-02
+last-reviewed: 2026-06-05
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -11,6 +11,8 @@ applies-to: next/v1
 Principles every architectural decision must respect. Audience: reviewers and architects deciding whether a proposal fits the platform.
 
 ## Non-negotiable principles
+
+**We build the control plane and the sandbox runtime; everything else we integrate.** Those two are OCU's accountable surface — what no mature market product provides — so every neighbouring capability is integrated off-the-shelf or customer-provided over a published contract, and a dependency is bundled only when it is part of that core ([02-nfrs.md](02-nfrs.md) §Scope ownership; [05-licensing-posture.md](05-licensing-posture.md) §Bundled vs not-bundled). Anti-example: shipping a bundled audit bus and owning its CVE, SBOM, and version lifecycle when the customer already runs Kafka.
 
 **Agent loop stays outside OCU.** The loop — model query, response handling, reflection — runs in the calling client, never in OCU. Anti-example: OCU as an LLM proxy that selects the model and runs the tool-execution loop internally.
 
