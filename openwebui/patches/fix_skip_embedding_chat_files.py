@@ -17,7 +17,7 @@ Solution:
 
 When adding a file to a knowledge base (collection_name is set), full processing works.
 
-Target: Open WebUI 0.9.5
+Target: Open WebUI 0.9.6
 """
 
 import os

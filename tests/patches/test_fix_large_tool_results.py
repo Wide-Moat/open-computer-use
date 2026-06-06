@@ -34,33 +34,41 @@ class TestPatchApplication(unittest.TestCase):
     def _base_middleware(self) -> str:
         """Return minimal synthetic middleware content satisfying all 3 anchors.
 
-        Must include:
+        Mirrors the v0.9.5+ upstream shape the patch's SEARCH literals target:
         - `from open_webui.models.chats import Chats` (Mod 1 import marker)
         - SEARCH_TOOL_LOOP literal (TOOL_LOOP_ERRORS_UNIFIED save-for-restore marker
           + `\n                    try:\n                        new_form_data = {\n`)
-        - SEARCH_HISTORY literal (process_messages_with_output + blank + get_system_message)
+        - SEARCH_HISTORY literal (multi-line process_messages_with_output with
+          reasoning_format= kwarg, blank line, then get_system_message)
         """
         return (
             "import json\n"
             "from open_webui.models.chats import Chats\n"
             "\n"
-            "def process_messages_with_output(messages):\n"
+            "def process_messages_with_output(messages, reasoning_format=None):\n"
             "    return messages\n"
             "\n"
             "def get_system_message(messages):\n"
             "    return None\n"
             "\n"
+            "def get_reasoning_format(model):\n"
+            "    return None\n"
+            "\n"
             "async def middleware():\n"
             "    form_data = {'messages': []}\n"
             "    metadata = {'chat_id': 'test-123'}\n"
-            "    form_data['messages'] = process_messages_with_output(form_data.get('messages', []))\n"
+            "    model = {}\n"
+            "    form_data['messages'] = process_messages_with_output(\n"
+            "        form_data.get('messages', []),\n"
+            "        reasoning_format=get_reasoning_format(model),\n"
+            "    )\n"
             "\n"
             "    system_message = get_system_message(form_data.get('messages', []))\n"
             "\n"
             "    output = []\n"
-            "    tool_call_retries = 0\n"
-            "    while tool_call_retries < 5:\n"
-            "        tool_call_retries += 1\n"
+            "    tool_call_iterations = 0\n"
+            "    while tool_call_iterations < 5:\n"
+            "        tool_call_iterations += 1\n"
             "                    _saved_output = json.loads(json.dumps(output))  # TOOL_LOOP_ERRORS_UNIFIED: save for restore on error\n"
             "                    try:\n"
             "                        new_form_data = {\n"
@@ -366,7 +374,7 @@ class TestHistoryTruncation(unittest.TestCase):
 
 
 #
-# v0.9.1 integration tests — real upstream fixture via subprocess
+# v0.9.6 integration tests — real upstream fixture via subprocess
 #
 import ast
 import shutil
@@ -376,7 +384,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_middleware_v091, load_middleware_v092  # noqa: E402
+from conftest import load_middleware_v096  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -387,27 +395,25 @@ def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProces
     )
 
 
-class TestFixLargeToolResultsV091(unittest.TestCase):
-    """3-state coverage + cascade tests against real v0.9.1 middleware."""
+class TestFixLargeToolResultsV096(unittest.TestCase):
+    """3-state coverage + cascade tests against real v0.9.6 middleware.py fixture."""
 
     PATCH_NAME = "fix_large_tool_results"
     NEW_MARKER = "FIX_LARGE_TOOL_RESULTS"
-    # Mod 3 anchor — removing this leaves Patch 3's marker intact so Mod 2 still
-    # succeeds after patch 3; Mod 3 is the one that fails loud.
-    PRIMARY_ANCHOR = (
-        "    form_data['messages'] = process_messages_with_output"
-        "(form_data.get('messages', []))"
-    )
+    # Mod 3 anchor (SEARCH_HISTORY) — first line of the multi-line
+    # process_messages_with_output call. Removing it leaves Patch 3's marker
+    # intact so Mod 2 still succeeds after patch 3; Mod 3 is the one that fails loud.
+    PRIMARY_ANCHOR = "    form_data['messages'] = process_messages_with_output("
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v091(), encoding="utf-8")
+        self.target.write_text(load_middleware_v096(), encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_fresh_apply(self):
+    def test_fresh_apply_v096(self):
         # Cascade dependency: fix_tool_loop_errors must run first
         r1 = _run_patch("fix_tool_loop_errors", self.target)
         self.assertEqual(r1.returncode, 0, f"patch3 stderr={r1.stderr}")
@@ -418,7 +424,7 @@ class TestFixLargeToolResultsV091(unittest.TestCase):
         self.assertIn(self.NEW_MARKER, content)
         ast.parse(content)
 
-    def test_idempotent_rerun(self):
+    def test_idempotent_rerun_v096(self):
         _run_patch("fix_tool_loop_errors", self.target)
         r1 = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r1.returncode, 0)
@@ -428,7 +434,7 @@ class TestFixLargeToolResultsV091(unittest.TestCase):
         self.assertIn("ALREADY PATCHED", r2.stdout)
         self.assertEqual(after_first, self.target.read_text())
 
-    def test_broken_fixture_fails_loud(self):
+    def test_broken_fixture_fails_loud_v096(self):
         # Apply patch 3 first (so Mod 2 anchor is present), then remove Mod 3 anchor
         _run_patch("fix_tool_loop_errors", self.target)
         content = self.target.read_text()
@@ -441,7 +447,7 @@ class TestFixLargeToolResultsV091(unittest.TestCase):
         self.assertIn("ERROR:", r.stderr)
         self.assertIn(self.PATCH_NAME, r.stderr)
 
-    def test_cascade_with_patch_3(self):
+    def test_cascade_with_patch_3_on_v096(self):
         r1 = _run_patch("fix_tool_loop_errors", self.target)
         self.assertEqual(r1.returncode, 0, r1.stderr)
         r2 = _run_patch("fix_large_tool_results", self.target)
@@ -449,82 +455,15 @@ class TestFixLargeToolResultsV091(unittest.TestCase):
         content = self.target.read_text()
         self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
         self.assertIn("FIX_LARGE_TOOL_RESULTS", content)
-        # V091_SHIM injects 'metadata': metadata, before SEARCH_TOOL_LOOP runs,
-        # so the post-cascade content must carry the key (mirrors v0.9.2 assertion).
         self.assertIn("'metadata': metadata,", content)
         ast.parse(content)
 
     def test_patch_4_fails_loud_without_patch_3(self):
-        # Patch 4 direct on raw v0.9.1 — Mod 2 anchor (TOOL_LOOP_ERRORS_UNIFIED marker) missing
+        # Patch 4 direct on raw v0.9.6 — Mod 2 anchor (TOOL_LOOP_ERRORS_UNIFIED marker) missing
         r = _run_patch("fix_large_tool_results", self.target)
         self.assertEqual(r.returncode, 1, f"stdout={r.stdout} stderr={r.stderr}")
         # Error message points at running fix_tool_loop_errors first
         self.assertIn("fix_tool_loop_errors", r.stderr.lower())
-
-
-class TestFixLargeToolResultsV092(unittest.TestCase):
-    """3-state coverage + cascade tests against real v0.9.2 middleware.py fixture."""
-
-    PATCH_NAME = "fix_large_tool_results"
-    NEW_MARKER = "FIX_LARGE_TOOL_RESULTS"
-    PRIMARY_ANCHOR = (
-        "    form_data['messages'] = process_messages_with_output"
-        "(form_data.get('messages', []))"
-    )
-
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v092(), encoding="utf-8")
-
-    def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_fresh_apply_v092(self):
-        # Cascade dependency: fix_tool_loop_errors must run first
-        r1 = _run_patch("fix_tool_loop_errors", self.target)
-        self.assertEqual(r1.returncode, 0, f"patch3 stderr={r1.stderr}")
-        r = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
-        self.assertIn(f"PATCHED: {self.PATCH_NAME}", r.stdout)
-        content = self.target.read_text()
-        self.assertIn(self.NEW_MARKER, content)
-        # v0.9.2 specific: post-patch3 content must carry the new metadata key
-        self.assertIn("'metadata': metadata,", content)
-        ast.parse(content)
-
-    def test_idempotent_rerun_v092(self):
-        _run_patch("fix_tool_loop_errors", self.target)
-        r1 = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r1.returncode, 0)
-        after_first = self.target.read_text()
-        r2 = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r2.returncode, 0)
-        self.assertIn("ALREADY PATCHED", r2.stdout)
-        self.assertEqual(after_first, self.target.read_text())
-
-    def test_broken_fixture_fails_loud_v092(self):
-        _run_patch("fix_tool_loop_errors", self.target)
-        content = self.target.read_text()
-        self.assertIn(self.PRIMARY_ANCHOR, content)
-        self.target.write_text(
-            content.replace(self.PRIMARY_ANCHOR, "    # ANCHOR_REMOVED_FOR_TEST")
-        )
-        r = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r.returncode, 1, f"stdout={r.stdout} stderr={r.stderr}")
-        self.assertIn("ERROR:", r.stderr)
-        self.assertIn(self.PATCH_NAME, r.stderr)
-
-    def test_cascade_with_patch_3_on_v092(self):
-        r1 = _run_patch("fix_tool_loop_errors", self.target)
-        self.assertEqual(r1.returncode, 0, r1.stderr)
-        r2 = _run_patch("fix_large_tool_results", self.target)
-        self.assertEqual(r2.returncode, 0, r2.stderr)
-        content = self.target.read_text()
-        self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
-        self.assertIn("FIX_LARGE_TOOL_RESULTS", content)
-        self.assertIn("'metadata': metadata,", content)
-        ast.parse(content)
 
 
 if __name__ == "__main__":
