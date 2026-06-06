@@ -103,7 +103,7 @@ Canonical source: [`docs/architecture/diagrams/02-trust-boundaries.mmd`](./diagr
 
 Eight content-keyed classes. Per-tenant data residency ([NFR-COMP-13](manifesto/02-nfrs.md)) constrains where any class above PUBLIC may sit on the substrate.
 
-| Class | NYDFS NPI | GLBA NPI | SEC MNPI | GDPR Art. 4 / 9 | EU AI Act | PCI DSS v4.0 | Retention floor |
+| Class | NYDFS NPI | GLBA NPI | SEC MNPI | GDPR Art. 4 / 9 | EU AI Act | PCI DSS v4.0 | Regulatory retention floor (customer's store) |
 |---|---|---|---|---|---|---|---|
 | **PUBLIC** | n/a | excluded | n/a | not personal data | n/a | n/a | none |
 | **INTERNAL** | n/a | n/a | n/a | not personal data | n/a | n/a | 1 yr ops |
@@ -113,6 +113,8 @@ Eight content-keyed classes. Per-tenant data residency ([NFR-COMP-13](manifesto/
 | **SENSITIVE (special category)** | NPI plus health / biometric | NPI | n/a | Art. 9 special category | Annex III categories | n/a | per Art. 5(1)(e) |
 | **REGULATED-AUDIT** | NYDFS §500.6 audit trail | n/a | SOX-trail | Art. 30 records of processing | Art. 12 logs of high-risk AI | PCI Req 10 | 7 y default / 10 y configurable (see §10) |
 | **CRYPTO-KEYS / SECRETS** | implicit under §500.15(a) | implicit under Safeguards Rule | n/a | implicit | implicit | PCI Req 3.6 | rotation policy is the floor |
+
+OCU is an ephemeral workspace and retains no customer file bytes for any class — bytes leave with the session (scrubbed at teardown, [NFR-SEC-65](manifesto/02-nfrs.md)) or go to the customer's store, so the retention-floor column is a floor for the customer's store. The only row that is an OCU duty is REGULATED-AUDIT: the 7 y / 10 y floor binds the audit record OCU keeps ([NFR-COMP-01](manifesto/02-nfrs.md), §10), not customer content.
 
 The default solo / dev deployment runs on `runc` under the `trusted_operator` workload profile, so its default content scope is PUBLIC + INTERNAL. CONFIDENTIAL+ content triggers data-class obligations — opt-in BYOK ([NFR-SEC-04](manifesto/02-nfrs.md)), customer-managed audit sink ([NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md)), residency pinning ([NFR-COMP-13](manifesto/02-nfrs.md)) — but does not pick the runtime tier (AP-13). The tier is picked by the deployment's `workload_trust_profile` per [§02 "Sandbox tier — workload-driven selection"](manifesto/02-nfrs.md).
 

@@ -180,7 +180,7 @@
       "fileDownload": "south-face read-path counterpart to the chunked fileUpload; streams the object back, the broker chunks it under the RPC message ceiling; request/response field set TBD",
       "importFiles": "session-pseudobucket import; request/response field set TBD",
       "importZip": "one-op zip import (the whole archive imported in a single op); request/response field set TBD",
-      "migrateFilesystem": "session-pseudobucket control primitive; request/response field set TBD",
+      "migrateFilesystem": "in-session pseudobucket control primitive (rebind the session scope, not a durable-store data migration); request/response field set TBD",
       "removeFilesystem": "session-pseudobucket control primitive; request/response field set TBD"
     },
     "operations": {}
