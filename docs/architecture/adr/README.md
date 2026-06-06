@@ -3,7 +3,7 @@
 
 ---
 status: stub
-last-reviewed: 2026-05-24
+last-reviewed: 2026-06-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -26,6 +26,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0006](0006-egress-forward-proxy-substrate.md) | Egress forward-proxy substrate | proposed | — | 2026-06-01 |
 | [0007](0007-egress-auth-mechanism.md) | Egress auth mechanism — edge-inject vs protocol-broker | proposed | — | 2026-06-01 |
 | [0008](0008-session-egress-attribution.md) | Session-to-egress attribution by presented token | proposed | — | 2026-06-02 |
+| [0009](0009-audit-pipeline-pluggable-by-contract.md) | Audit pipeline is pluggable-by-contract | proposed | — | 2026-06-06 |
 
 ## Lifecycle
 

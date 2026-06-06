@@ -3,7 +3,7 @@
 
 ---
 status: proposed
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -192,7 +192,7 @@ Single invariant: inter-component traffic between Wide-Moat components is encryp
 
 ## 10. Audit zone — mandatory in code, pluggable in sinks
 
-Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) retention floor — 7 y default, 10 y configurable, machine-enforced by the Audit pipeline retention policy). Sinks are pluggable: file-system on the minimal shelf; OCSF v1.x JSON bridges to customer SIEM as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md).
+Audit pipeline is mandatory in code ([NFR-SEC-03](manifesto/02-nfrs.md) hash-chained; [NFR-REL-12](manifesto/02-nfrs.md) durable bus on critical path; [NFR-COMP-01](manifesto/02-nfrs.md) retention floor — 7 y default, 10 y configurable, machine-enforced by the Audit pipeline retention policy). Sinks are pluggable: file-system on the minimal shelf; OCSF v1.x JSON bridges to customer SIEM as opt-in per [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md). [ADR-0009](adr/0009-audit-pipeline-pluggable-by-contract.md) sets where the mandatory-in-code / pluggable line falls: the chain of custody and a local durable commit are OCU's, while the bus product, WORM store, SIEM sink, and transparency-log endpoint are pluggable seams with solo-reference defaults.
 
 The pipeline is drawn as our zone; sinks are external actors. The contract is the OCSF v1.x JSON schema plus bridge transport (see §12 Open question 3).
 

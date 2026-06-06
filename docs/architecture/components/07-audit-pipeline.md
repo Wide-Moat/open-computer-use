@@ -3,13 +3,13 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-03
+last-reviewed: 2026-06-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: contracts/audit/audit-fanin.asyncapi.yaml
-adr: []
+adr: [0009]
 ---
 
 Internal design of the Audit pipeline container: how host-attested source events fan into one hash-linked durable store and reach a customer-owned sink. Audience: engineers and security reviewers on the audit path.
@@ -99,7 +99,7 @@ This container is the F11 fan-in consumer ([`05-c4-container.md`](../05-c4-conta
 
 Backpressure behaviour is spill, not block: events commit to the durable bus and the file-system sink before ack, so a stalled SIEM sink fills the bus toward its bound and replays on recovery; sources are never blocked and events are never silently dropped. The measurable end-to-end saturation / spill target is open ([#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).
 
-**Shelf delta** (from [`05-c4-container.md`](../05-c4-container.md) §5 and [`02-trust-boundaries.md`](../02-trust-boundaries.md) §10). Minimal shelf: file-system sink only; the Merkle-head submission envelope is signed with a host-local key. Full shelf: an opt-in OCSF bridge to a customer SIEM as a fan-out; the same envelope signed with an HSM-rooted key when customer KMS is wired. The boundary properties — host-attested source identity, hash-linked append-only chain, write-before-ack, per-source fairness — hold on both shelves; only the sink substrate and the envelope signer change. The durable-bus product and the WORM cold-tier substrate are ADR-level picks (Open questions); neither is decided here.
+**Shelf delta** (from [`05-c4-container.md`](../05-c4-container.md) §5 and [`02-trust-boundaries.md`](../02-trust-boundaries.md) §10). Minimal shelf: file-system sink only; the Merkle-head submission envelope is signed with a host-local key. Full shelf: an opt-in OCSF bridge to a customer SIEM as a fan-out; the same envelope signed with an HSM-rooted key when customer KMS is wired. The boundary properties — host-attested source identity, hash-linked append-only chain, write-before-ack, per-source fairness — hold on both shelves; only the sink substrate and the envelope signer change. The durable-bus product and the WORM cold-tier substrate are pluggable seams behind the OCU-owned local commit, not decided in this component: [ADR-0009](../adr/0009-audit-pipeline-pluggable-by-contract.md) sets the build/buy boundary (each seam a contract with a solo-reference default), and the per-seam transport detail stays open ([#150](https://github.com/Wide-Moat/open-computer-use/issues/150), [#151](https://github.com/Wide-Moat/open-computer-use/issues/151)).
 
 ## Open questions
 
