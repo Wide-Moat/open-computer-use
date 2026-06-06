@@ -3,13 +3,13 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-03
+last-reviewed: 2026-06-07
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/storage/mount-config.schema.json, contracts/storage/file-ops.schema.json, contracts/storage/file-artifact-api.schema.json]
-adr: [0002]
+adr: [0002, 0010]
 ---
 
 The host-side object-store client that custodies the backend credential and resolves file authorization for the guest mount and an external data-plane client, so neither holds a backend key. Audience: engineers and security reviewers implementing or auditing the storage surface.
@@ -94,12 +94,11 @@ The container emits OCSF on the audit fan-in flow F11, fail-closed, per the audi
 
 Scaling axis: per-tenant instantiation (NFR-SEC-76) — one broker principal per tenant filesystem scope. Whether that principal is also per-sandbox-host or per-deployment, and whether that changes the container diagram, is open ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)). Capacity is bounded by the per-session file-op and inbound-byte ceilings (NFR-SEC-46, NFR-SEC-78); a one-per-host broker serving many sessions is a shared DoS surface, which is why those ceilings are per-session, not per-broker.
 
-Shelf delta (from [`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf holds a host-local backend credential, admitted only under `workload_trust_profile = trusted_operator` and single-tenant (NFR-SEC-60); the full shelf uses a customer-PKI workload identity with STS scoped per session (NFR-SEC-25). All invariants hold on both shelves; only the credential substrate and its blast radius (P4-S2 / P4-I1 residual) change. The runtime tier that hosts the broker and the build-vs-buy of the object-store engine are deferred (`needs ADR:` object-store engine selection; `needs ADR:` broker runtime tier); this spec records the two-face split and the cardinality question, it picks no engine or tier.
+Shelf delta (from [`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf holds a host-local backend credential, admitted only under `workload_trust_profile = trusted_operator` and single-tenant (NFR-SEC-60); the full shelf uses a customer-PKI workload identity with STS scoped per session (NFR-SEC-25). All invariants hold on both shelves; only the credential substrate and its blast radius (P4-S2 / P4-I1 residual) change. The build-vs-buy of the object-store engine is fixed by [ADR-0010](../adr/0010-object-store-engine-s3-conform.md) (S3-conform seam; customer-provided production engine, Apache-2.0 local-filesystem reference on the solo shelf); the runtime tier that hosts the broker stays deferred (`needs ADR:` broker runtime tier). This spec records the two-face split and the cardinality question, it picks no runtime tier and no final engine binary.
 
 ## Open questions
 
 1. Is the broker one instance per deployment or one per sandbox host, and does the answer change the container diagram? — [#175](https://github.com/Wide-Moat/open-computer-use/issues/175).
-2. Does the broker file-operation contract stay distinct from any object-store API at every shelf, and where is that boundary asserted? — [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).
-3. Embed-token replay-binding (`jti`/nonce single-use or token↔channel binding) within the `exp` window — [#217](https://github.com/Wide-Moat/open-computer-use/issues/217).
-4. Preview-render parser isolation for untrusted artifact bodies on the north face — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).
-5. Per-action / per-object authorization granularity and minimum lease scope beyond resource-class — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
+2. Embed-token replay-binding (`jti`/nonce single-use or token↔channel binding) within the `exp` window — [#217](https://github.com/Wide-Moat/open-computer-use/issues/217).
+3. Preview-render parser isolation for untrusted artifact bodies on the north face — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).
+4. Per-action / per-object authorization granularity and minimum lease scope beyond resource-class — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
