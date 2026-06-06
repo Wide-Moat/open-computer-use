@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.9.6.0 — bump Open WebUI base to 0.9.6 (2026-06-07)
+
+Minor release: Open WebUI base bumped from `0.9.5` → `0.9.6` (upstream shipped 0.9.6 on 2026-06-01). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains). Both frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes — their regex anchors adapted to the renamed minified chunk variables. One backend patch (`fix_tool_loop_errors`) needed updated SEARCH/REPLACE anchors to track an upstream tool-loop refactor; the other five backend patches applied unchanged. Closes #243 (build failure on the 0.9.6 base).
+
+### Changed
+
+- **`openwebui/Dockerfile`** — `ARG OPENWEBUI_VERSION=0.9.5` → `0.9.6`.
+- **`fix_tool_loop_errors` Mod 1 (tool_loop)** — upstream inserted a tool-call iteration-limit block between the tool-retry `except`/`break` and the `if DETECT_CODE_INTERPRETER:` that previously followed it. The SEARCH/REPLACE anchor's trailing `if DETECT_CODE_INTERPRETER:` line was dropped so the anchor ends at `break`; the inserted block is left untouched between the patched try/except and the code-interpreter loop.
+- **`fix_tool_loop_errors` Mod 2 (code_interp)** — upstream changed the post-loop `title` ternary guard from `metadata['chat_id'].startswith('channel:')` to `metadata.get('chat_id', '').startswith('channel:')`. SEARCH/REPLACE updated to match.
+- **`fix_tool_loop_errors` Mod 4 (done_bg)** — upstream reordered the post-completion block from `background_tasks_handler(ctx)` → `assistant_message` → `outlet_filter_handler` to `assistant_message` → `outlet_filter_handler` → `background_tasks_handler(ctx)` (background tasks now run last). SEARCH/REPLACE track the new order; the try/except wrap still guards both the done-emit and the post-loop block.
+- **`fix_tool_loop_errors` Mod 5 (iter)** — upstream renamed the loop counter `tool_call_retries` → `tool_call_iterations` and replaced the single-line `while len(tool_calls) > 0 and tool_call_retries < CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES:` with a multi-line `while tool_calls and (CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS):`. SEARCH/REPLACE and the injected log lines updated to the new name and shape.
+- **`fix_tool_loop_errors` Mod 3 (sse)** — no change; the SSE-parse anchor matches 0.9.6 verbatim.
+
+### Tests
+
+- **Patch regression coverage extended to v0.9.6 for all eight patches.** Added byte-identical `tests/patches/fixtures/middleware_v0.9.6.py` and `retrieval_v0.9.6.py` extracted from upstream `v0.9.6`. Every patch suite now runs its 3-state coverage (fresh apply / idempotent re-run / fail-loud) against the v0.9.6 base the build targets. For `fix_tool_loop_errors`, `fix_large_tool_results`, and `fix_skip_embedding_chat_files` the stale v0.9.1/v0.9.2 classes (which can no longer match the refactored or current anchors) were replaced with v0.9.6 classes; for the version-stable `fix_attached_files_position`, `fix_large_tool_args`, and `fix_skip_rag_files_native_fc` a v0.9.6 class was added alongside the retained v0.9.1/v0.9.2 coverage. Synthetic `_base_middleware()` in `test_fix_large_tool_results.py` updated to the v0.9.5+ multi-line `process_messages_with_output(..., reasoning_format=...)` shape so its Mod 3 anchor matches.
+
+### Verified
+
+- Backend dry-run: all six middleware/retrieval patches apply cleanly in Dockerfile order against a fresh `v0.9.6` source tree; resulting files parse with `ast.parse`.
+- Frontend dry-run: both chunk patches locate and patch their anchors against the `v0.9.6` built frontend (artifacts chunk `B56SVFjv.js`, preview chunk `CBKmxchQ.js`).
+- Docker build: `docker build --platform linux/amd64 -t open-webui-ocu:0.9.6.0-rc.1 -f openwebui/Dockerfile openwebui/` succeeds end-to-end; all eight patches' hard-fail guards green; patched `middleware.py` and `retrieval.py` parse inside the image.
+- Patch regression suite: `pytest tests/patches/` — 51 passed (22 against the v0.9.6 base, covering all eight patches).
+
 ## v0.9.5.0 — bump Open WebUI base to 0.9.5 (2026-05-20)
 
 Minor release: Open WebUI base bumped from `0.9.2` → `0.9.5` (upstream shipped 0.9.3, 0.9.4, 0.9.5 on 2026-05-09). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains in 0.9.3–0.9.5). Frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes; four backend patches needed updated SEARCH/REPLACE anchors to track upstream refactors.

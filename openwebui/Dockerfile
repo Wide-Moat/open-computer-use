@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2025 Open Computer Use Contributors
-ARG OPENWEBUI_VERSION=0.9.5
+ARG OPENWEBUI_VERSION=0.9.6
 FROM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION}
 
 # Copy all patches into the image
