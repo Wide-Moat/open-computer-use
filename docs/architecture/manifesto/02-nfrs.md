@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -249,7 +249,7 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 
 | ID | Scenario | Target | Verification | Source |
 |---|---|---|---|---|
-| NFR-COMP-01 | Audit-log retention — 7 y default / 10 y configurable; WORM (S3 Object Lock Compliance or equivalent); two-tier hot (≤90 d) → cold | retention-policy audit | per-release | FCA SYSC 9 / FINRA / MAS overlay + EU AI Act Art. 19(1) floor |
+| NFR-COMP-01 | Audit-log retention — 7 y default / 10 y configurable, two-tier hot (≤90 d) → cold, machine-enforced by the Audit-pipeline retention policy on both shelves. The cold tier is realized as WORM (S3 Object Lock Compliance or equivalent) on the full shelf; on the minimal shelf the retention floor holds on a plain file system with tamper-evidence supplied by the hash-chain + signed Merkle head (NFR-SEC-03) — tamper-evident (deletion detectable via the chain and the transparency-log head), not WORM-immutable. The retention floor is mandatory on both shelves; only the WORM substrate is shelf-conditional | retention-policy audit on both shelves; WORM object-lock check when the full-shelf cold tier is wired | per-release | FCA SYSC 9 / FINRA / MAS overlay + EU AI Act Art. 19(1) floor |
 | NFR-COMP-02 | DORA Register of Information — 7 fields per third-party ICT provider populated for every BoM row | BoM linter | per-release | DORA Art. 28 + RTS-2025/532 |
 | NFR-COMP-03 | EU AI Act Annex III conformity checklist per release; release blocks if controls absent; Art. 12/13/14/15/17/19/49 each mapped | pass/fail | release-pipeline | EU AI Act Art. 12 + 15 + 72 + Annex III §5(b) |
 | NFR-COMP-04 | DORA major-incident classification candidate emission — platform telemetry enables customer to meet timeline (classification is customer-side) | telemetry available ≤1 h post-event; bundle supports initial ≤4 h after classification (≤24 h after detection), intermediate ≤72 h, final ≤1 month | incident-drill | DORA-RTS-2025/301 Art. 5 verbatim |
