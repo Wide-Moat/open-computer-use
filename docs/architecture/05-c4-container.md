@@ -40,21 +40,21 @@ The MCP gateway and the Control / operator API are the same trust zone (Control 
 
 ## 4. Internal boundaries
 
-Token classes and their TTLs are canonical in [`02-trust-boundaries.md`](02-trust-boundaries.md) §8; this layer names which boundary each crosses.
+Token classes and their TTLs are canonical in [`02-trust-boundaries.md`](02-trust-boundaries.md) §8; this layer names which boundary each crosses. The `F#` column is the canonical flow label every component spec and [`06-threat-model.md`](06-threat-model.md) §3 reference; this table is its sole definition.
 
-| Boundary | What crosses | Direction |
-|---|---|---|
-| Caller → MCP gateway | MCP authorization spec, audience-validated | inbound |
-| Operator → Control / operator API | PAM-JIT credential, operator-only ingress | inbound |
-| Customer IdP → Control / operator API | relying-party assertion (full shelf); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
-| SOAR → Control / operator API | signed admin API for revoke (the inbound half of the SOAR contract); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
-| MCP gateway → Control / operator API | session create / status, service identity | internal request |
-| Control / operator API → Session sandbox | Session JWT bound to `container_name` | host dials guest |
-| Storage broker → Session sandbox | file-operation mount, session resource handle | host dials guest |
-| Data-plane client → Storage broker (north face) | SPA + file/artifact API (upload/list/download), embed token verified → first-party session; scope + intent checked at accept, `downloadable` resolved at read ([NFR-SEC-73](manifesto/02-nfrs.md)) | inbound |
-| Session sandbox → Egress trust-edge | the only outbound network path | one-way |
-| Storage broker → Egress trust-edge → backend | broker-signed request, allow-list-only | outbound |
-| {all five source containers} → Audit pipeline | OCSF event (Published Language) | fan-in |
+| F# | Boundary | What crosses | Direction |
+|---|---|---|---|
+| F1 | Caller → MCP gateway | MCP authorization spec, audience-validated | inbound |
+| F2 | Operator → Control / operator API | PAM-JIT credential, operator-only ingress | inbound |
+| F3 | Customer IdP → Control / operator API | relying-party assertion (full shelf); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
+| F4 | SOAR → Control / operator API | signed admin API for revoke (the inbound half of the SOAR contract); contract in [`03-c4-context.md`](03-c4-context.md) §4 | inbound |
+| F5 | MCP gateway → Control / operator API | session create / status, service identity | internal request |
+| F6 | Control / operator API → Session sandbox | Session JWT bound to `container_name` | host dials guest |
+| F7 | Storage broker → Session sandbox | file-operation mount, session resource handle | host dials guest |
+| F8 | Session sandbox → Egress trust-edge | the only outbound network path | one-way |
+| F9 | Storage broker → Egress trust-edge → backend | broker-signed request, allow-list-only | outbound |
+| F10 | {all five source containers} → Audit pipeline | OCSF event (Published Language) | fan-in |
+| F11 | Data-plane client → Storage broker (north face) | SPA + file/artifact API (upload/list/download), embed token verified → first-party session; scope + intent checked at accept, `downloadable` resolved at read ([NFR-SEC-73](manifesto/02-nfrs.md)) | inbound |
 
 Two properties are load-bearing at this layer. First, no guest path reaches a long-lived upstream secret — the Storage broker holds its backend credential host-side, and the upstream credential reaches the Egress trust-edge over SDS on the edge-originated leg, never the guest; the guest may hold a short-lived session-scoped handle to a host-side mediator, which is not the upstream secret. The mechanism that attaches the credential is selected per upstream ([ADR-0007](adr/0007-egress-auth-mechanism.md)): edge-inject in v1; the protocol-broker mechanism is the Storage-broker zone, deferred for other upstreams. Second, the control / exec channel is opened by the host into the guest (host dials, guest listens) with the caller identity host-derived, so a compromised guest cannot reach the kill-switch or impersonate another session ([NFR-SEC-43](manifesto/02-nfrs.md)).
 

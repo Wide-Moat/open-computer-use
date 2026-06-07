@@ -54,4 +54,4 @@ None.
 
 ## Threat mitigation
 
-Structurally bars a guest-reachable `entry.url` ([NFR-SEC-43](../manifesto/02-nfrs.md)) and keeps per-surface authentication, closing the PoC's single-`chat_id` and direct-guest-reachability weaknesses; the north-face F12 rows P4-S3/T3/I3 in [`06-threat-model.md`](../06-threat-model.md) §3.2 cover the embed-token and single-credential vectors. Live-view STRIDE rows land with [#210](https://github.com/Wide-Moat/open-computer-use/issues/210).
+Structurally bars a guest-reachable `entry.url` ([NFR-SEC-43](../manifesto/02-nfrs.md)) and keeps per-surface authentication, closing the PoC's single-`chat_id` and direct-guest-reachability weaknesses; the north-face F11 rows P4-S3/T3/I3 in [`06-threat-model.md`](../06-threat-model.md) §3.2 cover the embed-token and single-credential vectors. Live-view STRIDE rows land with [#210](https://github.com/Wide-Moat/open-computer-use/issues/210).
