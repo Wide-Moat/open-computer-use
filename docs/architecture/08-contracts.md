@@ -28,7 +28,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | File / artifact data plane (north face) | Data-plane client → Storage broker (north face) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
 | Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | wire off-the-shelf; the dynamic per-SNI minter implementing the SDS server is OCU code ([ADR-0007](adr/0007-egress-auth-mechanism.md)), the file SDS source is off-the-shelf | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
-| Broker backend leg | Storage broker → backend engine (network leg via Egress trust-edge) | external backend protocol (pluggable adapter, ADR-0010) | conform | NFR-SEC-16, NFR-SEC-25 |
+| Broker backend leg | Storage broker → backend engine (network leg via the storage lane on the Egress trust-edge, ADR-0011) | external backend protocol (pluggable adapter, ADR-0010) | conform | NFR-SEC-16, NFR-SEC-25, NFR-SEC-85 |
 | Audit fan-in / SIEM | five containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
 | SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-COMP-27 |
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
