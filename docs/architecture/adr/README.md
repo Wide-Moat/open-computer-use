@@ -28,6 +28,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0008](0008-session-egress-attribution.md) | Session-to-egress attribution by presented token | proposed | — | 2026-06-02 |
 | [0009](0009-audit-pipeline-pluggable-by-contract.md) | Audit pipeline is pluggable-by-contract | proposed | — | 2026-06-06 |
 | [0010](0010-storage-backend-pluggable-adapter.md) | Storage backend is a pluggable adapter behind the broker | proposed | — | 2026-06-07 |
+| [0011](0011-storage-egress-lane.md) | Storage backend reached over a storage-dedicated egress lane | proposed | — | 2026-06-07 |
 
 ## Lifecycle
 

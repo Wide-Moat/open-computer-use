@@ -66,10 +66,11 @@ flowchart LR
     %% Distinct from egress. The guest reads/writes mutable user-data through a
     %% mount the broker serves; the guest holds only a session-scoped resource
     %% handle (e.g. filesystem_id), never the storage backend credential. The
-    %% broker's own backend traffic is authorized at the Egress trust-edge like
-    %% any upstream. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
+    %% broker's own backend traffic leaves on a storage-dedicated lane at the
+    %% Egress trust-edge, distinct from the guest egress lane (NFR-SEC-85).
+    %% Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
     SB -->|"mount · session resource handle only<br/>no backend credential in guest<br/>NFR-SEC-25"| VM
-    SB -->|"backend traffic · broker-signed<br/>allow-list-only, no TLS termination<br/>signature stays intact"| PROXY
+    SB -->|"backend traffic · broker-signed · storage lane (NFR-SEC-85)<br/>allow-list-only, no TLS termination<br/>signature stays intact"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);

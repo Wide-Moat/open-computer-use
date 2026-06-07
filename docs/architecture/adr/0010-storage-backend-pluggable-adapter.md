@@ -57,4 +57,4 @@ No production engine is bundled. The local-volume reference engine is OCU code o
 
 ## Threat mitigation
 
-Addresses Information Disclosure on the backend leg: the backend protocol terminates inside the broker's object-store client, the request is broker-signed, and a network engine's leg traverses the egress edge allow-list-only without TLS termination ([NFR-SEC-25](../manifesto/02-nfrs.md)), so the signed request is byte-intact and no backend credential or endpoint reaches the guest. A local-volume engine opens no network leg, so the in-transit obligation is vacuous for it.
+Addresses Information Disclosure on the backend leg: the backend protocol terminates inside the broker's object-store client, the request is broker-signed, and a network engine's leg traverses the storage-dedicated lane on the egress edge allow-list-only without TLS termination ([NFR-SEC-25](../manifesto/02-nfrs.md), [ADR-0011](0011-storage-egress-lane.md)), so the signed request is byte-intact and no backend credential or endpoint reaches the guest. A local-volume engine opens no network leg, so the in-transit obligation is vacuous for it.

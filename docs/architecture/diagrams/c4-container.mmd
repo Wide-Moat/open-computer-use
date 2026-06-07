@@ -42,7 +42,7 @@ flowchart LR
     %%     receives the credential over SDS and injects at the egress-wide-bump rung (see 05 §3, §6; ADR-0007) ───
     VM -->|"single outbound · no long-lived upstream secret"| EDGE
     SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (bump rung)"| EDGE
-    STORE -->|"backend request · broker-signed<br/>allow-list-only · signature intact"| EDGE
+    STORE -->|"backend request · broker-signed · storage lane (NFR-SEC-85)<br/>allow-list-only · signature intact"| EDGE
     EDGE -->|"injection-needing leg: upstream auth injected (bump rung)"| UPSTREAM
 
     %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
