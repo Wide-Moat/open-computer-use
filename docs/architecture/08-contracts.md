@@ -28,7 +28,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | File / artifact data plane (north face) | Data-plane client → Storage broker (north face) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
 | Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | wire off-the-shelf; the dynamic per-SNI minter implementing the SDS server is OCU code ([ADR-0007](adr/0007-egress-auth-mechanism.md)), the file SDS source is off-the-shelf | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
-| Broker backend leg | Storage broker → Egress trust-edge → backend | external backend protocol | conform | NFR-SEC-16 |
+| Broker backend leg | Storage broker → backend engine (network leg via Egress trust-edge) | external backend protocol (pluggable adapter, ADR-0010) | conform | NFR-SEC-16, NFR-SEC-25 |
 | Audit fan-in / SIEM | five containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
 | SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-COMP-27 |
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
@@ -102,5 +102,4 @@ Not built:
 
 1. Does NFR-IC-04 bind only the Control/operator API and internal gRPC, leaving the MCP gateway governed solely by date-revision negotiation, or does it need an explicit MCP-edge clause? — [#207](https://github.com/Wide-Moat/open-computer-use/issues/207).
 2. Is the inbound gateway contract MCP-only per NFR-FLEX-14, and is `REST fallback` (used in Layer 4 prose, undefined in glossary) dropped or promoted to a defined surface? — [#158](https://github.com/Wide-Moat/open-computer-use/issues/158).
-3. Does the broker file-operation contract (open/read/write/list) stay distinct from any object-store API at every shelf, and where is that boundary asserted? — [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).
-4. The §4 additive-vs-breaking rules, transition window, RFC 9745/8594 headers, and the `oasdiff`/`buf breaking` CI gates extend NFR-IC-04 across two surfaces — should this versioning policy move to a dedicated ADR, leaving §4 a pointer? — [#209](https://github.com/Wide-Moat/open-computer-use/issues/209).
+3. The §4 additive-vs-breaking rules, transition window, RFC 9745/8594 headers, and the `oasdiff`/`buf breaking` CI gates extend NFR-IC-04 across two surfaces — should this versioning policy move to a dedicated ADR, leaving §4 a pointer? — [#209](https://github.com/Wide-Moat/open-computer-use/issues/209).
