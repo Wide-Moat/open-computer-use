@@ -30,7 +30,7 @@ Intra-container, the gateway is one process with three internal stages on each r
 | schema validation | applies the MCP base schema, then the OCU constraint profile |
 | forwarding | issues a service-identity request to the Control/operator API |
 
-The inbound caller edge, the gateway→Control/operator API edge, and the gateway→Audit pipeline fan-in are the boundaries `05-c4-container.md` §4 names (their `F1`/`F5`/`F11` flow labels are defined in [`06-threat-model.md`](../06-threat-model.md) §1); this spec adds only which internal stage terminates each.
+The inbound caller edge, the gateway→Control/operator API edge, and the gateway→Audit pipeline fan-in are the boundaries `05-c4-container.md` §4 names (their `F1`/`F5`/`F10` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4); this spec adds only which internal stage terminates each.
 
 Owned state: none that outlives a request. The gateway holds the in-flight request, the negotiated protocol revision for the connection, and its own service-identity signing material; it persists no session registry (that is the Control/operator API), no caller token after the response, and no customer payload. It provably does NOT hold an upstream credential, a Custody credential lease, a Storage-mount handle, the session denylist, or any route that resolves to a lifecycle or kill-switch operation — the operator surface sits in a separate container reachable only on operator-only ingress ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8).
 

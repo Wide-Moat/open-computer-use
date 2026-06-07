@@ -30,7 +30,7 @@ Intra-container, this is one process with three internal components behind a sin
 | denylist + kill-switch authority | terminates operator force-kill, denylist edits, and signed SOAR revoke; authors the denylist and signals a host-initiated stop |
 | quota accountant | checks per-caller create-rate and per-tenant counters on create; refuses excess |
 
-The operator/lifecycle ingress, the SOAR-revoke ingress, the gateway→Control session set-up edge, the Control→Session sandbox host-dial, and the Control→Audit fan-in are the boundaries `05-c4-container.md` §4 names (their `F2`/`F4`/`F5`/`F6`/`F11` flow labels are defined in [`06-threat-model.md`](../06-threat-model.md) §1); this spec adds only which internal component terminates each.
+The operator/lifecycle ingress, the SOAR-revoke ingress, the gateway→Control session set-up edge, the Control→Session sandbox host-dial, and the Control→Audit fan-in are the boundaries `05-c4-container.md` §4 names (their `F2`/`F4`/`F5`/`F6`/`F10` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4); this spec adds only which internal component terminates each.
 
 Owned state: the session registry (live sessions, their `container_name` binding, tenant, quota counters) and the denylist (kill-switch state), of which this container is sole custodian — no other component can mutate either, and the guest holds no handle that reaches them. It provably does NOT hold an upstream credential or backend storage key (the upstream credential reaches the Egress trust-edge over Envoy SDS; the backend storage key sits with the Storage broker, [`02-trust-boundaries.md`](../02-trust-boundaries.md) §2), and holds no Storage-mount handle.
 

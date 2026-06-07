@@ -20,13 +20,13 @@ The Compliance Evidence container that turns each source's OCSF event into a dur
 
 ## Boundaries
 
-The inter-container fan-in edge (F11, defined in [`06-threat-model.md`](../06-threat-model.md) §1; the descriptive boundary is in [`05-c4-container.md`](../05-c4-container.md) §4) carries events from the producer containers into this box. This section names the components inside the box and the calls between them.
+The inter-container fan-in edge (F10, defined in [`05-c4-container.md`](../05-c4-container.md) §4) carries events from the producer containers into this box. This section names the components inside the box and the calls between them.
 
 ### Internal components
 
 ```mermaid
 flowchart LR
-    EXT[5 external sources<br/>F11 fan-in, per-source mTLS] -->|OCSF + envelope| ING[Ingest face<br/>verify peer, fairness]
+    EXT[5 external sources<br/>F10 fan-in, per-source mTLS] -->|OCSF + envelope| ING[Ingest face<br/>verify peer, fairness]
     SELF[self-emit<br/>metering · saturation] --> ING
     ING -->|admitted event| BUS[Durable bus<br/>ordered, append-only]
     BUS --> CHAIN[Chain writer<br/>per-source hash-link + seq]
@@ -86,7 +86,7 @@ Element rows already MITIGATED in [`06-threat-model.md`](../06-threat-model.md) 
 
 ## Operational concerns
 
-This container is the F11 fan-in consumer ([`05-c4-container.md`](../05-c4-container.md) §4): it receives OCSF from the source containers and is the enforcement point for the write-before-ack property of [NFR-SEC-03](../manifesto/02-nfrs.md), [NFR-SEC-45](../manifesto/02-nfrs.md), and [NFR-SEC-72](../manifesto/02-nfrs.md) (system-initiated lifecycle transitions).
+This container is the F10 fan-in consumer ([`05-c4-container.md`](../05-c4-container.md) §4): it receives OCSF from the source containers and is the enforcement point for the write-before-ack property of [NFR-SEC-03](../manifesto/02-nfrs.md), [NFR-SEC-45](../manifesto/02-nfrs.md), and [NFR-SEC-72](../manifesto/02-nfrs.md) (system-initiated lifecycle transitions).
 
 | Concern | Detail | Target / anchor |
 |---|---|---|

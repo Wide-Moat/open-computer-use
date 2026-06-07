@@ -22,7 +22,7 @@ The single outbound path for the sandbox: it resolves each destination against a
 
 ## Boundaries
 
-The intra-container view. The inbound sandbox leg, the broker backend leg, and the audit fan-in are the boundaries [`05-c4-container.md`](../05-c4-container.md) §4 names; their `F8`/`F9`/`F10` flow labels are defined in [`06-threat-model.md`](../06-threat-model.md) §1. The upstream credential arrives over Envoy SDS, an external input to the edge, not an internal OCU boundary. Token classes are owned by [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8; TTLs are not repeated here.
+The intra-container view. The inbound sandbox leg, the broker backend leg, and the audit fan-in are the boundaries [`05-c4-container.md`](../05-c4-container.md) §4 names; their `F8`/`F9`/`F10` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4. The upstream credential arrives over Envoy SDS, an external input to the edge, not an internal OCU boundary. Token classes are owned by [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8; TTLs are not repeated here.
 
 The edge is the off-the-shelf Envoy proxy with three internal faces and one external input:
 
