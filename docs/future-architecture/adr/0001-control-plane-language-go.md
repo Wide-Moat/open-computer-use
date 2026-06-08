@@ -3,7 +3,9 @@
 
 # ADR-0001 — Control plane language: Go
 
-- **Status:** Accepted
+> Superseded by [`docs/architecture/adr/0012-implementation-language.md`](../../architecture/adr/0012-implementation-language.md), which carries the Go host-side decision forward on bank-readiness terms.
+
+- **Status:** Superseded
 - **Date:** 2026-05-17
 - **Deciders:** project owner
 - **Supersedes:** —

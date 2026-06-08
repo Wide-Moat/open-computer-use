@@ -3,7 +3,9 @@
 
 # ADR-0002 — Guest agent language: Rust
 
-- **Status:** Accepted (rewritten 2026-05-18; supersedes the prior Go decision recorded under the same number)
+> Superseded by [`docs/architecture/adr/0012-implementation-language.md`](../../architecture/adr/0012-implementation-language.md), which carries the Rust guest-agent decision forward (this file keeps its `-go` filename for git-history continuity though the decision is Rust).
+
+- **Status:** Superseded (rewritten 2026-05-18; supersedes the prior Go decision recorded under the same number)
 - **Date:** 2026-05-18 (original 2026-05-17 version was Go-with-Rust-as-option; rewritten in place after the L1 protocol surface was prototyped and Rust proved the better starting point)
 - **Related:** [ADR-0001](./0001-control-plane-language-go.md), [ADR-0008](./0008-internal-grpc-external-rest-mcp.md)
 - **Filename note:** kept as `0002-guest-agent-language-go.md` for git-history continuity; the title and content are now Rust.
