@@ -1,0 +1,407 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+# Audit fan-in contract: six host-attested source containers publish OCSF events
+# to the Audit pipeline. AsyncAPI 3.0.0 names the channel/operation; the OCSF
+# event class is the payload (Published Language), referenced by $ref to the
+# public OCSF schema, never inlined.
+
+asyncapi: 3.0.0
+
+info:
+  title: OCU Audit Fan-in
+  version: 1.0.0
+  description: >-
+    One-directional fan-in from six host-attested source containers into the
+    Audit pipeline. Payload is an OCSF v1.x event class (Published Language).
+    Delivery is durable and ordered into a per-source hash-chained append-only
+    log (NFR-SEC-03). The SIEM fan-out and the SOAR webhook are separate
+    surfaces, not modelled here.
+  license:
+    name: FSL-1.1-Apache-2.0
+    url: https://fsl.software/
+
+defaultContentType: application/json
+
+# Transport substrate (durable bus per NFR-REL-12) is a component-spec choice
+# (#150). The binding is intentionally left protocol-agnostic here.
+servers:
+  audit-bus:
+    host: audit-bus.internal
+    protocol: nats
+    description: >-
+      Durable, ordered, append-only audit bus. The protocol token names the
+      default binding; the concrete bus (NATS/Kafka/AMQP) is a component-spec
+      decision (#150) and the channels carry no protocol-specific binding here.
+
+channels:
+  controlPlaneAudit:
+    address: audit.ingest.control-plane
+    description: ORCH — API Activity, Authentication, Account/Entity management.
+    messages:
+      apiActivity:
+        $ref: '#/components/messages/ApiActivity'
+      authentication:
+        $ref: '#/components/messages/Authentication'
+      entityManagement:
+        $ref: '#/components/messages/EntityManagement'
+
+  credentialCustodyAudit:
+    address: audit.ingest.credential-custody
+    description: BR — Authorize Session (lease mint/rotate/scope/revoke).
+    messages:
+      authorizeSession:
+        $ref: '#/components/messages/AuthorizeSession'
+
+  storageBrokerAudit:
+    address: audit.ingest.storage-broker
+    description: SB — File System Activity on both broker faces — south-face mount (list/read/write/create/stat) and north-face data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
+    messages:
+      fileSystemActivity:
+        $ref: '#/components/messages/FileSystemActivity'
+
+  sessionSandboxAudit:
+    address: audit.ingest.session-sandbox
+    description: VM — Process Activity, File System Activity (host-authored).
+    messages:
+      processActivity:
+        $ref: '#/components/messages/ProcessActivity'
+      fileSystemActivity:
+        $ref: '#/components/messages/FileSystemActivity'
+
+  egressEdgeAudit:
+    address: audit.ingest.egress-edge
+    description: PROXY — Network/HTTP Activity, DNS Activity (allow/deny).
+    messages:
+      networkActivity:
+        $ref: '#/components/messages/NetworkActivity'
+      httpActivity:
+        $ref: '#/components/messages/HttpActivity'
+      dnsActivity:
+        $ref: '#/components/messages/DnsActivity'
+
+  auditPipelineAudit:
+    address: audit.ingest.audit-pipeline
+    description: BUS — self-emitted metering and per-source saturation events.
+    messages:
+      computeMetering:
+        $ref: '#/components/messages/ComputeMetering'
+      saturationEvent:
+        $ref: '#/components/messages/SaturationEvent'
+
+# Every operation is receive: the pipeline receives from a fixed source.
+# The source identity is the channel itself (one address per container) and is
+# host-attested at the fan-in boundary, never read from the payload
+# (NFR-SEC-47, NFR-SEC-56). The SIEM fan-out (send) is a separate surface.
+operations:
+  receiveControlPlane:
+    action: receive
+    channel:
+      $ref: '#/channels/controlPlaneAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/controlPlaneAudit/messages/apiActivity'
+      - $ref: '#/channels/controlPlaneAudit/messages/authentication'
+      - $ref: '#/channels/controlPlaneAudit/messages/entityManagement'
+
+  receiveCredentialCustody:
+    action: receive
+    channel:
+      $ref: '#/channels/credentialCustodyAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/credentialCustodyAudit/messages/authorizeSession'
+
+  receiveStorageBroker:
+    action: receive
+    channel:
+      $ref: '#/channels/storageBrokerAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/storageBrokerAudit/messages/fileSystemActivity'
+
+  receiveSessionSandbox:
+    action: receive
+    channel:
+      $ref: '#/channels/sessionSandboxAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/sessionSandboxAudit/messages/processActivity'
+      - $ref: '#/channels/sessionSandboxAudit/messages/fileSystemActivity'
+
+  receiveEgressEdge:
+    action: receive
+    channel:
+      $ref: '#/channels/egressEdgeAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/egressEdgeAudit/messages/networkActivity'
+      - $ref: '#/channels/egressEdgeAudit/messages/httpActivity'
+      - $ref: '#/channels/egressEdgeAudit/messages/dnsActivity'
+
+  receiveAuditPipeline:
+    action: receive
+    channel:
+      $ref: '#/channels/auditPipelineAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/auditPipelineAudit/messages/computeMetering'
+      - $ref: '#/channels/auditPipelineAudit/messages/saturationEvent'
+
+components:
+  securitySchemes:
+    # Source authentication is audience-validated (NFR-SEC-09): a source may
+    # only publish to its own channel. The host-attested identity, not a
+    # payload field, is authoritative.
+    sourceMtls:
+      type: X509
+      description: >-
+        Mutual-TLS source identity, audience-validated per source (NFR-SEC-09).
+        The verified peer identity binds the channel; payload `source`-like
+        fields are never trusted.
+
+  # Shared envelope applied to every message. Carries the OCU mandatory fields
+  # (NFR-MAINT-AUDIT-SCHEMA) out-of-band from the OCSF payload so they survive
+  # transform to CEF/ECS/UDM, and correlates each event by trace_id.
+  messageTraits:
+    auditEnvelope:
+      headers:
+        $ref: '#/components/schemas/AuditEnvelope'
+      correlationId:
+        location: $message.header#/trace_id
+        description: Cross-surface correlation key (NFR-MAINT-AUDIT-SCHEMA).
+
+  schemas:
+    AuditEnvelope:
+      type: object
+      description: >-
+        OCU mandatory audit fields (NFR-MAINT-AUDIT-SCHEMA). actor_id is
+        host-attested (NFR-SEC-09); all string values are bounded (NFR-SEC-51).
+        Hash-chain linkage (prev_hash/chain_hash) is authored by the pipeline at
+        ingest (NFR-SEC-03) and is NOT part of the publish payload; the
+        source-supplied ordering input is the per-source monotonic sequence
+        below (NFR-SEC-48).
+      required: [trace_id, session_id, actor_id, resource, action, outcome, sequence]
+      additionalProperties: false
+      properties:
+        trace_id:
+          type: string
+          maxLength: 128
+          description: UUID/hex correlation id; carried as correlationId.
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
+        session_id:
+          type: string
+          maxLength: 128
+          description: Container binding (Surface D).
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
+        actor_id:
+          type: string
+          maxLength: 256
+          description: Host-attested operator/service identity (NFR-SEC-09).
+          x-ocu-design: "<=256 chars; bound is an NFR-SEC-51-derived default, not frozen."
+        resource:
+          type: string
+          maxLength: 1024
+          description: Target object.
+          x-ocu-design: "<=1024 chars; bound is an NFR-SEC-51-derived default, not frozen."
+        action:
+          type: string
+          maxLength: 128
+          description: Privileged/lifecycle action.
+          x-ocu-design: "<=128 chars; bound is an NFR-SEC-51-derived default, not frozen."
+        outcome:
+          type: string
+          enum: [success, failure, unknown]
+          description: Aligns OCSF status_id.
+        sequence:
+          type: integer
+          minimum: 0
+          description: >-
+            Per-source monotonic sequence (NFR-SEC-48). Mirrors OCSF
+            metadata.sequence; the pipeline derives chain order from it.
+
+  # Each message payload is the public OCSF event class, referenced by URL and
+  # never inlined. The OCSF version is pinned per the metadata.version field of
+  # the payload (e.g. "1.5.0"); upgrade window and N-1 compat per
+  # NFR-MAINT-AUDIT-SCHEMA. activity_id enums are defined by the OCSF class.
+  messages:
+    ApiActivity:
+      name: ApiActivity
+      title: API Activity (OCSF 6003)
+      summary: MCP tool-call ingress at the control plane.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/api_activity"
+
+    Authentication:
+      name: Authentication
+      title: Authentication (OCSF 3002)
+      summary: Session JWT issue and operator authentication.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/authentication"
+
+    EntityManagement:
+      name: EntityManagement
+      title: Entity Management (OCSF 3004)
+      summary: >-
+        Enumerated privileged control-plane actions (NFR-SEC-45) — retention,
+        denylist, quota, tier-downgrade, custody access.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/entity_management"
+
+    AuthorizeSession:
+      name: AuthorizeSession
+      title: Authorize Session (OCSF 3003)
+      summary: Custody lease mint/rotate/scope/revoke (NFR-SEC-29).
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/authorize_session"
+
+    FileSystemActivity:
+      name: FileSystemActivity
+      title: File System Activity (OCSF 1001)
+      summary: >-
+        File activity on both broker faces — south-face mount
+        (list/read/write/create/stat) and north-face data plane
+        (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          allOf:
+            - $ref: "https://schema.ocsf.io/api/1.5.0/classes/file_activity"
+            - description: >-
+                NFR-SEC-79 required-field overlay on the OCSF base class:
+                every file-activity event on either face carries the OCU
+                mandatory set so intent and downloadable disposition are
+                non-optional. Field names mirror file-artifact-api.schema.json
+                FileActivityEvent.
+              type: object
+              required: [filesystem_id, intent, downloadable]
+              properties:
+                filesystem_id:
+                  type: string
+                  description: Session scope the activity targets.
+                intent:
+                  type: string
+                  enum: [read, write, preview]
+                  description: Operation intent axis (NFR-SEC-49).
+                downloadable:
+                  type: boolean
+                  description: Downloadable disposition resolved broker-side at read (NFR-SEC-73).
+
+    ProcessActivity:
+      name: ProcessActivity
+      title: Process Activity (OCSF 1007)
+      summary: >-
+        Sandbox process create/exit/signal/oom/timeout (Surface A);
+        host-authored, never guest-emitted (NFR-SEC-47).
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/process_activity"
+
+    NetworkActivity:
+      name: NetworkActivity
+      title: Network Activity (OCSF 4001)
+      summary: Outbound egress allow/deny; deny reason maps to status_detail.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/network_activity"
+
+    HttpActivity:
+      name: HttpActivity
+      title: HTTP Activity (OCSF 4002)
+      summary: Outbound HTTP egress allow/deny at the edge.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/http_activity"
+
+    DnsActivity:
+      name: DnsActivity
+      title: DNS Activity (OCSF 4003)
+      summary: DNS resolution at the egress edge.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      payload:
+        schemaFormat: application/schema+json;version=draft-07
+        schema:
+          $ref: "https://schema.ocsf.io/api/1.5.0/classes/dns_activity"
+
+    # ComputeMetering and SaturationEvent payloads are NOT mapped to an OCSF
+    # class. OCSF v1.x (Application Activity category 6xxx) has no class for
+    # compute/usage metering or for resource saturation/throttling/quota: 6002
+    # Application Lifecycle is install/start/stop only (no usage fields) and
+    # 6008 Application Error is generic fault reporting (no saturation/quota
+    # fields). Forcing either would misclassify the event for a SIEM consumer,
+    # so the payload schema is held TBD until OCSF ships a metering class or an
+    # OCU OCSF extension is authored. The AsyncAPI surface (channel, operation,
+    # host-attested source, envelope) is stable; only the payload $ref is open.
+    ComputeMetering:
+      name: ComputeMetering
+      title: Compute metering (OCSF class TBD)
+      summary: >-
+        Compute-time metering (CPU-min, RAM-GB-min, storage-GB-day,
+        egress-bytes, MCP-count). No fitting OCSF class exists; payload schema
+        is held TBD (see header comment), not force-fit to 6002/6008.
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      x-ocu-payload-status: tbd
+      x-ocu-payload-reason: >-
+        OCSF v1.x has no compute/usage-metering class. Candidate resolution:
+        an OCU OCSF extension class or a future upstream metering class.
+        Tracked at #150.
+
+    SaturationEvent:
+      name: SaturationEvent
+      title: Source-ingest saturation (OCSF class TBD)
+      summary: >-
+        Self-emitted when a source exceeds N x its provisioned ingest share
+        (NFR-SEC-56). Over-share is rate-shaped, not dropped. No fitting OCSF
+        class exists; payload schema is held TBD (see header comment).
+      contentType: application/json
+      traits:
+        - $ref: '#/components/messageTraits/auditEnvelope'
+      x-ocu-payload-status: tbd
+      x-ocu-payload-reason: >-
+        OCSF v1.x has no saturation/throttling/quota class. 6008 Application
+        Error has no saturation fields and would misclassify for SIEM.
+        Candidate resolution: an OCU OCSF extension class. Tracked at #188.

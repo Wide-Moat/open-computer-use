@@ -1,13 +1,22 @@
 Open Computer Use
 Copyright (c) 2025 Open Computer Use Contributors
-https://github.com/Yambr/open-computer-use
+https://github.com/Wide-Moat/open-computer-use
 
 This product uses a multi-license model:
 
 1. CORE CODE (computer-use-server/, openwebui/, settings-wrapper/, Docker configs,
    tests/, cron/, docs/):
-   Licensed under the Business Source License 1.1 (LICENSE).
-   On the Change Date (2029-04-04), the license converts to Apache License 2.0.
+   Licensed under the Functional Source License, Version 1.1, Apache 2.0
+   Future License (FSL-1.1-Apache-2.0). See LICENSE.
+
+   Two years after each release, that release automatically converts to
+   Apache License 2.0 under the Grant of Future License clause.
+
+   You may use, copy, modify, fork, and redistribute the Software for any
+   purpose other than offering a hosted or embedded service that competes
+   with our paid version(s) of the Software. Self-hosting for internal use
+   within your organization is explicitly permitted and is not considered
+   competition.
 
 2. OUR SKILLS (skills/public/describe-image/, skills/public/sub-agent/):
    Licensed under the MIT License (LICENSE-MIT).
@@ -20,5 +29,8 @@ This product uses a multi-license model:
    Licensed under their own terms. See the original packages for details.
 
 Attribution required: include "Open Computer Use" and a link to
-https://github.com/Yambr/open-computer-use in any copies or
+https://github.com/Wide-Moat/open-computer-use in any copies or
 substantial portions of the Licensed Work.
+
+For licensing inquiries (e.g. permission to operate a competing hosted
+service), contact https://t.me/yambrcom.

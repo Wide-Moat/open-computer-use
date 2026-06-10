@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 10 — sysbox (default L2 for internal/trusted tier)
 
-> Source: [`references/sysbox/`](../../../references/sysbox/). User-namespace + procfs/sysfs emulation.
+> Source: [nestybox/sysbox](https://github.com/nestybox/sysbox). User-namespace + procfs/sysfs emulation.
 > Already used by our current Helm chart (`RuntimeClass: sysbox-runc`). [Phase 5](../roadmap.md#phase-5--helm-hardening--kubernetesprovider) formalizes it as the default L2.
 
 ## 1. Installation — `sysbox-deploy-k8s` DaemonSet

@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # cli-defaults/
@@ -18,7 +18,7 @@ Single source of truth — consumed by:
 
 JSON does not support comments. To carry SPDX/copyright metadata, every file in this directory uses two top-level keys:
 
-- `"_spdx": "BUSL-1.1"`
+- `"_spdx": "FSL-1.1-Apache-2.0"`
 - `"_copyright": "Copyright (c) 2025 Open Computer Use Contributors"`
 
 Consumers MUST strip these keys before passing the JSON to the underlying CLI. The leading-underscore prefix avoids collision with any CLI-specific schema key (opencode's schema has no `_*` keys; codex is similar). Per Phase 2 D-10.

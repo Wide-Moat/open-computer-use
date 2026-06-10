@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 04 — Cloud Hypervisor (lead untrusted-tier microVM)
 
-> Source: [`references/cloud-hypervisor/`](../../../references/cloud-hypervisor/). Rust microVM hypervisor, Intel-led.
+> Source: [cloud-hypervisor/cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor). Rust microVM hypervisor, Intel-led.
 > Primary backend for [Phase 9](../roadmap.md) (`kata-ch`); snapshot/restore feeds Phase 10.
 
 ## 1. REST API on Unix socket — VM lifecycle

@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 02 — E2B Infrastructure (e2b-dev/infra)
 
-> Source: [`references/infra/`](../../../references/infra/). Production E2B infra in Go.
+> Source: [e2b-dev/infra](https://github.com/e2b-dev/infra). Production E2B infra in Go.
 > Most relevant for Phase 2 (HTTP pool sidecar), Phase 3 (storage), Phase 6 (control plane), Phase 7 (guest agent), Phase 8 (egress proxy).
 
 ## 1. Network slot pool — dual-channel recycle with drain delay

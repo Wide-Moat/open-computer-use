@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 apiVersion: apps/v1
 kind: Deployment
@@ -195,9 +195,6 @@ spec:
           args:
             - --host=unix:///var/run/docker.sock
             - --storage-driver={{ .Values.dind.storageDriver }}
-            {{- range .Values.dind.extraArgs }}
-            - {{ . | quote }}
-            {{- end }}
           securityContext:
             privileged: {{ eq (include "computer-use-server.dindPrivileged" .) "true" }}
           volumeMounts:
@@ -222,7 +219,7 @@ spec:
           # it ext4 and mounts it at /var/lib/docker inside the guest.
           volumeDevices:
             - name: var-lib-docker
-              devicePath: {{ include "computer-use-server.varLibDockerDevicePath" . }}
+              devicePath: /dev/var-lib-docker
           {{- end }}
           resources:
             {{- toYaml .Values.dind.resources | nindent 12 }}

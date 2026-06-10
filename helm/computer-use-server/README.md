@@ -208,4 +208,4 @@ PVCs are not deleted by `helm uninstall` — remove them explicitly to free the 
 
 ## License
 
-BUSL-1.1, Copyright (c) 2025 Open Computer Use Contributors.
+FSL-1.1-Apache-2.0, Copyright (c) 2025 Open Computer Use Contributors.

@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 06 — kubernetes-sigs/agent-sandbox (CRD base for `KubernetesProvider`)
 
-> Source: [`references/agent-sandbox/`](../../../references/agent-sandbox/). Google-backed, SIG Apps, v1alpha1.
+> Source: [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox). Google-backed, SIG Apps, v1alpha1.
 > Direct base for [Phase 5](../roadmap.md#phase-5--helm-hardening--kubernetesprovider) `KubernetesProvider`.
 
 ## 1. CRD shapes & field semantics
@@ -109,7 +109,7 @@
 - **Conditions** — `metav1.Condition` (type, status, reason, message, observedGeneration).
 - **Sandbox.** `Ready` (DependenciesReady/NotReady/SandboxSuspended) | `Suspended` (PodTerminated/PodNotTerminated) | `Finished` (PodSucceeded/PodFailed).
 - **`serviceFQDN`** — controller-flag `--cluster-domain` configurable.
-- **`podIPs[]`** — direct from Pod status, mirrored for fast L4 routing (matches our [pattern 9 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md): app-layer routing, not ClientIP).
+- **`podIPs[]`** — direct from Pod status, mirrored for fast L4 routing (matches our cross-cutting pattern 9: app-layer routing, not ClientIP).
 
 ## 7. Webhooks
 

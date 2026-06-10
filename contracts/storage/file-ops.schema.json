@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/storage/file-ops.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation RPC surface (Session sandbox -> Storage broker, via the inspecting egress edge). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
+  "title": "File-operation RPC surface (TBD)",
+  "description": "Stub. The broker file-op RPC set. The substrate is Connect-RPC over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
+
+  "$defs": {
+    "SchemaVersion": {
+      "description": "Interface version. Breaking change increments major (NFR-IC-04). Matches the v1alpha-style proto namespace of the file-op service.",
+      "type": "string",
+      "pattern": "^v[0-9]+(alpha|beta)?[0-9]*$",
+      "examples": ["v1alpha"]
+    },
+
+    "FilesystemId": {
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The egress edge binds the connection to this id (NFR-SEC-25).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "examples": ["session_01HXYZ_chat"]
+    },
+
+    "Intent": {
+      "description": "Operation class. The egress edge can deny by intent.",
+      "type": "string",
+      "enum": ["read", "write", "preview"]
+    },
+
+    "AuthorizationMetadata": {
+      "description": "Three-axis authorization attached to every file-op request as its own sub-message (carried at request field 4/5): scope (filesystem_id) + intent + downloadable. Richer than a static credential. The bearer header is added at the egress edge and is NOT part of this object (no-creds-in-guest, NFR-SEC-25).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem_id", "intent", "downloadable"],
+      "properties": {
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "intent": { "$ref": "#/$defs/Intent" },
+        "downloadable": {
+          "description": "Whether data may leave the perimeter (distinct from may-read). The preview-not-download exfiltration control.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "OperationName": {
+      "description": "The file-op RPC set, by name. Two groups: file operations and directory operations, plus chunked transfer and whole-filesystem control-plane primitives. Names are sourced; request/response bodies are TBD (see x-ocu-tbd-bodies).",
+      "type": "string",
+      "enum": [
+        "listDirectory",
+        "makeDirectory",
+        "moveDirectory",
+        "removeDirectory",
+        "createFile",
+        "readFile",
+        "readMetadata",
+        "getFileMetadata",
+        "listFiles",
+        "copyFile",
+        "moveFile",
+        "removeFile",
+        "fileUpload",
+        "fileDownload",
+        "importFiles",
+        "importZip",
+        "migrateFilesystem",
+        "removeFilesystem"
+      ]
+    },
+
+    "DenyReason": {
+      "description": "Structured deny returned by the egress edge on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). Transported as the x-deny-reason response header. The header NAME is sourced; the reason-code vocabulary below is an OCU default pending NFR-SEC-51 sign-off, not a frozen const set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_deny_reason"],
+      "properties": {
+        "x_deny_reason": {
+          "type": "string",
+          "x-ocu-default-deny-vocab": "default, pending NFR-SEC-51 sign-off",
+          "enum": [
+            "scope_mismatch",
+            "intent_denied",
+            "not_downloadable",
+            "lease_expired",
+            "size_exceeded",
+            "not_found"
+          ]
+        }
+      }
+    },
+
+    "ReadFileRequest_Range": {
+      "description": "Optional ranged-read sub-message on a readFile request. Half-open byte range [offset, offset+length). The sub-message and its offset/length fields are sourced; absence of the sub-message means a whole-object read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "length"],
+      "properties": {
+        "offset": {
+          "description": "Start byte, inclusive. Zero-based.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "description": "Byte count from offset; the range is [offset, offset+length). A single ranged read is bounded by the RPC message ceiling (see SizeLimits.rpc_message_ceiling_bytes); larger reads stream in the default read-chunk size.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+
+    "ListDirectoryRecursiveCursor": {
+      "description": "Opaque pagination cursor carried across pages of a recursive listDirectory. Sourced as an opaque token; the broker mints and validates it, the holder echoes it unmodified. Absent on the first page; the broker omits it on the last page.",
+      "type": "string",
+      "minLength": 1,
+      "x-ocu-tbd": "Cursor wire ENCODING (what the opaque token packs) is not pinned; the opaque-string contract is sourced, the internal structure stays TBD. Do not model decoded subfields."
+    },
+
+    "FileUploadRequest_Params": {
+      "description": "Chunked-upload params sub-message on a fileUpload request. The broker reassembles the streamed chunks; this is NOT a single inline body. Chunking is mandatory because a single RPC message is capped (see SizeLimits.rpc_message_ceiling_bytes), independent of the broker max-file-size and the per-mount VFS cache ceiling.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunk", "numChunks"],
+      "properties": {
+        "chunk": {
+          "description": "One chunk of the upload byte stream. The broker reassembles chunks in order into the target object. A chunk's encoded size stays under the RPC message ceiling.",
+          "type": "string",
+          "contentEncoding": "base64"
+        },
+        "numChunks": {
+          "description": "Total chunk count the broker expects before reassembly completes.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+
+    "SizeLimits": {
+      "description": "Layered transfer size limits. Each layer is independent. The RPC ceiling forces chunking; the broker max-file-size is a deployment policy; the VFS cache ceiling is per-mount; the read-chunk default sizes streamed reads. NFR-SEC-46.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rpc_message_ceiling_bytes": {
+          "description": "Per-RPC-message ceiling. A transfer above it MUST be chunked (fileUpload via FileUploadRequest_Params; ranged readFile via ReadFileRequest_Range). NFR-SEC-46.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 4194304,
+          "x-ocu-default": "~4 MiB, the conventional Connect/gRPC message-size default; configurable, not a frozen protocol constant."
+        },
+        "read_chunk_default_bytes": {
+          "description": "Default read-chunk size for streamed reads.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 134217728,
+          "x-ocu-default": "128 MiB default read-chunk size; configurable per workload tier."
+        },
+        "broker_max_file_size_bytes": {
+          "description": "Broker-enforced maximum object size. A deployment/broker policy figure, not fixed in this contract.",
+          "type": "integer",
+          "minimum": 1,
+          "x-ocu-tbd": "Server-side figure, not fixed in the contract. No const."
+        },
+        "vfs_cache_max_size_bytes": {
+          "description": "Per-mount local VFS cache ceiling. Authoritative field is mount-config.schema.json vfs_cache_max_size; mirrored here as the read-path reference. Objects above it stream rather than cache.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 1073741824,
+          "x-ocu-default": "1 GiB per-mount cache ceiling; canonical owner is mount-config vfs_cache_max_size."
+        }
+      }
+    }
+  },
+
+  "x-ocu-tbd-bodies": {
+    "status": "partial",
+    "reason": "The sourced message shapes (ReadFileRequest_Range, ListDirectoryRecursiveCursor, FileUploadRequest_Params) and the layered SizeLimits are now real $defs, reachable from the request envelope. What stays TBD is the wire field set inside the remaining request bodies (createFile, readMetadata) and every response body. Fill each only when a field-level source pins it.",
+    "known-shape-hints": {
+      "createFile": "request body field set TBD",
+      "readMetadata": "request body field set TBD",
+      "getFileMetadata": "single-object metadata read; response field set TBD (distinct from listFiles, the directory-enumeration op)",
+      "listFiles": "object enumeration under a scope; response entry shape TBD (distinct from getFileMetadata)",
+      "fileDownload": "south-face read-path counterpart to the chunked fileUpload; streams the object back, the broker chunks it under the RPC message ceiling; request/response field set TBD",
+      "importFiles": "session-pseudobucket import; request/response field set TBD",
+      "importZip": "one-op zip import (the whole archive imported in a single op); request/response field set TBD",
+      "migrateFilesystem": "in-session pseudobucket control primitive (rebind the session scope, not a durable-store data migration); request/response field set TBD",
+      "removeFilesystem": "session-pseudobucket control primitive; request/response field set TBD"
+    },
+    "operations": {}
+  },
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "op", "authorization_metadata"],
+  "properties": {
+    "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+    "op": { "$ref": "#/$defs/OperationName" },
+    "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" },
+    "read_range": {
+      "description": "Present only on op=readFile; optional ranged read, absent => whole-object read. The carrier name is design-level; the ReadFileRequest_Range shape it references is sourced.",
+      "x-ocu-design": "envelope carrier name is design-level; the referenced sub-message shape is sourced.",
+      "$ref": "#/$defs/ReadFileRequest_Range"
+    },
+    "recursive_cursor": {
+      "description": "Present only on a recursive op=listDirectory continuation; the opaque page cursor. The carrier name is design-level; the ListDirectoryRecursiveCursor shape it references is sourced.",
+      "x-ocu-design": "envelope carrier name is design-level; the referenced sub-message shape is sourced.",
+      "$ref": "#/$defs/ListDirectoryRecursiveCursor"
+    },
+    "upload_params": {
+      "description": "Present only on op=fileUpload; the chunked-upload params (mandatory for fileUpload — there is no single-inline-body form). The carrier name is design-level; the FileUploadRequest_Params shape it references is sourced.",
+      "x-ocu-design": "envelope carrier name is design-level; the referenced sub-message shape is sourced.",
+      "$ref": "#/$defs/FileUploadRequest_Params"
+    },
+    "size_limits": {
+      "description": "Read-only reference to the layered transfer ceilings that bound this request (RPC message ceiling, read-chunk default, broker max-file-size, per-mount cache ceiling). Carrier name is design-level; the SizeLimits shape it references is sourced. Op-gated carriers (read_range / recursive_cursor / upload_params) apply only to their named op.",
+      "x-ocu-design": "envelope carrier name is design-level; the referenced shape is sourced.",
+      "$ref": "#/$defs/SizeLimits"
+    }
+  }
+}

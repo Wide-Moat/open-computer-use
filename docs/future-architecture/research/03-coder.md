@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 03 — Coder (production Go control plane)
 
-> Source: [`references/coder/`](../../../references/coder/). Self-hosted workspace platform — auth, sessions, lifecycle, templates, audit, RBAC, telemetry. Closest production analog for our Phase 6 L4 rewrite.
+> Source: [coder/coder](https://github.com/coder/coder). Self-hosted workspace platform — auth, sessions, lifecycle, templates, audit, RBAC, telemetry. Closest production analog for our Phase 6 L4 rewrite.
 > Analysis covers AGPL OSS edition (May 2026).
 
 ## 1. HTTP bootstrap — Chi router with layered middleware
@@ -38,7 +38,7 @@
 
 - **Where.** `coderd/audit.go:1-100`. Field catalog: `enterprise/audit/table.go`. Queries: `coderd/database/queries/auditlogs.sql`.
 - **What.** `audit_logs` rows carry structured JSON diffs (before/after) per field. Each field declared `ActionTrack` | `ActionIgnore` | `ActionSecret` — secrets never serialized.
-- **Why for us.** Phase 6 + 9. Same DB as system → no sync issues. Field-level sensitivity = mechanical enforcement of [pattern 10 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md) (never log verbatim).
+- **Why for us.** Phase 6 + 9. Same DB as system → no sync issues. Field-level sensitivity = mechanical enforcement of our cross-cutting pattern 10 (never log verbatim).
 - **Skip.** Real-time export to Splunk/DataDog (Phase 8 may add via separate sink), enterprise retention policies. Start DB-only.
 
 ## 5. Workspace lifecycle — provisioner job abstraction

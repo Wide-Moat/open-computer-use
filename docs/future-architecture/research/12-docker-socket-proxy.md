@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 12 — Tecnativa/docker-socket-proxy (privileged-API filter pattern)
 
-> Source: [`references/docker-socket-proxy/`](../../../references/docker-socket-proxy/). HAProxy-based filter for the Docker API.
+> Source: [Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy). HAProxy-based filter for the Docker API.
 > Pattern reference for Phase 2 (HTTP pool-manager sidecar — the *only* component that holds the Docker socket) and Phase 8 (egress filtering); general template for "filter access to a privileged API".
 
 ## 1. Endpoint allowlist via regex + env-gated rules
@@ -40,7 +40,7 @@
 
 - **Where.** README `:109-147` (access matrix); Dockerfile defaults.
 - **What.** All dangerous operations default to deny (`AUTH=0`, `SECRETS=0`, `POST=0`, `CONTAINERS=0`). Only read-only basics allowed. **No catch-all "allow everything" gate.**
-- **Why for us.** Foundational; matches [pattern 13 in `00-anthropic-and-sandboxd.md`](./00-anthropic-and-sandboxd.md) (NetworkPolicy default-deny). Operator must opt-in to each capability.
+- **Why for us.** Foundational; matches cross-cutting pattern 13 (NetworkPolicy default-deny). Operator must opt-in to each capability.
 
 ## 6. Trust boundary at network edge — no TLS inside
 

@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 10 — Observability
@@ -49,7 +49,7 @@ Egress proxy:
 | CDP frame rate | ≥ 10 fps |
 | Egress proxy latency p99 | < 100 ms |
 
-These match the sandboxd targets and are validated in Phase 5 (k8s prod) + Phase 9 (kata).
+These match our targets and are validated in Phase 5 (k8s prod) + Phase 9 (kata).
 
 ## RAM-based capacity-sizing formula
 
@@ -117,5 +117,5 @@ See [07-security.md](./07-security.md) for the mandatory event list and forbidde
 
 ## Source
 
-- [`sandboxd/docs/operations.md`](../../../sandboxd/docs/operations.md)
+- Internal operations notes
 - [07-security.md](./07-security.md)

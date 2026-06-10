@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 07 — chromedp (Go direct-CDP client)
 
-> Source: [`references/chromedp/`](../../../references/chromedp/).
+> Source: [chromedp/chromedp](https://github.com/chromedp/chromedp).
 > Candidate for Phase 7 (Go guest agent — drives Chromium in-sandbox) and Phase 6 (L4 — tunnels CDP frames from user UI to sandbox).
 
 ## 1. CDP transport — single WebSocket, session-multiplexed

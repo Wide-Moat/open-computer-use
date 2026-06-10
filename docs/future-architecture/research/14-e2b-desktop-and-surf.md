@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 14 — e2b/desktop + e2b/surf (full-desktop vs CDP-direct)
 
-> Source: [`references/desktop/`](../../../references/desktop/) and [`references/surf/`](../../../references/surf/).
+> Source: [e2b-dev/desktop](https://github.com/e2b-dev/desktop) and [e2b-dev/surf](https://github.com/e2b-dev/surf).
 > Decision point for Phase 7: evolve toward Xfce/VNC or stay CDP-direct?
 
 **Verdict: stay CDP-direct.** Details below.

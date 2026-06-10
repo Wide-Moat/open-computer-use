@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # ADR-0010 — AWS Lambda: inspiration, not runtime
@@ -8,13 +8,13 @@
 - **Deciders:** project owner
 - **Supersedes:** —
 - **Superseded by:** —
-- **Related:** [ADR-0003](./0003-docker-poc-first-then-k8s.md), [ADR-0004](./0004-pluggable-runtime-via-runtimeclass.md), [references.md](../references.md), [research/05](../research/05-firecracker.md), [research/16](../research/16-anthropic-production-sandbox-observed.md), [research/19](../research/19-anthropic-process-api.md), [research/20](../research/20-snapstart-hot-swap.md)
+- **Related:** [ADR-0003](./0003-docker-poc-first-then-k8s.md), [ADR-0004](./0004-pluggable-runtime-via-runtimeclass.md), [references.md](../references.md), [research/05](../research/05-firecracker.md)
 
 ## Context
 
-AWS Lambda recurs across the reference catalogue. It is the original consumer of Firecracker; its MicroManager pool is the design lineage behind Anthropic's `process_api` placement plane ([research/19](../research/19-anthropic-process-api.md) §11); its cold-start economics underwrite the snapstart pattern we evaluate at Phase 10 ([research/20](../research/20-snapstart-hot-swap.md)).
+AWS Lambda recurs across the reference catalogue. It is the original consumer of Firecracker; its MicroManager pool is the design lineage behind the two-tier placement plane we adopt at L4/L1; its cold-start economics underwrite the snapshot-pool pattern we evaluate at Phase 10.
 
-This recurrence has begun to confuse the architecture conversation. "Lambda" appears in [`references.md`](../references.md) as a Firecracker provenance note, in [`research/05`](../research/05-firecracker.md) as a foundation, and in [`research/16`](../research/16-anthropic-production-sandbox-observed.md) as a contrast to our k8s direction. None of these documents make the explicit claim that we will or won't run on Lambda.
+This recurrence has begun to confuse the architecture conversation. "Lambda" appears in [`references.md`](../references.md) as a Firecracker provenance note and in [`research/05`](../research/05-firecracker.md) as a foundation. Neither document makes the explicit claim that we will or won't run on Lambda.
 
 This ADR makes the claim and closes the question.
 
@@ -29,8 +29,8 @@ We adopt **patterns** from the Lambda design lineage:
 | Pattern | How it lands for us | Where |
 |---|---|---|
 | Firecracker as a microVM tier with the smallest attack surface | `kata-fc` runtime tier | [`research/05`](../research/05-firecracker.md), [`architecture/04-layer2-runtimes.md`](../architecture/04-layer2-runtimes.md), Phase 9 |
-| Two-tier control split (host-side router + in-guest supervisor) | L4 (Go) + L1 (Rust, [ADR-0002](./0002-guest-agent-language-go.md)) with WS over vsock | [`research/19`](../research/19-anthropic-process-api.md), Phase 7 |
-| Frozen-snapshot pool with block-device hot-swap on resume | Snapstart-style cold-start optimization | [`research/20`](../research/20-snapstart-hot-swap.md), Phase 10 |
+| Two-tier control split (host-side router + in-guest supervisor) | L4 (Go) + L1 (Rust, [ADR-0002](./0002-guest-agent-language-go.md)) with WS over vsock | Phase 7 |
+| Frozen-snapshot pool with block-device hot-swap on resume | Snapstart-style cold-start optimization | Phase 10 |
 | Per-session VM isolation (no reuse across tenants) | RuntimeClass-driven, per-tenant namespace | [ADR-0004](./0004-pluggable-runtime-via-runtimeclass.md), `architecture/07-security.md` |
 
 ### What we are explicitly **not** adopting
@@ -38,12 +38,12 @@ We adopt **patterns** from the Lambda design lineage:
 - **The deployment substrate.** We do not deploy on `aws-lambda` (function-as-a-service) or `aws-fargate` (managed-task). The runtime substrate is Kubernetes ([ADR-0003](./0003-docker-poc-first-then-k8s.md)) plus a RuntimeClass-pluggable microVM tier ([ADR-0004](./0004-pluggable-runtime-via-runtimeclass.md)).
 - **Per-invocation billing model.** Our sandboxes are session-shaped, not request-shaped. The cost model is per-session, per-RuntimeClass — not per-100ms-CPU-burst.
 - **15-minute hard wall.** Lambda's 15-minute invocation cap is a non-starter for Computer Use sessions. We need sessions that survive multi-hour LLM-driven work.
-- **Lambda's specific orchestrator.** Anthropic's Router shares Lambda's lineage but is a custom system. We are not cloning either; k8s + a custom L4 control plane do the same job at our scale.
-- **Lambda Extensions / Layers / SnapStart-the-AWS-product.** These are AWS-product names. We use the *technique* SnapStart describes (see [`research/20`](../research/20-snapstart-hot-swap.md)) without using AWS's implementation.
+- **Lambda's specific orchestrator.** Lambda's placement router is a custom AWS system. We are not cloning it; k8s + a custom L4 control plane do the same job at our scale.
+- **Lambda Extensions / Layers / SnapStart-the-AWS-product.** These are AWS-product names. We use the *technique* SnapStart describes without using AWS's implementation.
 
 ## Rationale
 
-- **Scale mismatch.** Lambda's design optimizes for millions of short serverless invocations. We target 100–10K concurrent long-lived sandboxes (see [`research/16`](../research/16-anthropic-production-sandbox-observed.md) §7). k8s + RuntimeClass remains the right fit; serverless infra is over-engineered for the bottom and under-fit for the top.
+- **Scale mismatch.** Lambda's design optimizes for millions of short serverless invocations. We target 100–10K concurrent long-lived sandboxes. k8s + RuntimeClass remains the right fit; serverless infra is over-engineered for the bottom and under-fit for the top.
 - **Workload shape mismatch.** Computer-Use sessions are stateful, long-running, and need predictable resource ceilings (memory for screencast frame buffers, CPU for browser rendering). Lambda's stateless-by-default, scale-on-bursts model fights every assumption.
 - **Self-hosting requirement.** A serious chunk of the addressable user base self-hosts. Lambda is not portable; k8s is.
 - **Vendor lock.** Lambda ties us to AWS as the deployment substrate. The architecture explicitly aims for AWS, GCP, on-prem RKE2, and Docker Compose ([ADR-0001](./0001-control-plane-language-go.md) Context).

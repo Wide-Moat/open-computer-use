@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit configuration for open-computer-use.
+#
+# Enables CodeRabbit auto-review on PRs targeting `next/v1` (the long-lived
+# enterprise architecture branch) in addition to `main` (the repo default).
+# Without this, CodeRabbit auto-reviews only PRs targeting the default
+# branch and posts "Auto reviews are disabled on base/target branches other
+# than the default branch" on PRs to `next/v1`.
+#
+# Reference: https://docs.coderabbit.ai/reference/yaml-template
+language: en
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+      - next/v1

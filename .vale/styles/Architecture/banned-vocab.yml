@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Banned vocabulary: marketing adjectives that don't carry measurable referents.
+# Per CLAUDE.md "Documentation discipline" — state the specific property instead.
+
+extends: existence
+message: "Banned vocabulary: '%s' has no measurable referent. State the specific property instead (e.g. 'supports transactional DDL', not 'robust')."
+level: error
+ignorecase: true
+tokens:
+  - comprehensive
+  - robust
+  - seamless
+  - powerful
+  - best-in-class
+  - industry-leading
+  - elegant
+  - battle-tested
+  - cutting-edge
+  - next-generation
+  - state-of-the-art
+  - world-class

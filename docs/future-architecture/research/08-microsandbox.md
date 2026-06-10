@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 08 — microsandbox (single-node microVM daemon)
 
-> Source: [`references/microsandbox/`](../../../references/microsandbox/). Rust, libkrun-based, single-node.
+> Source: [microsandbox/microsandbox](https://github.com/microsandbox/microsandbox). Rust, libkrun-based, single-node.
 > Reference for Phase 2 (HTTP pool-manager sidecar shape) and the optional DirectCHProvider analog (Phase 9+).
 
 ## 1. REST/SDK surface — sandbox lifecycle
@@ -35,7 +35,7 @@
 - **Where.** Repo `Cargo.toml` workspace.
 - **What.** `microsandbox` (SDK) | `cli` | `protocol` (shared host↔guest) | `runtime` (guest) | `network` | `filesystem` | `image` | `db`.
 - **Why for us.** Phase 2/6 Go layout. Map directly:
-  - `microsandbox` → `pkg/sandboxd` (SDK / library).
+  - `microsandbox` → `pkg/sandboxmgr` (SDK / library).
   - `cli` → `cmd/sandboxctl`.
   - `protocol` → `pkg/agentproto` (shared).
   - `runtime` → `cmd/agent`.

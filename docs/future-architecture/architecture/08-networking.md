@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 08 — Networking
@@ -98,13 +98,13 @@ Target (Phase 6+):
 | 5 | Helm chart adds NetworkPolicy default-deny + tenant namespace template |
 | 6 | mTLS L4 ↔ L3; ingress/WAF guidance documented |
 | 8 | Egress proxy + JWT signing in L4 + audit sink (prereq for untrusted tier in Phase 9) |
-| 10 | Multi-AZ session routing — snapshot-based recovery on pod failure (not in-memory affinity); multi-region foundations only — see `sandboxd` §"Other catalog additions" |
+| 10 | Multi-AZ session routing — snapshot-based recovery on pod failure (not in-memory affinity); multi-region foundations only |
 
 ## Multi-region workspace proxies (Phase 10 substrate)
 
 Long-lived CDP / ttyd WebSockets penalize latency hard — a 200 ms RTT makes a Chromium screencast feel underwater. Once the deployment spans more than one region, L4 cannot terminate every user's WebSocket centrally without paying the cross-region tax on every keystroke.
 
-The pattern, lifted from Coder ([`research/03`](../research/03-coder.md)) and from the Anthropic production deployment's Coder lineage ([`research/16`](../research/16-anthropic-production-sandbox-observed.md) §6):
+The pattern, lifted from Coder ([`research/03`](../research/03-coder.md)):
 
 ```text
                 User UI
@@ -144,6 +144,6 @@ Phase 10 ships one proxy per region; before that, the proxy is just L4 itself (o
 
 ## Source
 
-- [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md)
+- Internal security notes
 - [07-security.md](./07-security.md)
 - [`docs/future-architecture/references.md`](../references.md) (`agentbox`)

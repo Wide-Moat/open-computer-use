@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """Unified patch: error handling for tool loop, code interpreter, SSE, and background tasks.
 
@@ -17,7 +17,7 @@ Problems solved:
 6. SSE parse errors logged at debug level only
 
 Applied at Docker build time. Works on ORIGINAL middleware.py (no dependencies).
-Target: Open WebUI 0.9.6 (output-based architecture, serialize_output, prior_output).
+Target: Open WebUI 0.9.5 (output-based architecture, serialize_output, prior_output).
 
 Fail-loud: ANY sub-anchor miss triggers sys.exit(1) with stderr ERROR — refuses
 to ship a partially-patched middleware.py. Idempotent: re-run prints ALREADY PATCHED.
@@ -135,7 +135,8 @@ SEARCH_TOOL_LOOP = """\
                     except Exception as e:
                         log.debug(e)
                         break
-"""
+
+                if DETECT_CODE_INTERPRETER:"""
 
 REPLACE_TOOL_LOOP = (
     "                    _saved_output = json.loads(json.dumps(output))  # TOOL_LOOP_ERRORS_UNIFIED: save for restore on error\n"
@@ -235,7 +236,7 @@ REPLACE_TOOL_LOOP = (
     "                                _err_detail = f'Non-streaming error response: {type(res).__name__}'\n"
     "                            if _err_detail:\n"
     "                                log.error('NON_STREAM_ERROR: chat=%s iter=%d error=%s',\n"
-    "                                    metadata.get('chat_id', '')[:8], tool_call_iterations, _err_detail)\n"
+    "                                    metadata.get('chat_id', '')[:8], tool_call_retries, _err_detail)\n"
     "                                if 'Model not found' in _err_detail:\n"
     "                                    _err_detail = '" + _BUDGET_MSG + "'\n"
     "                                # Keep only message items (text the user already saw)\n"
@@ -256,11 +257,11 @@ REPLACE_TOOL_LOOP = (
     "                        _is_transport = 'aiohttp' in _err_mod or isinstance(e, (ConnectionError, TimeoutError, OSError))\n"
     "                        if _is_transport:\n"
     "                            log.warning('TRANSPORT_ERROR: chat=%s iter=%d error=%s',\n"
-    "                                metadata.get('chat_id', '')[:8], tool_call_iterations, e)\n"
+    "                                metadata.get('chat_id', '')[:8], tool_call_retries, e)\n"
     "                            _ui_err = '" + _TRANSPORT_MSG + "'\n"
     "                        else:\n"
     "                            log.error('TOOL_LOOP_ERROR: chat=%s iter=%d error=%s\\n%s',\n"
-    "                                metadata.get('chat_id', '')[:8], tool_call_iterations, e, _tb.format_exc())\n"
+    "                                metadata.get('chat_id', '')[:8], tool_call_retries, e, _tb.format_exc())\n"
     "                            _ui_err = str(e)[:1000]\n"
     "                            if 'Model not found' in _ui_err:\n"
     "                                _ui_err = '" + _BUDGET_MSG + "'\n"
@@ -272,6 +273,8 @@ REPLACE_TOOL_LOOP = (
     "                        except Exception:\n"
     "                            pass\n"
     "                        break\n"
+    "\n"
+    "                if DETECT_CODE_INTERPRETER:"
 )
 
 # ============================================================
@@ -291,7 +294,7 @@ SEARCH_CODE_INTERP = """\
 
                 title = (
                     await Chats.get_chat_title_by_id(metadata['chat_id'])
-                    if not metadata.get('chat_id', '').startswith('channel:')
+                    if not metadata['chat_id'].startswith('channel:')
                     else ''
                 )"""
 
@@ -314,7 +317,7 @@ REPLACE_CODE_INTERP = (
     "\n"
     "                title = (\n"
     "                    await Chats.get_chat_title_by_id(metadata['chat_id'])\n"
-    "                    if not metadata.get('chat_id', '').startswith('channel:')\n"
+    "                    if not metadata['chat_id'].startswith('channel:')\n"
     "                    else ''\n"
     "                )"
 )
@@ -346,9 +349,6 @@ REPLACE_SSE = """\
 # v0.9.1: two new lines inserted between `await background_tasks_handler(ctx)`
 # and `except asyncio.CancelledError:` — `ctx['assistant_message'] = {...}` +
 # `await outlet_filter_handler(ctx)`. Both must be preserved inside the wrap.
-# v0.9.6: upstream reordered to assistant_message -> outlet_filter_handler ->
-# background_tasks_handler (background tasks now run last). SEARCH/REPLACE track
-# the new order; the wrap still guards both the done-emit and the post-loop block.
 # ============================================================
 SEARCH_DONE_BG = """\
                 await event_emitter(
@@ -358,13 +358,13 @@ SEARCH_DONE_BG = """\
                     }
                 )
 
+                await background_tasks_handler(ctx)
                 ctx['assistant_message'] = {
                     'content': serialize_output(output),
                     'output': output,
                     **({'usage': usage} if usage else {}),
                 }
                 await outlet_filter_handler(ctx)
-                await background_tasks_handler(ctx)
             except asyncio.CancelledError:"""
 
 REPLACE_DONE_BG = """\
@@ -380,13 +380,13 @@ REPLACE_DONE_BG = """\
                         metadata.get('chat_id', '')[:8], _done_err)
 
                 try:
+                    await background_tasks_handler(ctx)
                     ctx['assistant_message'] = {
                         'content': serialize_output(output),
                         'output': output,
                         **({'usage': usage} if usage else {}),
                     }
                     await outlet_filter_handler(ctx)
-                    await background_tasks_handler(ctx)
                 except Exception as _bg_err:
                     log.error('BACKGROUND_TASK_ERROR: chat=%s error=%s',  # TOOL_LOOP_ERRORS_UNIFIED
                         metadata.get('chat_id', '')[:8], _bg_err)
@@ -394,25 +394,16 @@ REPLACE_DONE_BG = """\
 
 # ============================================================
 # Mod 5: TOOL_LOOP_ITER lifecycle logging
-# v0.9.6: upstream renamed `tool_call_retries` -> `tool_call_iterations` and
-# replaced the single-line `while len(tool_calls) > 0 and ... < ...RETRIES:`
-# with a multi-line `while tool_calls and (...ITERATIONS is None or ... < ...)`.
 # ============================================================
 SEARCH_ITER = """\
-                while tool_calls and (
-                    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None
-                    or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS
-                ):
-                    tool_call_iterations += 1"""
+                while len(tool_calls) > 0 and tool_call_retries < CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES:
+                    tool_call_retries += 1"""
 
 REPLACE_ITER = """\
-                while tool_calls and (
-                    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None
-                    or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS
-                ):
-                    tool_call_iterations += 1
+                while len(tool_calls) > 0 and tool_call_retries < CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES:
+                    tool_call_retries += 1
                     log.debug('TOOL_LOOP_ITER: chat=%s iter=%d pending_tc=%d',  # TOOL_LOOP_ERRORS_UNIFIED; FIX_TOOL_LOOP_ERRORS
-                        metadata.get('chat_id', '')[:8], tool_call_iterations, len(tool_calls))"""
+                        metadata.get('chat_id', '')[:8], tool_call_retries, len(tool_calls))"""
 
 
 def apply_patch():
