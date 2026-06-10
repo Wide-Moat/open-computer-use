@@ -108,6 +108,13 @@ jobs:
             # strip them or `base64 -d` rejects the input on Linux.
             printf '%s' "$content" | tr -d '\n' | base64 -d > config/.gitleaks.toml
             echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
+          elif [ -f pr-head/.gitleaks.toml ]; then
+            # Bootstrap: the base ref has no config yet (it is being
+            # introduced by this very change). The base-ref-wins rule
+            # protects an EXISTING config from being weakened by a PR;
+            # with none to protect, the tree's own config applies.
+            cp pr-head/.gitleaks.toml config/.gitleaks.toml
+            echo "No config on base ref ${BASE_REF}; using the tree's own (bootstrap)."
           else
             printf '[extend]\nuseDefault = true\n' > config/.gitleaks.toml
             echo "No .gitleaks.toml on base ref ${BASE_REF} — wrote useDefault stub."
