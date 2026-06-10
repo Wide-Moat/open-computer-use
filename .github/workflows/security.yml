@@ -98,8 +98,11 @@ jobs:
         # zero-byte file that gitleaks would silently accept.
         run: |
           mkdir -p config
+          # On a 404 (no config on the base ref) gh prints the error JSON
+          # to stdout and exits non-zero; reset content to empty so the
+          # stub branch below handles it instead of base64-decoding JSON.
           content="$(gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
-            --jq '.content // empty' 2>/dev/null || true)"
+            --jq '.content // empty' 2>/dev/null)" || content=""
           if [ -n "$content" ]; then
             # The contents API base64-encodes with embedded newlines;
             # strip them or `base64 -d` rejects the input on Linux.
