@@ -101,7 +101,9 @@ jobs:
           content="$(gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
             --jq '.content // empty' 2>/dev/null || true)"
           if [ -n "$content" ]; then
-            printf '%s' "$content" | base64 -d > config/.gitleaks.toml
+            # The contents API base64-encodes with embedded newlines;
+            # strip them or `base64 -d` rejects the input on Linux.
+            printf '%s' "$content" | tr -d '\n' | base64 -d > config/.gitleaks.toml
             echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
           else
             printf '[extend]\nuseDefault = true\n' > config/.gitleaks.toml
