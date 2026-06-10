@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# lychee — broken link checker.
+# Reference: https://lychee.cli.rs/usage/config/
+#
+# Inputs (which files/dirs to scan) are passed as positional CLI args by the
+# workflow, not as a config-file key. This file only carries flags and
+# exclusions.
+
+# Skip these paths when expanding globs — legacy buffer (will be migrated)
+# and common noisy directories.
+exclude_path = [
+  "docs/future-architecture",
+  "node_modules",
+  ".venv",
+  ".planning",
+]
+
+# Match the forward-reference rule: a relative path that doesn't resolve on
+# disk is a broken link, period.
+include_fragments = true
+
+# Patterns to allow without HTTP checking (anchor-only refs, mailto, etc.).
+exclude = [
+  '^mailto:',
+  '^tel:',
+]
+
+# External URLs are not what we're guarding against (forward-reference rule).
+# Skip them to avoid CI failing on rate-limited or transiently-down upstreams.
+exclude_all_private = false
+offline = false
+
+no_progress = true
+verbose = "info"

@@ -1,0 +1,297 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Default values for computer-use-server.
+# See README.md for prerequisites and the full knob reference.
+# The inner Docker daemon runs under Kata Containers (microVM isolation) — the
+# supported DinD runtime. Setup guide: docs/kata-runtime.md.
+
+# -- Override the chart name. Useful when running multiple releases in one namespace.
+nameOverride: ""
+# -- Override the fully-qualified app name (release-name + chart name by default).
+fullnameOverride: ""
+
+image:
+  # -- Orchestrator image (the FastAPI server in computer-use-server/).
+  repository: ghcr.io/wide-moat/open-computer-use-server
+  # -- Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Workspace image — the AI sandbox that the orchestrator spawns via the inner Docker.
+# This image is not pulled by Kubernetes directly; it is pulled by the inner dockerd
+# at first chat creation. The repo:tag is passed to the orchestrator as DOCKER_IMAGE.
+workspaceImage:
+  repository: ghcr.io/wide-moat/open-computer-use
+  tag: ""
+
+# -- imagePullSecrets are applied to the Pod for both orchestrator and dind images.
+imagePullSecrets: []
+
+orchestrator:
+  # runtimeClassName MUST match a RuntimeClass that already exists in the cluster.
+  # Values:
+  #   kata-qemu    Default, and the recommended runtime. Kata Containers —
+  #                install kata-deploy first (docs/kata-runtime.md). Works on
+  #                containerd 2.x and gives hypervisor (microVM) isolation. The
+  #                other dind.* / persistence defaults below assume this runtime.
+  #   "" (empty)   Stock runc + privileged dind. Functional, but INSECURE — the
+  #                inner daemon shares the host kernel and a container escape is
+  #                trivial. Local-testing escape hatch only; do not run it in
+  #                production. Also set dind.kataInit.enabled=false and
+  #                persistence.varLibDocker.persistentVolume.enabled=false.
+  runtimeClassName: kata-qemu
+
+  # Single replica is the only supported topology — the pod owns the inner dockerd
+  # and three RWO PVCs. Scaling out requires the K8sBackend rework (out of scope).
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  # Non-secret env vars passed to the orchestrator. Secret vars live under .secrets.
+  env:
+    # REQUIRED. Browser-reachable URL of this service (no trailing slash).
+    # Baked into the system prompt so the model writes correct preview links and
+    # returned in the X-Public-Base-URL header so the Open WebUI filter agrees.
+    PUBLIC_BASE_URL: ""
+
+    COMMAND_TIMEOUT: "120"
+    SUB_AGENT_TIMEOUT: "3600"
+    CONTAINER_MEM_LIMIT: "2g"
+    CONTAINER_CPU_LIMIT: "1.0"
+    CONTAINER_IDLE_TIMEOUT: "600"
+    SINGLE_USER_MODE: "false"
+
+    # Path the inner dockerd creates owui-chat-* workspaces from. Must match the
+    # USER_DATA_BASE_PATH and BASE_DATA_DIR values from docker-compose.yml.
+    USER_DATA_BASE_PATH: /tmp/computer-use-data
+    BASE_DATA_DIR: /tmp/computer-use-data
+
+    # Talks to the inner dockerd over a unix socket shared via emptyDir.
+    DOCKER_SOCKET: unix:///var/run/docker.sock
+
+    # Workspace image is set automatically from .workspaceImage. Override here if needed.
+    # DOCKER_IMAGE: ""
+
+  # Operator escape hatch — appended to the container as-is.
+  # Example:
+  #   extraEnv:
+  #     - name: ANTHROPIC_BASE_URL
+  #       value: https://api.anthropic.com
+  extraEnv: []
+
+  # Add envFrom entries (existing ConfigMaps / Secrets) to the orchestrator container.
+  # Example:
+  #   envFrom:
+  #     - secretRef:
+  #         name: my-llm-creds
+  envFrom: []
+
+  # Liveness/readiness — orchestrator exposes /health on 8081.
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 30
+      timeoutSeconds: 10
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+  securityContext:
+    runAsNonRoot: false  # the orchestrator image runs as root inside the pod
+    allowPrivilegeEscalation: true
+    # The orchestrator does NOT need privileged. Only the dind container does.
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+dind:
+  # Image for the inner Docker daemon. Must accept the standard dockerd flags.
+  image:
+    repository: docker
+    tag: "27-dind"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+  # storage driver passed to dockerd. The Kata default is fuse-overlayfs —
+  # overlay2 FAILS on the Kata virtio-fs guest root
+  # (kata-containers/kata-containers#1888); dind.kataInit installs fuse-overlayfs.
+  # If you run the insecure runc fallback, set this to overlay2.
+  storageDriver: fuse-overlayfs
+
+  # -- Explicit override of whether the dind container runs privileged.
+  # true (default) => REQUIRED for Kata: dockerd needs CAP_NET_ADMIN/CAP_NET_RAW
+  #   to build the iptables NAT chain, otherwise it fails with
+  #   "iptables: Could not fetch rule set generation id: Permission denied".
+  #   privileged=true is SAFE under Kata — the caps are confined to the microVM.
+  # false => force the dind container unprivileged.
+  # null  => auto-derive from orchestrator.runtimeClassName (empty => true,
+  #   set => false). Only useful for the runc fallback.
+  privileged: true
+
+  # -- Kata-guest init wrapper. Runs a chart-managed entrypoint that, before
+  # exec'ing dockerd:
+  #   (1) installs fuse-overlayfs (overlay2 fails on the Kata virtio-fs root)
+  #   (2) mknod /dev/fuse  (the Kata guest kernel has fuse but no device node)
+  #   (3) if persistence.varLibDocker.persistentVolume is enabled — mkfs.ext4 +
+  #       mounts the Block-mode PVC at /var/lib/docker
+  #   (4) runs the cgroup-v2 PID-1 evacuation shim (docker-library/docker#308) so
+  #       nested runc can enter cgroups inside the Kata guest
+  # Every step is idempotent and self-detecting. Set enabled=false only for the
+  # runc fallback. See docs/kata-runtime.md.
+  kataInit:
+    enabled: true
+    # extra apk packages installed at container start (idempotent, needs egress)
+    extraPackages: []
+
+cleanup:
+  enabled: true
+  image:
+    # Built from ./cron in the repo. Publish to your registry and point here.
+    repository: ghcr.io/wide-moat/open-computer-use-cleanup
+    tag: ""
+    pullPolicy: IfNotPresent
+  containerMaxAgeHours: 24
+  dataMaxAgeDays: 7
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+secrets:
+  # When true, the chart renders a Secret from the values below. Convenient but
+  # bad for GitOps (values get committed). Prefer existingSecret in production.
+  create: true
+
+  # When set, ignored if .create is true. The chart adds this secret to envFrom on
+  # the orchestrator container. The secret must contain at least MCP_API_KEY.
+  existingSecret: ""
+
+  # REQUIRED unless using existingSecret. Bearer token for /mcp endpoint.
+  mcpApiKey: ""
+
+  visionApiKey: ""
+  anthropicAuthToken: ""
+  openaiApiKey: ""
+
+persistence:
+  # /tmp/computer-use-data — per-chat workspace data (uploads, outputs).
+  userData:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+    # Only ReadWriteOnce / ReadWriteOncePod are supported — chart is single-replica.
+    accessMode: ReadWriteOnce
+    existingClaim: ""
+
+  # /data — orchestrator long-lived state (mounted from compose volume `computer-use-data`).
+  data:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    existingClaim: ""
+
+  # /data/skills-cache — public skills cache used by skill_manager.
+  skillsCache:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    existingClaim: ""
+
+  # /var/lib/docker inside the dind container.
+  varLibDocker:
+    # sizeLimit applies to the emptyDir fallback (used when
+    # persistentVolume.enabled=false — i.e. only under the runc fallback).
+    sizeLimit: 50Gi
+    # -- Back /var/lib/docker with a Block-mode PVC (the Kata default).
+    # REQUIRED under Kata: the workspace image relies on security.capability
+    # xattrs, and the Kata virtio-fs root drops them (CVE-2021-20263), which
+    # breaks e.g. GStreamer binaries. A Block PVC arrives in the guest as a
+    # virtio-blk device; dind.kataInit formats it ext4, so xattrs are preserved.
+    # Set enabled=false only for the runc fallback. See docs/kata-runtime.md.
+    persistentVolume:
+      enabled: true
+      size: 50Gi
+      # Must reference a StorageClass that provisions Block volumes. Empty =>
+      # the cluster default StorageClass (which must be Block-capable).
+      storageClass: ""
+      # When set, the chart uses this claim instead of creating one.
+      existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 8081
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: orchestrator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # Example:
+  #   tls:
+  #     - hosts:
+  #         - orchestrator.example.com
+  #       secretName: orchestrator-tls
+
+networkPolicy:
+  enabled: false
+  # Allow incoming traffic from these pod selectors (in addition to same-namespace).
+  ingressFrom: []
+  # Example:
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           name: open-webui
+
+  # Extra egress rules appended to the chart's defaults (DNS + in-cluster + 0.0.0.0/0).
+  # Use this to add explicit allow rules — e.g. limit egress to a specific
+  # external host, or whitelist your cloud metadata service.
+  extraEgress: []
+  # Example:
+  #   extraEgress:
+  #     - to:
+  #         - ipBlock:
+  #             cidr: 169.254.169.254/32  # cloud metadata
+  #       ports:
+  #         - protocol: TCP
+  #           port: 80
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}

@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+# Open WebUI + PostgreSQL — example client for Computer Use
+#
+# Reaches Computer Use Server via Docker service DNS (computer-use-server:8081).
+# Both stacks share the default network because they share the Compose project
+# name (the parent directory "open-computer-use") — no extra_hosts required.
+#
+# Start: docker compose -f docker-compose.webui.yml up --build
+# Requires: Computer Use Server running (docker compose -f docker-compose.yml up -d)
+
+services:
+  open-webui:
+    build:
+      context: ./openwebui
+      dockerfile: Dockerfile
+      args:
+        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-0.9.2}
+    ports:
+      - "${OPENWEBUI_PORT:-3000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://openwebui:${POSTGRES_PASSWORD:-openwebui}@postgres:5432/openwebui
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-}
+      # Disable HuggingFace model downloads — not needed for Computer Use
+      - BYPASS_EMBEDDING_AND_RETRIEVAL=true
+      - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
+      # Skip SSL verification for self-signed certs (set to false if needed)
+      - ENABLE_OPENAI_API_SSL_VERIFY=${ENABLE_OPENAI_API_SSL_VERIFY:-true}
+      # Auto-init: install Computer Use tool + filter on first startup
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@open-computer-use.dev}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      # Internal URL of computer-use-server, seeded by init.sh into the Tool
+      # and Filter Valves. Uses Docker service DNS — both compose stacks share
+      # the default network because they share the project name (the parent
+      # directory "open-computer-use"), so `computer-use-server` resolves to
+      # the container's IP directly. Browsers never see this URL.
+      # Internal port is always 8081 — MCP_PORT is a host-side mapping and
+      # irrelevant for container-to-container traffic on the Docker network.
+      - ORCHESTRATOR_URL=http://computer-use-server:8081
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      # Allow complex multi-step tasks (browser + doc creation) to complete
+      - CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES=200
+      # Large tool result truncation (fix_large_tool_results patch)
+      # Prevents context window exhaustion from large MCP tool outputs
+      - TOOL_RESULT_MAX_CHARS=${TOOL_RESULT_MAX_CHARS:-50000}
+      - TOOL_RESULT_PREVIEW_CHARS=${TOOL_RESULT_PREVIEW_CHARS:-2000}
+      # fix_large_tool_results patch reads ORCHESTRATOR_URL (same name as the
+      # Tool/Filter Valves) to upload truncated tool results back to the server.
+      # Already set in the Valves-seed block above — re-exporting here so the
+      # patch's `os.environ.get('ORCHESTRATOR_URL')` at Python import time sees it.
+    volumes:
+      - open-webui-data:/app/backend/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openwebui
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openwebui}
+      POSTGRES_DB: openwebui
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openwebui"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  open-webui-data:
+  postgres-data:

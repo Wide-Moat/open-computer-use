@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# markdownlint configuration.
+#
+# Reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# Use the default rules as the baseline.
+default: true
+
+# MD013 — line length. Architecture docs use long table cells and citation
+# links that legitimately exceed 80 characters. Keep line-length enforcement
+# off and rely on prose discipline + the wc-budget script for size control.
+MD013: false
+
+# MD024 — multiple headings with the same content. Allowed if siblings differ
+# (e.g. "## Status" inside multiple ADRs).
+MD024:
+  siblings_only: true
+
+# MD033 — inline HTML. We use HTML comments for SPDX headers above YAML
+# front-matter, <details>/<summary> blocks, and angle-bracket placeholders
+# in templates (e.g. "# ADR-NNNN: <title>"). Disable entirely; placeholder
+# leakage into real ADRs is caught by ai-slop-detector and reviewer eyes.
+MD033: false
+
+# MD003 — heading-style. Disabled. markdownlint-cli2 doesn't understand
+# YAML front-matter and parses the closing `---` delimiter as a setext H2
+# underline, then flags the first ATX heading in the file as a violation
+# of "setext style" (which was never the file's actual style). Front-matter
+# is mandatory in our docs, so this rule cannot work as-is.
+MD003: false
+
+# MD022 — blanks-around-headings. Disabled — markdownlint mis-parses the
+# YAML front-matter delimiter (`---`) as a setext H2 underline and then
+# treats the line above it ("status: proposed") as a heading that needs
+# blank lines around it. False positive specific to our front-matter shape.
+MD022: false
+
+# MD041 — first line in file should be a top-level heading. Our docs lead
+# with an HTML license comment then YAML front-matter, so disable this.
+MD041: false
+
+# MD046 — code-block style. Allow both fenced and indented (research digests
+# sometimes inline indented blocks).
+MD046:
+  style: fenced
+
+# MD059 — link text should be descriptive. Allow "here" / "this" because we
+# use them in legitimate context-sentence patterns.
+MD059: false

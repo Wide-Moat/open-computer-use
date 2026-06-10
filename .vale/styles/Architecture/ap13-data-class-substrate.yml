@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# AP-13 enforcement: data classification does not pick the sandbox substrate.
+# Per docs/architecture/manifesto/02-nfrs.md "Anti-pattern rows" AP-13.
+
+extends: existence
+message: "AP-13 (manifesto/02-nfrs.md): data classification does not pick the sandbox substrate. Trust profile picks the tier; data class governs custody / retention / residency."
+level: error
+ignorecase: true
+raw:
+  - '\b(NPI|RESTRICTED|CONFIDENTIAL)\s+(?:→|requires|->)\s+(?:microVM|hardware-virt)\b'

@@ -1,0 +1,145 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+
+# Docker
+.env
+*.log
+
+# SSL Certificates
+nginx/ssl/*.crt
+nginx/ssl/*.key
+
+# Internal reports
+*_REPORT.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.pytest_cache/
+
+# Data directories
+data/uploads/*
+data/outputs/*
+!data/uploads/.gitkeep
+!data/outputs/.gitkeep
+
+# Claude Code
+.claude/settings.local.json
+.claude/
+
+# Temp execution directories
+openwebui-tools/temp-docker-execution
+
+# Cloned repositories
+open-webui/
+req-log.json
+req.json
+
+# Personal guides
+guides/
+claude-code-headless-docs.md
+sessions/
+skills_archive.zip
+.playwright-mcp/
+FIXES_*.md
+demo-recordings/
+demo-frames/
+docs/demo-prompts/
+tools/
+POST.md
+
+# GSD planning artefacts — private mirror only (see GitLab remote `private`).
+# The public GitHub repo must not carry planning/roadmap/phase context:
+# it includes decision logs, port analyses, and internal-fork references that
+# are operational noise for external contributors. History was rewritten to
+# remove .planning/ — do not commit it back here.
+.planning/
+
+# Helm — fetched dependencies live in charts/*.tgz and are reproducible from
+# Chart.lock via `helm dependency update`.
+helm/*/charts/*.tgz
+
+# Integration test scratch — owned by the test harness, never commit
+.venv-itest/
+tests/integration/_tmp/
+.pytest_cache/
+
+# Translations / disposable readability copies — not for the repo
+*-ru.md
+*-ru-tmp.md
+docs/architecture/manifesto/02-nfrs-ru.md
+
+# Phase-research / review artefacts under docs/future-architecture/research/
+# These are the working buffer the architect-loop produces while drafting
+# canonical artefacts under docs/architecture/. The canonical work in
+# docs/architecture/ is the deliverable; these files stay local.
+docs/future-architecture/research/SUMMARY-*.md
+docs/future-architecture/research/REVIEW-*.md
+docs/future-architecture/research/CROSS-REVIEW-*.md
+docs/future-architecture/research/PLAN-CHECK-*.md
+docs/future-architecture/research/CONTRADICTION-CHECK-*.md
+docs/future-architecture/research/ADVISOR-*.md
+docs/future-architecture/research/NYQUIST-AUDIT-*.md
+docs/future-architecture/research/PATTERN-MAP-*.md
+docs/future-architecture/research/CONSOLIDATED-*.md
+docs/future-architecture/research/nfr-*.md
+docs/future-architecture/research/layer*.md
+docs/future-architecture/research/COMPETITOR-*.md
+docs/future-architecture/research/PLAN-*.md
+docs/future-architecture/research/RESEARCH-*.md
+docs/future-architecture/research/DRAFT-*.md
+docs/future-architecture/research/L9-*.md
+docs/future-architecture/research/POC-*.md
+
+# Local working notes — not for the repo.
+# Numbered per-file globs so legitimate competitor/market research
+# (01-12, 14, 18, proof-uipath-*, advisor-*, bank-buyer, enthusiast-audience,
+# widemoat-thesis-advisor) under research/ remains tracked.
+docs/future-architecture/research/13-*.md
+docs/future-architecture/research/15-*.md
+docs/future-architecture/research/16-*.md
+docs/future-architecture/research/17-*.md
+docs/future-architecture/research/19-*.md
+docs/future-architecture/research/20-*.md
+docs/future-architecture/research/21-*.md
+docs/future-architecture/research/22-*.md
+docs/future-architecture/research/23-*.md
+docs/future-architecture/research/proof-anthropic-*.md

@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Integration test stack. Mirrors docker-compose.yml exactly — same socket
+# bind, same workspace image, same env shape — but on a non-default port and
+# with a fixed MCP_API_KEY so the pytest suite can assert auth behavior.
+#
+# Run:
+#   docker compose -f docker-compose.test.yml up -d --build
+#   pytest tests/integration/
+#   docker compose -f docker-compose.test.yml down -v --remove-orphans
+#
+# Cleanup of orphan workspace containers spawned by the orchestrator during
+# tests is handled by the pytest session finalizer in conftest.py (matches
+# the `owui-chat-itest-*` container-name prefix that the test fixtures use).
+
+services:
+  computer-use-server-test:
+    build: ./computer-use-server
+    image: open-computer-use-server:test
+    container_name: ocu-test-server
+    ports:
+      - "18081:8081"  # non-default to avoid clashing with a running prod stack
+    volumes:
+      # Production parity: bind the host Docker socket so the orchestrator
+      # spawns sibling containers on the host daemon. This is exactly the
+      # configuration the chart targets via Sysbox DinD in k8s and what the
+      # default Compose layout uses on a developer workstation.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./tests/integration/_tmp/user-data:/tmp/computer-use-data:rw
+    environment:
+      - MCP_API_KEY=test-token-do-not-use-in-prod
+      - DOCKER_IMAGE=open-computer-use:test
+      # Same path the workspace container will see — bind mount paths must
+      # resolve identically inside and outside the orchestrator pod/container.
+      - USER_DATA_BASE_PATH=/tmp/computer-use-data
+      - BASE_DATA_DIR=/tmp/computer-use-data
+      - PUBLIC_BASE_URL=http://ocu-test-server:8081
+      - COMMAND_TIMEOUT=60
+      - CONTAINER_IDLE_TIMEOUT=120
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: "no"
+    networks:
+      - ocu-test
+
+networks:
+  ocu-test:
+    name: ocu-test-net
+    driver: bridge

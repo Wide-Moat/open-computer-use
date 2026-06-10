@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: mcp
+      port: {{ .Values.service.port }}
+      targetPort: mcp
+      protocol: TCP
+  selector:
+    {{- include "computer-use-server.selectorLabels" . | nindent 4 }}

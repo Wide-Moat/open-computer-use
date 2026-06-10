@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+# Computer Use Server — core MCP server + workspace image
+# Start: docker compose up
+# Build workspace first: docker compose up --build
+
+services:
+  # Workspace image — builds the AI sandbox container
+  # One-shot verification, then exits. Image stays cached.
+  workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    image: ${DOCKER_IMAGE:-open-computer-use:latest}
+    command: >
+      bash -c "echo 'Workspace image OK:' && python3 --version && node --version && echo 'Ready.' && exit 0"
+    restart: "no"
+
+  # Computer Use MCP Server (orchestrator)
+  # Manages workspace containers, provides MCP tools endpoint at :8081
+  computer-use-server:
+    build: ./computer-use-server
+    container_name: computer-use-server
+    ports:
+      - "${MCP_PORT:-8081}:8081"
+    depends_on:
+      workspace:
+        condition: service_completed_successfully
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/computer-use-data:/tmp/computer-use-data:rw
+      - computer-use-data:/data:rw
+      - skills-cache:/data/skills-cache:rw
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - DOCKER_IMAGE=${DOCKER_IMAGE:-open-computer-use:latest}
+      - USER_DATA_BASE_PATH=/tmp/computer-use-data
+      - BASE_DATA_DIR=/tmp/computer-use-data
+      # Public URL of this orchestrator, as reachable from the end-user's
+      # browser. The server bakes it into every /system-prompt response (so the
+      # model writes correct links) and returns it to the Open WebUI filter via
+      # the X-Public-Base-URL response header (so outlet() decorates with the
+      # same URL). This is THE single source of truth for the browser-facing
+      # URL — the filter no longer has its own Valve for it.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://computer-use-server:8081}
+      - COMMAND_TIMEOUT=${COMMAND_TIMEOUT:-120}
+      - SUB_AGENT_TIMEOUT=${SUB_AGENT_TIMEOUT:-3600}
+      - SINGLE_USER_MODE=${SINGLE_USER_MODE:-}
+      - VISION_API_KEY=${VISION_API_KEY:-}
+      - VISION_API_URL=${VISION_API_URL:-}
+      - VISION_MODEL=${VISION_MODEL:-}
+      - ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - ANTHROPIC_DEFAULT_SONNET_MODEL=${ANTHROPIC_DEFAULT_SONNET_MODEL:-}
+      - ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL:-}
+      - ANTHROPIC_DEFAULT_HAIKU_MODEL=${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}
+      - CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-}
+      - CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-}
+      - DISABLE_PROMPT_CACHING=${DISABLE_PROMPT_CACHING:-}
+      - DISABLE_PROMPT_CACHING_SONNET=${DISABLE_PROMPT_CACHING_SONNET:-}
+      - DISABLE_PROMPT_CACHING_OPUS=${DISABLE_PROMPT_CACHING_OPUS:-}
+      - DISABLE_PROMPT_CACHING_HAIKU=${DISABLE_PROMPT_CACHING_HAIKU:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Cleanup cron — removes stopped containers, orphaned volumes, stale data
+  cleanup:
+    build: ./cron
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/computer-use-data:/tmp/computer-use-data:rw
+    environment:
+      - CONTAINER_MAX_AGE_HOURS=${CONTAINER_MAX_AGE_HOURS:-24}
+      - DATA_MAX_AGE_DAYS=${DATA_MAX_AGE_DAYS:-7}
+    restart: unless-stopped
+
+  # Optional: Skill registry — controls per-user skill access
+  # Uncomment to enable. See settings-wrapper/README.md for details.
+  # settings-wrapper:
+  #   build: ./settings-wrapper
+  #   ports:
+  #     - "8082:8082"
+  #   environment:
+  #     - API_KEY=${MCP_TOKENS_API_KEY:-}
+  #   restart: unless-stopped
+
+volumes:
+  computer-use-data:
+  skills-cache:

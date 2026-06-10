@@ -1,0 +1,13 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Wide-Moat/open-computer-use",
+  "title": "Open Computer Use",
+  "version": "0.8.12.6",
+  "description": "Give any LLM its own computer — Docker sandboxes with bash, browser, docs, and sub-agents",
+  "websiteUrl": "https://github.com/Wide-Moat/open-computer-use",
+  "repository": {
+    "url": "https://github.com/Wide-Moat/open-computer-use",
+    "source": "github",
+    "id": "Wide-Moat/open-computer-use"
+  }
+}

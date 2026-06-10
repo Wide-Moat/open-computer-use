@@ -1,0 +1,131 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Lints the Helm chart on every PR / push to main, and publishes versioned
+# tarballs to a "gh-pages" Helm repo on release tags. Users can then:
+#
+#   helm repo add open-computer-use https://wide-moat.github.io/open-computer-use
+#   helm repo update
+#   helm install ocu open-computer-use/computer-use-server
+#
+# Chart version (helm/computer-use-server/Chart.yaml `version:`) must be bumped
+# for chart-releaser to publish. `appVersion:` tracks the repo version.
+
+name: Helm chart
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'helm/**'
+      - 'examples/helm/**'
+      - '.github/workflows/helm.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - 'examples/helm/**'
+      - '.github/workflows/helm.yml'
+
+jobs:
+  lint:
+    name: helm lint + template
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4   # Helm 3 LTS — chart-releaser-action does not yet ship a Helm 4 image
+                            # and Helm 3 lints/templates the chart identically for our purposes.
+
+      - name: helm lint (rejects missing required values)
+        run: |
+          set -e
+          # Should fail — schema requires either secrets.mcpApiKey or secrets.existingSecret.
+          if helm lint helm/computer-use-server 2>/dev/null; then
+            echo "BUG: helm lint should have failed with empty secrets" >&2
+            exit 1
+          fi
+          # Should pass with all required keys set
+          helm lint helm/computer-use-server \
+            --set secrets.mcpApiKey=test \
+            --set orchestrator.env.PUBLIC_BASE_URL=https://x.example.com
+          # Examples must lint cleanly
+          helm lint helm/computer-use-server -f examples/helm/standalone/values.yaml
+          helm lint helm/computer-use-server -f examples/helm/with-open-webui/values-computer-use.yaml
+
+      - name: helm template (default Kata path + runc fallback)
+        run: |
+          set -e
+          # Default — Kata is the supported runtime; chart defaults render it.
+          helm template ocu helm/computer-use-server \
+            -f examples/helm/standalone/values.yaml \
+            > /tmp/render-default.yaml
+          grep -q "runtimeClassName: kata-qemu" /tmp/render-default.yaml
+          grep -q "privileged: true" /tmp/render-default.yaml
+          grep -q "name: orchestrator" /tmp/render-default.yaml
+          grep -q "name: dind" /tmp/render-default.yaml
+          grep -q "name: cleanup" /tmp/render-default.yaml
+          # The Kata machinery must be present by default.
+          grep -q "dind-entrypoint.sh" /tmp/render-default.yaml
+          grep -q "volumeMode: Block" /tmp/render-default.yaml
+          grep -q "devicePath: /dev/var-lib-docker" /tmp/render-default.yaml
+          grep -q "storage-driver=fuse-overlayfs" /tmp/render-default.yaml
+          # Unsupported runc fallback — explicit opt-out of every Kata knob.
+          helm template ocu helm/computer-use-server \
+            --set secrets.mcpApiKey=t \
+            --set orchestrator.env.PUBLIC_BASE_URL=https://x \
+            --set orchestrator.runtimeClassName="" \
+            --set dind.privileged=null \
+            --set dind.kataInit.enabled=false \
+            --set dind.storageDriver=overlay2 \
+            --set persistence.varLibDocker.persistentVolume.enabled=false \
+            > /tmp/render-runc.yaml
+          grep -q "privileged: true" /tmp/render-runc.yaml
+          ! grep -q "runtimeClassName:" /tmp/render-runc.yaml
+          ! grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml
+          ! grep -q "volumeMode: Block" /tmp/render-runc.yaml
+
+      - name: Install kubeconform and validate manifests against k8s schemas
+        env:
+          KUBECONFORM_VERSION: v0.6.7
+        run: |
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+          kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-default.yaml
+          kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-runc.yaml
+
+  release:
+    name: Publish chart to gh-pages
+    needs: lint
+    runs-on: ubuntu-latest
+    # Only on stable release tags. SemVer pre-release suffixes (`-rc.N`,
+    # `-alpha.N`, `-beta.N`) are routed to OCI publish via release-chart.yml
+    # — they must NOT land on gh-pages, otherwise stable users running
+    # `helm repo update && helm install` would resolve them.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # chart-releaser needs full history to detect tag bumps
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - uses: helm/chart-releaser-action@v1.7.0
+        with:
+          charts_dir: helm
+          mark_as_latest: true
+        env:
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

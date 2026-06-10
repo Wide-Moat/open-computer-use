@@ -1,0 +1,41 @@
+%% SPDX-License-Identifier: FSL-1.1-Apache-2.0
+%% Copyright (c) 2025 Open Computer Use Contributors
+%% Layer 7 STRIDE overlay on the Layer 6 container DFD. Referenced from docs/architecture/06-threat-model.md.
+%% Residual (PARTIAL) threats annotated per element; the DFD itself is canonical in c4-container.mmd (not redrawn).
+%%{init: {"theme": "neutral"} }%%
+flowchart LR
+    PEER["MCP caller"]:::ext
+    OPER["Operator"]:::ext
+    DPC["Data-plane client<br/>(SPA / headless)"]:::ext
+    SDS["SDS source<br/>(static file / customer store)"]:::ext
+    subgraph OCU["Open Computer Use — STRIDE overlay"]
+        MCPG["MCP gateway"]
+        CTRL["Control / operator API"]
+        STORE["Storage broker"]
+        VM["Session sandbox [1..N]"]
+        EDGE["Egress trust-edge proxy"]
+        AUD["Audit pipeline"]
+    end
+    PEER --> MCPG
+    OPER --> CTRL
+    MCPG --> CTRL
+    CTRL --> VM
+    STORE --> VM
+    DPC -->|"north face (F11)"| STORE
+    VM --> EDGE
+    SDS -->|"credential over SDS"| EDGE
+    STORE --> EDGE
+    VM -.OCSF.-> AUD
+    EDGE -.OCSF.-> AUD
+
+    PEND["NFR specified, impl tracked<br/>#148 #149 #150 #176 #181 #182<br/>#183 #184 #185 #186 #187 #188<br/>#197 #217 #218"]:::pend
+    MCPG -. P1-I1 P1-E2 .-> PEND
+    CTRL -. P2-R1 .-> PEND
+    STORE -. "P4-D1 (south) · P4-S3 P4-T3 P4-I3 P4-D3 P4-R2 P4-E3 (north)" .-> PEND
+    VM -. P5-T1 P5-I1 P5-I2 P5-I3 P5-R1 .-> PEND
+    EDGE -. P6-I1 P6-I2 P6-D1 P6-D3 P6-E2 P6-E3 .-> PEND
+    AUD -. P7-S1 P7-R2 P7-T2 P7-R3 P7-T3 .-> PEND
+
+    classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
+    classDef pend fill:#fff8e1,stroke:#f39c12,stroke-width:2px,color:#7a5c00;
+    style OCU fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px;

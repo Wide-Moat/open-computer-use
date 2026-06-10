@@ -1,0 +1,177 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Publishes the Helm chart as an OCI artifact in ghcr.io alongside the four
+# Docker images on every `v*` git tag. Pre-release tags (`v*-rc.*`, `v*-alpha.*`,
+# `v*-beta.*`) are pushed to the same OCI repo with their SemVer pre-release
+# suffix preserved — Helm itself excludes pre-releases from stable
+# `helm install` resolution unless --devel / explicit --version is passed, so
+# this does not contaminate users running plain `helm repo update && helm
+# install`.
+#
+# This complements (does not replace) helm.yml's chart-releaser-action, which
+# only publishes when Chart.yaml.version bumps and targets gh-pages. RCs are
+# distributed via OCI because they live alongside the image tags and the
+# tag-driven flow doesn't require Chart.yaml commits.
+#
+# Operator install for an RC:
+#   helm install ocu-rc oci://ghcr.io/wide-moat/charts/computer-use-server \
+#     --version 0.1.0-rc.1 \
+#     -f my-values.yaml \
+#     --set image.tag=0.9.2.5-rc.1 \
+#     --set workspaceImage.tag=0.9.2.5-rc.1 \
+#     --set cleanup.image.tag=0.9.2.5-rc.1
+
+name: Release Helm Chart (OCI)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Chart version to publish (SemVer, e.g. 0.1.0-rc.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CHART_PATH: helm/computer-use-server
+  OCI_REPO: oci://ghcr.io/${{ github.repository_owner }}/charts
+
+jobs:
+  publish:
+    name: Package and push chart to OCI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: Resolve chart version + app version
+        id: ver
+        run: |
+          # Two distinct versions per Helm spec:
+          # - app_version: free-form, matches our project's 4-segment scheme
+          #   (e.g. 0.9.2.5-rc.1) and the docker image tags. This is what
+          #   appears in `helm list` and `appVersion:` in Chart.yaml.
+          # - chart_version: strict SemVer (3 segments + optional pre-release).
+          #   This is what `helm install --version` resolves against.
+          #
+          # Mapping rule: keep the chart at 0.X.Y matching what's already in
+          # Chart.yaml, and carry the pre-release suffix from the tag onto
+          # both versions. So tag v0.9.2.5-rc.1 → chart_version
+          # 0.1.1-rc.1 (next chart patch) only when the suffix has changed
+          # relative to the committed chart version. For RC publishing we
+          # take a shortcut: derive chart_version by stripping the leading
+          # 4th segment from the tag and re-attaching the suffix.
+
+          if [ -n "${{ inputs.version }}" ]; then
+            # Normalize dispatch input — strip an optional leading `v` so users
+            # can paste either `v0.9.2.5-rc.1` or `0.9.2.5-rc.1`.
+            tag_v="${{ inputs.version }}"
+            tag_v="${tag_v#v}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            tag_v="${GITHUB_REF_NAME#v}"
+          else
+            echo "No version source: not a tag push and no dispatch input." >&2
+            exit 1
+          fi
+
+          # Split tag into base (4-segment) and suffix (-rc.1 etc.)
+          base="${tag_v%%-*}"  # 0.9.2.5
+          suffix=""
+          case "$tag_v" in
+            *-*) suffix="-${tag_v#*-}" ;;  # -rc.1
+          esac
+
+          # Count dots — Helm chart version must be 3 segments.
+          # `wc -c` pads with spaces on BSD-coreutils; strip them.
+          segs=$(echo -n "$base" | tr -cd '.' | wc -c | tr -d ' ')
+          if [ "$segs" = "3" ]; then
+            # 0.9.2.5 → drop the 4th to get 0.9.2 for chart
+            chart_base=$(echo "$base" | cut -d. -f1-3)
+          elif [ "$segs" = "2" ]; then
+            chart_base="$base"
+          else
+            echo "Unsupported version shape: $tag_v" >&2
+            exit 1
+          fi
+          chart_v="${chart_base}${suffix}"
+
+          echo "app_version=$tag_v" >> "$GITHUB_OUTPUT"
+          echo "chart_version=$chart_v" >> "$GITHUB_OUTPUT"
+          if [ -n "$suffix" ]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved: app_version=$tag_v chart_version=$chart_v prerelease=${suffix:+true}${suffix:-false}"
+
+      - name: Stamp Chart.yaml version + appVersion (in-CI, not committed)
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.ver.outputs.chart_version }}/" \
+            "${{ env.CHART_PATH }}/Chart.yaml"
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.ver.outputs.app_version }}\"/" \
+            "${{ env.CHART_PATH }}/Chart.yaml"
+          echo "--- Chart.yaml after stamp ---"
+          grep -E '^(version|appVersion):' "${{ env.CHART_PATH }}/Chart.yaml"
+
+      - name: helm lint (sanity)
+        run: |
+          # Lint with a placeholder API key — schema requires either mcpApiKey
+          # or existingSecret to be non-empty; we're not publishing values.yaml
+          # so this is purely a schema-level check.
+          helm lint "${{ env.CHART_PATH }}" \
+            --set secrets.mcpApiKey=lint-only \
+            --set orchestrator.env.PUBLIC_BASE_URL=https://lint.example.com
+
+      - name: helm package
+        run: |
+          mkdir -p /tmp/chart-out
+          helm package "${{ env.CHART_PATH }}" -d /tmp/chart-out
+          ls -la /tmp/chart-out
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: helm push to OCI
+        run: |
+          chart_tgz=$(ls /tmp/chart-out/computer-use-server-*.tgz | head -n1)
+          # OCI_REPO lower-cases the owner — ghcr requires lowercase namespace.
+          repo="$(echo "${{ env.OCI_REPO }}" | tr '[:upper:]' '[:lower:]')"
+          helm push "$chart_tgz" "$repo"
+
+      - name: Summary
+        run: |
+          repo="$(echo "${{ env.OCI_REPO }}" | tr '[:upper:]' '[:lower:]')"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Helm chart published
+
+          - **Chart:** \`computer-use-server\`
+          - **Chart version:** \`${{ steps.ver.outputs.chart_version }}\` (SemVer, drives \`helm install --version\`)
+          - **App version (Docker tag):** \`${{ steps.ver.outputs.app_version }}\`
+          - **Pre-release:** \`${{ steps.ver.outputs.prerelease }}\`
+          - **OCI URL:** \`${repo}/computer-use-server:${{ steps.ver.outputs.chart_version }}\`
+
+          ### Install command
+
+          \`\`\`bash
+          helm install ocu ${repo}/computer-use-server \\
+            --version ${{ steps.ver.outputs.chart_version }} \\
+            -f my-values.yaml \\
+            --set image.tag=${{ steps.ver.outputs.app_version }} \\
+            --set workspaceImage.tag=${{ steps.ver.outputs.app_version }} \\
+            --set cleanup.image.tag=${{ steps.ver.outputs.app_version }}
+          \`\`\`
+
+          > Note: the Docker images are pushed by \`.github/workflows/build.yml\`
+          > in parallel — wait for that workflow to finish before running \`helm install\`.
+          EOF

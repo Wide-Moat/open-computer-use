@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Minimum-viable values for computer-use-server.
+#
+# The chart runs the inner Docker daemon under Kata Containers. Before installing:
+#   1. Install kata-deploy and confirm the RuntimeClass exists:
+#        kubectl get runtimeclass kata-qemu
+#   2. Allow privileged pods in the target namespace:
+#        kubectl label ns open-computer-use \
+#          pod-security.kubernetes.io/enforce=privileged --overwrite
+#   3. The cluster default StorageClass must provision Block volumes (the chart
+#      uses a Block-mode PVC for /var/lib/docker). Override
+#      persistence.varLibDocker.persistentVolume.storageClass if it does not.
+# Full runbook: docs/kata-runtime.md.
+#
+# Run:
+#   helm install ocu helm/computer-use-server \
+#     -n open-computer-use --create-namespace \
+#     -f examples/helm/standalone/values.yaml
+#
+# Replace the placeholders (change-me-*, *.example.com) before applying.
+
+secrets:
+  create: true
+  # `openssl rand -hex 32` is a fine source
+  mcpApiKey: "change-me-32-hex-chars"
+
+orchestrator:
+  env:
+    # MUST be the browser-reachable URL of the Ingress below (no trailing slash).
+    # The orchestrator bakes this into preview links it returns to chats.
+    PUBLIC_BASE_URL: "https://orchestrator.example.com"
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    # uncomment if using cert-manager
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: orchestrator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - orchestrator.example.com
+      secretName: orchestrator-tls

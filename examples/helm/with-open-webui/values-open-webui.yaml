@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Values for the upstream open-webui/open-webui chart, configured to talk to
+# our computer-use-server. Reference: https://github.com/open-webui/helm-charts
+#
+# Adjust to match the upstream chart's actual value paths — this file targets
+# the typical layout (image.repository, extraEnvVars, envFrom, persistence,
+# ingress). Re-check after major chart upgrades.
+
+# Use a custom Open WebUI image built from openwebui/Dockerfile in this repo
+# (it patches Open WebUI and bundles init.sh which seeds the Computer Use
+# Tool + Filter Valves on first boot). Skip this and use stock Open WebUI if
+# you'll configure Valves through the Admin UI by hand.
+image:
+  # Built from openwebui/Dockerfile by .github/workflows/build.yml as "<repo>-webui".
+  repository: ghcr.io/wide-moat/open-computer-use-webui
+  tag: "0.9.2.4"
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  class: nginx
+  host: webui.example.com
+  tls: true
+  existingSecret: webui-tls
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+# Use the bundled Postgres from our chart (ocu-postgresql.*.svc.cluster.local).
+# DATABASE_URL is built from the shared Secret.
+databaseUrl: "postgresql://openwebui:$(POSTGRES_PASSWORD)@pg-postgresql.open-computer-use.svc.cluster.local:5432/openwebui"
+
+# Disable the chart's bundled DBs since we use the one from computer-use-server.
+postgresql:
+  enabled: false
+ollama:
+  enabled: false
+pipelines:
+  enabled: false
+
+# Plain env vars that the openwebui/init.sh script and the patched code read.
+extraEnvVars:
+  - name: ORCHESTRATOR_URL
+    value: "http://ocu-computer-use-server.open-computer-use.svc.cluster.local:8081"
+  - name: BYPASS_EMBEDDING_AND_RETRIEVAL
+    value: "true"
+  - name: RAG_EMBEDDING_MODEL_AUTO_UPDATE
+    value: "false"
+  - name: CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES
+    value: "200"
+  - name: TOOL_RESULT_MAX_CHARS
+    value: "50000"
+  - name: TOOL_RESULT_PREVIEW_CHARS
+    value: "2000"
+  - name: ENABLE_OPENAI_API_SSL_VERIFY
+    value: "true"
+  - name: ADMIN_EMAIL
+    value: "admin@example.com"
+
+# MCP_API_KEY, POSTGRES_PASSWORD, WEBUI_SECRET_KEY, ANTHROPIC_AUTH_TOKEN come
+# from the shared Secret created out-of-band (see README).
+extraEnvFrom:
+  - secretRef:
+      name: ocu-shared

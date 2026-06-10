@@ -1,0 +1,17 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.26
+aiohttp>=3.9.0
+
+# MCP (Model Context Protocol) support
+# Pinned: mcp_tools.py and mcp_resources.py touch private API
+# (mcp._mcp_server class swap, mcp._resource_manager._resources mutation,
+# mcp._mcp_server.request_context.session). Re-test on bump:
+# tests/orchestrator/test_dynamic_instructions.py + test_mcp_resources.py.
+mcp==1.27.0
+docker>=7.0.0
+requests>=2.31.0
+pydantic>=2.0.0
+
+# Testing (Phase 1 — sub-agent multi-CLI cleanup)
+pytest>=8.0.0

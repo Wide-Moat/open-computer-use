@@ -1,0 +1,248 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "computer-use-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "computer-use-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.orchestrator.replicas }}
+  # Recreate — the orchestrator owns RWO PVCs and an inner dockerd that cannot
+  # safely overlap with itself during rollout.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "computer-use-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "computer-use-server.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if and .Values.secrets.create (not .Values.secrets.existingSecret) }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.dind.kataInit.enabled }}
+        checksum/dind-init: {{ include (print $.Template.BasePath "/configmap-dind-init.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "computer-use-server.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.orchestrator.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.orchestrator.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        # Socket the orchestrator and cleanup sidecar use to talk to inner dockerd,
+        # shared via an emptyDir.
+        - name: dind-socket
+          emptyDir: {}
+        # /var/lib/docker for the inner dockerd, mounted only into the dind
+        # container. Under Kata it is a Block-mode PVC (virtio-blk + ext4
+        # preserves xattrs); under the runc fallback it is an emptyDir.
+        - name: var-lib-docker
+          {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
+          persistentVolumeClaim:
+            {{- if .Values.persistence.varLibDocker.persistentVolume.existingClaim }}
+            claimName: {{ .Values.persistence.varLibDocker.persistentVolume.existingClaim }}
+            {{- else }}
+            claimName: {{ include "computer-use-server.fullname" . }}-var-lib-docker
+            {{- end }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.persistence.varLibDocker.sizeLimit }}
+          {{- end }}
+        {{- if .Values.dind.kataInit.enabled }}
+        # Kata-guest init wrapper script — see configmap-dind-init.yaml.
+        - name: dind-init
+          configMap:
+            name: {{ include "computer-use-server.fullname" . }}-dind-init
+            defaultMode: 0755
+        {{- end }}
+        # PVCs follow the same enabled / existingClaim / emptyDir-fallback pattern
+        # so disabling any volume in values.yaml does not produce an unschedulable Pod.
+        - name: user-data
+          {{- if .Values.persistence.userData.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.userData.existingClaim }}
+          {{- else if .Values.persistence.userData.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "computer-use-server.fullname" . }}-user-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: data
+          {{- if .Values.persistence.data.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.data.existingClaim }}
+          {{- else if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "computer-use-server.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: skills-cache
+          {{- if .Values.persistence.skillsCache.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.skillsCache.existingClaim }}
+          {{- else if .Values.persistence.skillsCache.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "computer-use-server.fullname" . }}-skills-cache
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      containers:
+        # ---------------------------------------------------------------------
+        # 1) Orchestrator (FastAPI app)
+        # ---------------------------------------------------------------------
+        - name: orchestrator
+          image: {{ include "computer-use-server.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: mcp
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "computer-use-server.fullname" . }}
+            - secretRef:
+                name: {{ include "computer-use-server.secretName" . }}
+            {{- with .Values.orchestrator.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.orchestrator.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: dind-socket
+              mountPath: /var/run
+            - name: user-data
+              mountPath: /tmp/computer-use-data
+            - name: data
+              mountPath: /data
+            - name: skills-cache
+              mountPath: /data/skills-cache
+          {{- if .Values.orchestrator.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: mcp
+            initialDelaySeconds: {{ .Values.orchestrator.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.orchestrator.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.orchestrator.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.orchestrator.probes.readiness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.orchestrator.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: mcp
+            initialDelaySeconds: {{ .Values.orchestrator.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.orchestrator.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.orchestrator.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.orchestrator.probes.liveness.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+          {{- with .Values.orchestrator.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        # ---------------------------------------------------------------------
+        # 2) Inner Docker daemon (DinD)
+        # ---------------------------------------------------------------------
+        - name: dind
+          image: "{{ .Values.dind.image.repository }}:{{ .Values.dind.image.tag }}"
+          imagePullPolicy: {{ .Values.dind.image.pullPolicy }}
+          {{- if .Values.dind.kataInit.enabled }}
+          # Kata path: run the chart-managed init wrapper, which prepares the
+          # guest (fuse-overlayfs, /dev/fuse, Block PVC, cgroup shim) then
+          # exec's dockerd with the args below. See configmap-dind-init.yaml.
+          command:
+            - /usr/local/bin/dind-entrypoint.sh
+          {{- else }}
+          # Default path: the docker:dind entrypoint runs dockerd directly.
+          command:
+            - dockerd
+          {{- end }}
+          # Pin the socket location so the orchestrator (and the cleanup
+          # sidecar) can talk to it over the shared emptyDir at
+          # /var/run/docker.sock.
+          args:
+            - --host=unix:///var/run/docker.sock
+            - --storage-driver={{ .Values.dind.storageDriver }}
+          securityContext:
+            privileged: {{ eq (include "computer-use-server.dindPrivileged" .) "true" }}
+          volumeMounts:
+            - name: dind-socket
+              mountPath: /var/run
+            {{- if .Values.dind.kataInit.enabled }}
+            - name: dind-init
+              mountPath: /usr/local/bin/dind-entrypoint.sh
+              subPath: dind-entrypoint.sh
+            {{- end }}
+            {{- if ne (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
+            - name: var-lib-docker
+              mountPath: /var/lib/docker
+            {{- end }}
+            # The inner dockerd needs access to /tmp/computer-use-data so the
+            # bind mounts it creates for workspace containers resolve to real
+            # files (same path inside the pod and inside spawned containers).
+            - name: user-data
+              mountPath: /tmp/computer-use-data
+          {{- if eq (include "computer-use-server.varLibDockerIsPVC" .) "true" }}
+          # Block-mode PVC — exposed as a raw device; the init wrapper formats
+          # it ext4 and mounts it at /var/lib/docker inside the guest.
+          volumeDevices:
+            - name: var-lib-docker
+              devicePath: /dev/var-lib-docker
+          {{- end }}
+          resources:
+            {{- toYaml .Values.dind.resources | nindent 12 }}
+        {{- if .Values.cleanup.enabled }}
+        # ---------------------------------------------------------------------
+        # 3) Cleanup sidecar — runs the same cron schedules as docker-compose.
+        # ---------------------------------------------------------------------
+        - name: cleanup
+          image: {{ include "computer-use-server.cleanupImage" . | quote }}
+          imagePullPolicy: {{ .Values.cleanup.image.pullPolicy }}
+          env:
+            - name: CONTAINER_MAX_AGE_HOURS
+              value: {{ .Values.cleanup.containerMaxAgeHours | quote }}
+            - name: DATA_MAX_AGE_DAYS
+              value: {{ .Values.cleanup.dataMaxAgeDays | quote }}
+            - name: DATA_DIR
+              value: /tmp/computer-use-data
+          volumeMounts:
+            # Share the dockerd socket via the same emptyDir.
+            - name: dind-socket
+              mountPath: /var/run
+            - name: user-data
+              mountPath: /tmp/computer-use-data
+          resources:
+            {{- toYaml .Values.cleanup.resources | nindent 12 }}
+        {{- end }}
