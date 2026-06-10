@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 #
 # Default values for computer-use-server.
@@ -136,16 +136,6 @@ dind:
   # If you run the insecure runc fallback, set this to overlay2.
   storageDriver: fuse-overlayfs
 
-  # -- Extra flags appended verbatim to the dockerd command line. Useful for
-  # tuning the inner daemon without forking the chart (registry mirrors, MTU,
-  # log driver, ...). Each item is rendered as a separate argv element.
-  # Do NOT repeat --host or --storage-driver here — both are pinned by the
-  # chart; a duplicate makes dockerd refuse to start. The values schema
-  # rejects them at install time.
-  extraArgs: []
-  #   - --registry-mirror=https://mirror.example.com
-  #   - --mtu=1450
-
   # -- Explicit override of whether the dind container runs privileged.
   # true (default) => REQUIRED for Kata: dockerd needs CAP_NET_ADMIN/CAP_NET_RAW
   #   to build the iptables NAT chain, otherwise it fails with
@@ -241,10 +231,6 @@ persistence:
     # breaks e.g. GStreamer binaries. A Block PVC arrives in the guest as a
     # virtio-blk device; dind.kataInit formats it ext4, so xattrs are preserved.
     # Set enabled=false only for the runc fallback. See docs/kata-runtime.md.
-    #
-    # WARNING: on first boot dind.kataInit formats the underlying block device
-    # as ext4 (skipped only if blkid already detects a filesystem). Do NOT point
-    # existingClaim at a Block PVC that holds unrelated data — it will be wiped.
     persistentVolume:
       enabled: true
       size: 50Gi

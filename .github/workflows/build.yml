@@ -64,12 +64,8 @@ jobs:
           load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Named scope so the integration job's `cache-from: scope=sandbox`
-          # actually hits this layer cache. Default (unscoped) gha cache uses a
-          # per-job key, so integration never found it and rebuilt the 8GB
-          # sandbox image from scratch every run.
-          cache-from: type=gha,scope=sandbox
-          cache-to: type=gha,mode=max,scope=sandbox
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Pick image tag for smoke tests
         id: img
@@ -147,10 +143,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Shared scope with the smoke + integration server builds so they
-          # reuse these layers instead of rebuilding (see scope=server-smoke).
-          cache-from: type=gha,scope=server-smoke
-          cache-to: type=gha,mode=max,scope=server-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   build-cleanup:
     name: Build Cleanup Image
@@ -355,11 +349,8 @@ jobs:
           push: false
           load: true
           tags: open-computer-use:test
-          # Read-only: build-sandbox (this job's dependency) owns writing the
-          # `sandbox` scope. With matching context/platform the layers are
-          # identical, so this is a full cache hit and no rebuild. No cache-to —
-          # re-exporting the 8GB layer cache here would just waste upload time.
           cache-from: type=gha,scope=sandbox
+          cache-to: type=gha,mode=max,scope=sandbox-integration
 
       - name: Build server image (local tag)
         uses: docker/build-push-action@v7
@@ -368,8 +359,8 @@ jobs:
           push: false
           load: true
           tags: open-computer-use-server:test
-          # Read-only: build-server / smoke own the `server-smoke` scope.
           cache-from: type=gha,scope=server-smoke
+          cache-to: type=gha,mode=max,scope=server-integration
 
       - uses: actions/setup-python@v5
         with:

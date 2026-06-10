@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 # Full cleanup — runs daily at 3:00 AM
 # Stops old containers, removes stopped ones, cleans volumes and stale data.

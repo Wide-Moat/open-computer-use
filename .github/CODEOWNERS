@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# CODEOWNERS — review routing for the next/v1 architecture work.
+#
+# Per CLAUDE.md "Testing & QA discipline → Code-review discipline":
+#   "CODEOWNERS routes every PR to the right reviewer."
+#
+# Order matters: the LAST matching pattern wins for each file. Place
+# narrower patterns lower.
+#
+# Reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ---------------------------------------------------------------------------
+# Default fallback — every file routes here unless overridden below.
+# ---------------------------------------------------------------------------
+*                                       @Wide-Moat/maintainers
+
+# ---------------------------------------------------------------------------
+# Architecture work on next/v1 — bank-readiness territory.
+# ---------------------------------------------------------------------------
+
+# The Manifesto and its expanded sections — the load-bearing principles.
+/docs/architecture/MANIFESTO.md         @Wide-Moat/architects
+/docs/architecture/manifesto/           @Wide-Moat/architects
+
+# ADRs — both the architects team and the original author (set per-ADR via
+# the `owner:` front-matter; GitHub doesn't read YAML, so we route the dir
+# to architects and rely on PROCESS.md to ensure the ADR author is also
+# requested as reviewer).
+/docs/architecture/adr/                 @Wide-Moat/architects
+
+# Component specifications — architects review structurally, the component's
+# named owner (per spec front-matter) is added per-PR by PROCESS.md.
+/docs/architecture/components/          @Wide-Moat/architects
+
+# Compliance mappings — security team's domain.
+/docs/architecture/compliance/          @Wide-Moat/security
+
+# Diagrams (Mermaid sources) — architects.
+/docs/architecture/diagrams/            @Wide-Moat/architects
+
+# Glossary and PROCESS — architects (low traffic, high consistency cost).
+/docs/architecture/glossary.md          @Wide-Moat/architects
+/docs/architecture/PROCESS.md           @Wide-Moat/architects
+/docs/architecture/README.md            @Wide-Moat/architects
+
+# ---------------------------------------------------------------------------
+# CI, security, and supply-chain plumbing — security team owns the gates.
+# ---------------------------------------------------------------------------
+/.github/workflows/security.yml         @Wide-Moat/security
+/.github/workflows/supply-chain.yml     @Wide-Moat/security
+/.github/workflows/docs-lint.yml        @Wide-Moat/architects
+/.github/security-exceptions.yml        @Wide-Moat/security
+/.github/CODEOWNERS                     @Wide-Moat/security @Wide-Moat/architects
+/.vale/                                 @Wide-Moat/architects
+/.markdownlint.yaml                     @Wide-Moat/architects
+/.coderabbit.yaml                       @Wide-Moat/architects
+/lychee.toml                            @Wide-Moat/architects
+/scripts/docs-lint/                     @Wide-Moat/architects
+
+# ---------------------------------------------------------------------------
+# Licensing and project-instructions surface — needs careful change-control.
+# ---------------------------------------------------------------------------
+/LICENSE                                @Wide-Moat/maintainers @Wide-Moat/security
+/NOTICE                                 @Wide-Moat/maintainers @Wide-Moat/security
+/CLAUDE.md                              @Wide-Moat/architects @Wide-Moat/maintainers
+/THIRD-PARTY-LICENSES.md                @Wide-Moat/security
+
+# ---------------------------------------------------------------------------
+# High-risk runtime + deployment surface — security review mandatory.
+# ---------------------------------------------------------------------------
+
+# Sandbox base image; Docker socket; agent runtime — single highest-risk
+# file in the repo.
+/Dockerfile                             @Wide-Moat/security @Wide-Moat/maintainers
+
+# Deployment recipes — anyone landing here is shipping infra changes.
+/docker-compose.yml                     @Wide-Moat/maintainers @Wide-Moat/security
+/docker-compose.webui.yml               @Wide-Moat/maintainers @Wide-Moat/security
+/docker-compose.test.yml                @Wide-Moat/maintainers @Wide-Moat/security
+
+# Supply-chain entry points — dependency churn is a security event.
+/requirements.txt                       @Wide-Moat/security @Wide-Moat/maintainers
+/package.json                           @Wide-Moat/security @Wide-Moat/maintainers
+/package-lock.json                      @Wide-Moat/security @Wide-Moat/maintainers
+/server.json                            @Wide-Moat/security @Wide-Moat/maintainers
+
+# Helm chart — bank deployment substrate, scanned by checkov.
+/helm/                                  @Wide-Moat/maintainers @Wide-Moat/security
+
+# Orchestrator components — they hold the Docker socket.
+/computer-use-server/                   @Wide-Moat/maintainers
+/openwebui/                             @Wide-Moat/maintainers
+/settings-wrapper/                      @Wide-Moat/maintainers
+/skills/                                @Wide-Moat/maintainers
+/cron/                                  @Wide-Moat/maintainers
+
+# Shell scripts outside docs-lint — privileged execution paths.
+/scripts/                               @Wide-Moat/maintainers
+/tests/                                 @Wide-Moat/maintainers
+
+# All build/release/CI workflows — same blast radius as security.yml.
+/.github/workflows/build.yml            @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/release.yml          @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/release-chart.yml    @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/helm.yml             @Wide-Moat/security @Wide-Moat/maintainers
+/.github/workflows/codeql.yml           @Wide-Moat/security
+
+# Dependency-bump automation — security + maintainers. Dependency bumps
+# break lockfiles, not just SBOMs, so build needs to sign off too.
+/.github/dependabot.yml                 @Wide-Moat/security @Wide-Moat/maintainers
+
+# Issue + advisory surface.
+/.github/ISSUE_TEMPLATE/                @Wide-Moat/maintainers @Wide-Moat/architects
+# Dual-team on SECURITY.md so an out-of-office on one side does not
+# block a security policy edit.
+/SECURITY.md                            @Wide-Moat/security @Wide-Moat/maintainers
+
+# Secret-scanner allowlist — every edit is a potential gate bypass.
+# Dual-team for the same out-of-office reason.
+/.gitleaks.toml                         @Wide-Moat/security @Wide-Moat/maintainers
+
+# Release log.
+/CHANGELOG.md                           @Wide-Moat/maintainers

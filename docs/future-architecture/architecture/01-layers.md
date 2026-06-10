@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 01 — The 4-Layer Model
 
-> Target architecture, adapted from [sandboxd](../../../sandboxd/docs/architecture.md).
+> Target architecture, adapted from internal design notes.
 > Same model. Same separation of concerns. Our concrete component names.
 
 ## Diagram
@@ -91,16 +91,14 @@
 
 ## Reference architectures we draw from
 
-- **Anthropic `process_api`** ([`research/19`](../research/19-anthropic-process-api.md), source under [`sandboxd/anthropic/process_api_re/`](../../../sandboxd/anthropic/process_api_re/)) — the closest precedent for our Rust L1. Three-transport WebSocket, dual-port API, capabilities negotiation, Ed25519 JWT bound to `container_name`. Drives [ADR-0002](../adr/0002-guest-agent-language-go.md).
 - **AWS Lambda** ([`references.md`](../references.md) Lambda framing, [ADR-0010](../adr/0010-lambda-as-inspiration-not-runtime.md)) — pattern source for Firecracker tiering, two-tier control split, and snapshot-pool cold-start economics. **Inspiration, not deployment substrate.**
 - **E2B `envd`** ([`research/02`](../research/02-e2b-infra.md)) — Go-language L1 reference and production-shape validation.
 - **Coder** ([`research/03`](../research/03-coder.md)) — workspace-proxy and multi-region patterns for Phase 10.
-- **Anthropic local sandbox-runtime** ([`research/13`](../research/13-anthropic-sandbox-runtime.md)) — bubblewrap/seatbelt patterns that inform secondary defense inside microVMs at Phase 9.
+- **bubblewrap / seatbelt sandboxing** (industry-observed) — secondary-defense patterns inside the guest that inform hardening within microVMs at Phase 9.
 
 ## Source
 
-- [`sandboxd/docs/architecture.md`](../../../sandboxd/docs/architecture.md) — the layered model is taken from there.
-- [`sandboxd/docs/glossary.md`](../../../sandboxd/docs/glossary.md) — shared vocabulary.
+- Internal design notes — the layered model and shared vocabulary.
 
 ## See also
 

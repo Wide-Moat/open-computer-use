@@ -15,7 +15,7 @@ set -euo pipefail
 
 # Skip vendored / minified / generated paths and the test scripts that
 # intentionally contain non-ASCII patterns.
-SKIP_PATTERN='^(references/|sandboxd/|\.planning/|.*\.min\.js$|.*/locale\.js$|tests/test-no-cyrillic\.sh$)'
+SKIP_PATTERN='^(\.planning/|.*\.min\.js$|.*/locale\.js$|tests/test-no-cyrillic\.sh$)'
 
 # Collect staged files (added / copied / modified / renamed).
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)

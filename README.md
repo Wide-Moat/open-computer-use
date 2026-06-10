@@ -3,7 +3,7 @@
 [![Build](https://github.com/Wide-Moat/open-computer-use/actions/workflows/build.yml/badge.svg)](https://github.com/Wide-Moat/open-computer-use/actions/workflows/build.yml)
 [![CodeQL](https://github.com/Wide-Moat/open-computer-use/actions/workflows/codeql.yml/badge.svg)](https://github.com/Wide-Moat/open-computer-use/actions/workflows/codeql.yml)
 [![Release](https://img.shields.io/github/v/release/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/releases)
-[![License](https://img.shields.io/badge/license-BSL%201.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/stargazers)
 [![Issues](https://img.shields.io/github/issues/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -507,7 +507,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 This project uses a multi-license model:
 
-- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Business Source License 1.1](LICENSE) — free for production use, modification, and self-hosting. Converts to [Apache 2.0](LICENSE-APACHE) on the Change Date. Offering as a managed/hosted service requires a [commercial agreement](https://t.me/yambrcom).
+- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0). Free to use, modify, fork, redistribute, and self-host internally. Each release automatically converts to [Apache 2.0](LICENSE-APACHE) two years after publication. Offering a hosted or embedded service that competes with our paid version(s) requires a [commercial agreement](https://t.me/yambrcom).
 - **Our skills** (`skills/public/describe-image`, `skills/public/sub-agent`): [MIT](LICENSE-MIT)
 - **Third-party skills**: see individual LICENSE.txt files or original sources.
 

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """Regression test for Dockerfile codex JSON→TOML converter (WR-01).
 
@@ -125,7 +125,7 @@ class TestBuildTomlFromCodexJson(unittest.TestCase):
     def test_empty_providers_produces_empty_toml(self):
         """Canonical codex.json with empty model_providers → empty TOML (no error)."""
         result = _build_toml_from_codex_json({
-            "_spdx": "BUSL-1.1",
+            "_spdx": "FSL-1.1-Apache-2.0",
             "_copyright": "...",
             "model_providers": {},
             "default_model": None,
@@ -135,7 +135,7 @@ class TestBuildTomlFromCodexJson(unittest.TestCase):
     def test_spdx_keys_stripped(self):
         """_spdx/_copyright/_doc keys are stripped before conversion."""
         parsed = self._parse({
-            "_spdx": "BUSL-1.1",
+            "_spdx": "FSL-1.1-Apache-2.0",
             "_copyright": "test",
             "_doc": "docs",
             "model_providers": {},

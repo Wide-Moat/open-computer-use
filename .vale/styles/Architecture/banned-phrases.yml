@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Banned phrases: AI-slop and corporate-documentation tells.
+# Per CLAUDE.md "Documentation discipline".
+
+extends: existence
+message: "Banned phrase: '%s'. Cut the preamble; state the fact."
+level: error
+ignorecase: true
+raw:
+  - '\bIt(?:''s|\s+is) worth noting that\b'
+  - '\bIt(?:''s|\s+is) important to (?:note|consider|remember)\b'
+  - '\bIn this (?:section|document|chapter)(?:[, ]+we will|[, ]+we shall)\b'
+  - '\bThis (?:document|section|guide) will (?:cover|discuss|explain|describe)\b'
+  - '\bGoing forward\b'
+  - '\bMoving forward\b'
+  - '\bPlease (?:note|ensure|refer)\b'
+  - '\bKindly\b'
+  - '\bHappy coding\b'
+  - '\bWe hope this helps\b'
+  - '\bIn today''s fast-paced\b'
+  - '\bdelve into\b'

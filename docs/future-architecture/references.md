@@ -1,10 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # External References
 
 > Catalog of open-source projects we either build on, learn from, or explicitly reject.
-> Source: `sandboxd/docs/references.md` (verbatim URLs preserved) plus our own additions.
 >
 > Each entry carries: **License**, **Language**, **Role in our stack**, optional **To research** tag.
 > Entries tagged `to-research` are unresolved and must be evaluated during the relevant phase's research pass (see [`roadmap.md`](./roadmap.md) — per-phase research-then-sign-off cadence).
@@ -12,14 +11,6 @@
 ---
 
 ## Layer 1 — Guest agents (sandbox PID 1)
-
-### `process_api` (Anthropic Claude.ai sandbox pattern reference)
-- **URL:** internal to Anthropic; not publicly released. Our pattern notes live under [`sandboxd/anthropic/`](../../sandboxd/anthropic/).
-- **License:** our notes are BUSL-1.1; the patterns described are observed behaviour of a closed system.
-- **Language:** Rust (Tokio, hyper, tokio-tungstenite, tokio-vsock, ring, jsonwebtoken).
-- **Role:** **The closest documented reference for our Phase 7 L1 design.** Static-PIE Rust binary reported to run as PID 1 in Firecracker (`--firecracker-init`) or as a sidecar in gVisor/runc. WebSocket-over-three-transports (vsock / UDS / TCP), Ed25519 JWT bound to `container_name`, capabilities negotiation (V1/V2 + zstd + traces), dual-port API (data-plane WS + control-plane HTTP for `/mount_root` / `/shutdown` / `/fs_freeze`).
-- **Notes:** Drives ADR-0002 (Rust for L1). Full pattern catalogue in [`research/19-anthropic-process-api.md`](./research/19-anthropic-process-api.md). The Go session agent that runs above it (`environment-runner`) is documented separately in [`research/21-environment-runner-go.md`](./research/21-environment-runner-go.md) but is **inspiration-only** — out of scope.
-- **To research:** Phase 7, Phase 10.
 
 ### e2b-dev/infra — `envd`
 - **URL:** https://github.com/e2b-dev/infra/tree/main/packages/envd
@@ -147,7 +138,7 @@
 - **URL:** https://github.com/anthropic-experimental/sandbox-runtime
 - **License:** Apache 2.0 (research preview)
 - **Language:** Rust + bubblewrap (Linux) / seatbelt (macOS)
-- **Role:** **Not** `process_api`. This is local Claude Code sandboxing. Useful patterns: FS allowlist, network restriction via seccomp BPF, macOS seatbelt profiles.
+- **Role:** Local-sandboxing reference. Useful patterns: FS allowlist, network restriction via seccomp BPF, macOS seatbelt profiles.
 
 ---
 
@@ -171,19 +162,6 @@
 - **fantoccini** (Rust, MIT/Apache 2.0)
 
 For Computer Use we want direct CDP (not WebDriver) — fine-grained event injection + screencast. **To research (Phase 7):** Rust CDP options (`chromiumoxide`) vs raw CDP WebSocket passthrough in the Rust agent (per [ADR-0002](./adr/0002-guest-agent-language-go.md)).
-
----
-
-## Reverse-engineering / research notes
-
-### AprilNEA/reverse-engineering-claude-code-antspace
-- **URL:** https://github.com/AprilNEA/reverse-engineering-claude-code-antspace
-- **License:** MIT (analysis); binaries are Anthropic's
-- **Role:** Reference for wire protocol, snapshot architecture, inferred Go monorepo structure of Claude Code Web. Compare with our MCP gateway design.
-
-### Michael Livshits blog — "Reverse-engineering Claude's sandbox"
-- **URL:** https://michaellivs.com/blog/sandboxed-execution-environment/
-- **Role:** Clearest published explanation of the architectural pattern. Pair with sandboxd's `architecture.md`. Required reading before Phase 6 (Go control plane).
 
 ---
 
@@ -222,7 +200,7 @@ For Computer Use we want direct CDP (not WebDriver) — fine-grained event injec
 
 ## Lambda framing
 
-AWS Lambda recurs in this document and in the research digests ([`research/05`](./research/05-firecracker.md), [`research/16`](./research/16-anthropic-production-sandbox-observed.md), [`research/19`](./research/19-anthropic-process-api.md), [`research/20`](./research/20-snapstart-hot-swap.md)) as the design lineage behind Firecracker, behind `process_api`'s two-tier control split, and behind the snapshot-pool cold-start pattern we evaluate at Phase 10.
+AWS Lambda recurs in this document and in the research digests (see [`research/05`](./research/05-firecracker.md)) as the design lineage behind Firecracker, behind the two-tier control split, and behind the snapshot-pool cold-start pattern we evaluate at Phase 10.
 
 **We are not deploying on Lambda or Fargate.** Open Computer Use targets 100–10K concurrent long-lived sandboxes on Kubernetes + Kata, not 10M serverless invocations. Sessions are multi-hour and stateful; Lambda's 15-minute cap and request-shaped billing fight every assumption.
 

@@ -1,0 +1,85 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Semgrep exclusion list for legacy main-line code on next/v1.
+#
+# Why this file exists.
+# ---------------------
+# next/v1 carries forward the main-line PoC code (Dockerfile, FastAPI
+# server, Open WebUI patches, embedded skills) so the branch stays
+# buildable while the enterprise architecture is designed. That legacy
+# code does not pass the Layer 0 SAST gate — it has root-running
+# containers, wildcard CORS, md5 cache keys, stdlib XML parsing, etc.
+# None of it is shipped in the v1 GA architecture: every component is
+# rewritten from scratch under docs/architecture/ in Layer 6+, and each
+# new component PR removes its path from this file in the same commit.
+#
+# Policy: docs/architecture/adr/0001-layer-0-gate-legacy-exclusion.md
+# Process: docs/architecture/PROCESS.md ("Adding a component" step 4)
+#
+# Rules for editing this file.
+# ----------------------------
+# 1. Adding a path requires an ADR amendment. Do not silently add
+#    exclusions to make a finding go away.
+# 2. Removing a path is mandatory in the same PR that introduces a
+#    new-architecture component covering that area. CI must pass
+#    without the exclusion before the PR can merge.
+# 3. New code (anything under docs/architecture/ proper, .github/,
+#    helm/ once rewritten, future components/) is NEVER excluded.
+
+# --- Legacy main-line code ---------------------------------------------------
+
+# Sandbox image — root-running, sudo usage, dynamic urllib. Replaced by the
+# Sandbox Runtime component (Layer 6+, Kata + Cloud Hypervisor per BoM #5).
+Dockerfile
+
+# MCP orchestrator FastAPI service — wildcard CORS, md5 keys, stdlib XML.
+# Replaced by the Control Plane + Session Lifecycle components.
+computer-use-server/
+
+# Open WebUI integration — runs as root in container, no USER directive.
+# Replaced by an external IdP-driven UI integration (not bundled in v1 GA).
+openwebui/
+
+# Settings sidecar — root container. Folded into Control Plane in Layer 6+.
+settings-wrapper/
+
+# Cleanup cron container — root, sudo. Folded into k8s-native lifecycle
+# (Kyverno + controller) in Layer 6+.
+cron/
+cleanup/
+
+# Bundled-skills PoC code — defused-xml gaps, file-perms issues. v1 ships
+# zero default skills (per manifesto/04-non-goals.md); SkillProvider stays
+# TBD. These directories will be deleted, not refactored. Three specific
+# `skills/public/` subdirectories trip SAST today; the whole
+# `skills/examples/` tree is excluded because every example carries the
+# same upstream patterns. All three subtrees die together when v1 GA
+# locks in "zero bundled skills".
+skills/public/pptx/
+skills/public/docx/
+skills/public/webapp-testing/
+skills/examples/
+
+# Main-line Helm chart release workflow — pre-existing run-shell-injection
+# on its `gh release` step. Replaced by the Layer 6+ release workflow once
+# the supply-chain.yml pattern is extended to chart artifacts.
+.github/workflows/release-chart.yml
+
+# Main-line test code — stdlib XML parsing in PoC test fixtures. New
+# components ship their own tests under each component's directory.
+# The pattern is root-anchored (`/tests/`, not `tests/`) so it matches
+# only the top-level legacy tree, not nested `tests/` directories that
+# future components will own.
+/tests/
+
+# --- Not legacy, just out of scope for SAST ---------------------------------
+
+vendor/
+
+# In-progress architecture buffer. Prose, not source. Migrated to
+# docs/architecture/ over time.
+docs/future-architecture/
+
+# Planning cache, never executed.
+.planning/

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """ADAPT-02 byte-compat: ClaudeAdapter.build_argv must produce argv
 byte-identical to the v0.9.2.0 production claude_command (argv layer).

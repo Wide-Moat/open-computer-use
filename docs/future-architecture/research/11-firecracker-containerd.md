@@ -1,9 +1,9 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 11 — firecracker-containerd (FC via containerd + COW snapshotter)
 
-> Source: [`references/firecracker-containerd/`](../../../references/firecracker-containerd/). AWS's containerd integration for Firecracker.
+> Source: [firecracker-microvm/firecracker-containerd](https://github.com/firecracker-microvm/firecracker-containerd). AWS's containerd integration for Firecracker.
 > Relevant for [Phase 9](../roadmap.md) (kata-fc alternative path) and [Phase 10](../roadmap.md#phase-10--snapshotrestore--multi-region) (COW snapshotting for fast cold-start / warm pool).
 
 ## 1. Demux snapshotter — out-of-VM proxy ⭐

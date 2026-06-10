@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 # TEST-05: openwebui/init.sh must byte-equal the v0.9.2.0 baseline.
 #

@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 # Test: No Cyrillic characters in repository source/docs.
 #
@@ -31,7 +31,7 @@ CYR = re.compile(r'[Ѐ-ӿ]')
 SKIP_DIR_PREFIXES = (
     '.git/', '.venv/', '.venv-itest/', '.venv-review/',
     'node_modules/', '__pycache__/', '.claude/', '.planning/',
-    'references/', 'sandboxd/', 'dist/', 'build/',
+    'dist/', 'build/',
 )
 SKIP_FILES = {
     'tests/test-no-cyrillic.sh',

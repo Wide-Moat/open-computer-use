@@ -1,5 +1,5 @@
 {
-  "_spdx": "BUSL-1.1",
+  "_spdx": "FSL-1.1-Apache-2.0",
   "_copyright": "Copyright (c) 2025 Open Computer Use Contributors",
   "_doc": "Canonical default opencode config consumed when OPENCODE_CONFIG_EXTRA env is unset.",
   "$schema": "https://opencode.ai/config.json",

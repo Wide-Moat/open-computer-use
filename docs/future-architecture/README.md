@@ -1,11 +1,11 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # Future Architecture
 
 This directory is the **single source of truth for the target architecture and migration roadmap** of Open Computer Use. It supersedes the previous `docs/requirements/` (renamed to here on 2026-05-17; see [ADR-0007](./adr/0007-superseded-by-future-architecture.md)).
 
-The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4-layer design — and adapted to our concrete codebase, constraints, and team preferences.
+The model is an internal runtime-agnostic, 4-layer design, adapted to our concrete codebase, constraints, and team preferences.
 
 ## TL;DR
 
@@ -13,8 +13,8 @@ The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4
 - **11-phase roadmap** (0, 0.5, 1–10). Each phase strips one specific blocker. **No phase breaks the Docker Compose PoC** — that's an [explicit non-blocking invariant](./roadmap.md#non-blocking-invariants).
 - **Order reshuffle** (post-review): egress proxy (now Phase 8) ships **before** Kata untrusted tier (now Phase 9) — otherwise "untrusted" is a lie.
 - **Locked decisions (ADRs):**
-  - **Languages:** Go control plane ([ADR-0001](./adr/0001-control-plane-language-go.md)); **Rust guest agent** ([ADR-0002](./adr/0002-guest-agent-language-go.md), rewritten 2026-05-18 after [`research/19`](./research/19-anthropic-process-api.md) study; matches the `process_api` stack).
-  - **Internal transport:** connect-go on L4↔L3; L3↔L1 re-evaluated at Phase 7 (connect-rust vs `process_api`-style WS-frame protocol) per [ADR-0008](./adr/0008-internal-grpc-external-rest-mcp.md).
+  - **Languages:** Go control plane ([ADR-0001](./adr/0001-control-plane-language-go.md)); **Rust guest agent** ([ADR-0002](./adr/0002-guest-agent-language-go.md), rewritten 2026-05-18; matches the microVM-agent runtime stack).
+  - **Internal transport:** connect-go on L4↔L3; L3↔L1 re-evaluated at Phase 7 (connect-rust vs a WS-frame protocol) per [ADR-0008](./adr/0008-internal-grpc-external-rest-mcp.md).
   - **External protocols:** MCP user-facing ([ADR-0005](./adr/0005-mcp-as-control-plane-gateway.md)); REST for admin; CDP/ttyd is WebSocket passthrough; optional dialect adapters per [ADR-0009](./adr/0009-external-protocol-dialects.md).
   - **Deployment:** Docker-first then k8s ([ADR-0003](./adr/0003-docker-poc-first-then-k8s.md)); pluggable runtime via `RuntimeClass` ([ADR-0004](./adr/0004-pluggable-runtime-via-runtimeclass.md)).
   - **Dependencies:** no AGPL/BSL ([ADR-0006](./adr/0006-no-agpl-no-bsl-dependencies.md)).
@@ -22,13 +22,11 @@ The model is taken from [`sandboxd/`](../../sandboxd/) — a runtime-agnostic, 4
 
 ## Reference architectures we draw from
 
-- **Anthropic `process_api`** ([`research/19`](./research/19-anthropic-process-api.md), source under [`sandboxd/anthropic/process_api_re/`](../../sandboxd/anthropic/process_api_re/)) — closest precedent for Phase 7 L1.
 - **AWS Lambda** ([`references.md`](./references.md) Lambda framing, [ADR-0010](./adr/0010-lambda-as-inspiration-not-runtime.md)) — pattern source for Firecracker tiering and snapshot-pool cold-start economics. Inspiration only.
-- **Snapstart hot-swap** ([`research/20`](./research/20-snapstart-hot-swap.md)) — Phase 10 cold-start design.
+- **Snapstart-style hot-swap** (internal design note) — Phase 10 cold-start design.
 - **E2B `envd`** ([`research/02`](./research/02-e2b-infra.md)) — production-shape L1 comparison.
 - **Coder** ([`research/03`](./research/03-coder.md)) — multi-region workspace-proxy pattern.
-- **Anthropic `environment-runner`** ([`research/21`](./research/21-environment-runner-go.md)) — inspiration-only Go session agent; not on roadmap.
-- **Per-phase research-then-sign-off cadence.** Every phase begins with a research pass against the cloned reference repos (under `/references/`, git-ignored) **and** the matching digest in [`research/`](./research/), produces `phase-N-research.md`, and requires owner approval before code starts. **Mandatory pre-read:** the matching phase row in [`antipatterns.md`](./antipatterns.md) — 36 antipatterns mapped to phases, each with our locked decision.
+- **Per-phase research-then-sign-off cadence.** Every phase begins with a research pass against the public reference repositories listed under "Further reading" **and** the matching digest in [`research/`](./research/), produces `phase-N-research.md`, and requires owner approval before code starts. **Mandatory pre-read:** the matching phase row in [`antipatterns.md`](./antipatterns.md) — 36 antipatterns mapped to phases, each with our locked decision.
 
 ## Document map
 
@@ -83,29 +81,30 @@ docs/future-architecture/
     ├── 10-sysbox.md                   (Phase 5)
     ├── 11-firecracker-containerd.md   (Phase 9, 10)
     ├── 12-docker-socket-proxy.md      (Phase 2, 8)
-    ├── 13-anthropic-sandbox-runtime.md (Phase 7, 9)
     ├── 14-e2b-desktop-and-surf.md     (Phase 7)
-    ├── 15-claude-code-reverse-engineering.md (Phase 6, 7, 10)
-    ├── 16-anthropic-production-sandbox-observed.md (Phase 3, 7, 8)
-    ├── 17-anthropic-claude-code-remote-env-observed.md (Phase 6, 7, 10)
-    ├── 18-open-webui-terminals-observed.md (Phase 6, 8)
-    ├── 19-anthropic-process-api.md    (Phase 7, 10 — primary L1 precedent)
-    ├── 20-snapstart-hot-swap.md       (Phase 10)
-    ├── 21-environment-runner-go.md    (inspiration-only; no Phase consumer)
-    ├── 22-anthropic-firecracker-microvm-internals-observed.md ⭐ (Phase 3, 7, 9, 10) — locks A37 "no PVC for sandbox session workspace"
-    └── 23-anthropic-microvm-execution-network-secrets-observed.md (Phase 4, 7, 8) — execution/egress/secrets; 4 proposed locks pending sign-off
+    └── 18-open-webui-terminals-observed.md (Phase 6, 8)
 ```
 
-## Reference repositories
+## Further reading
 
-Cloned shallowly into `/references/` (added to `.gitignore`):
+Public open-source projects studied for the patterns the phases reuse:
 
 ```text
-agent-sandbox  agentbox    chromedp        cloud-hypervisor
-coder          desktop     docker-socket-proxy
-firecracker    firecracker-containerd      infra (e2b-dev)
-kata-containers  microsandbox  reverse-engineering-claude-code-antspace
-sandbox-runtime  surf       sysbox
+kubernetes-sigs/agent-sandbox        github.com/kubernetes-sigs/agent-sandbox
+Michaelliv/agentbox                  github.com/Michaelliv/agentbox
+chromedp/chromedp                    github.com/chromedp/chromedp
+cloud-hypervisor/cloud-hypervisor    github.com/cloud-hypervisor/cloud-hypervisor
+coder/coder                          github.com/coder/coder
+e2b-dev/desktop                      github.com/e2b-dev/desktop
+e2b-dev/surf                         github.com/e2b-dev/surf
+e2b-dev/infra                        github.com/e2b-dev/infra
+Tecnativa/docker-socket-proxy        github.com/Tecnativa/docker-socket-proxy
+firecracker-microvm/firecracker      github.com/firecracker-microvm/firecracker
+firecracker-microvm/firecracker-containerd  github.com/firecracker-microvm/firecracker-containerd
+kata-containers/kata-containers      github.com/kata-containers/kata-containers
+microsandbox/microsandbox            github.com/microsandbox/microsandbox
+nestybox/sysbox                      github.com/nestybox/sysbox
+anthropic-experimental/sandbox-runtime  github.com/anthropic-experimental/sandbox-runtime
 ```
 
 Each phase in [roadmap.md](./roadmap.md) carries a checklist of which of these to study before that phase's research doc is written. Don't read the repos cold — start from [`research/`](./research/) which has per-repo "what to take" digests with file:line citations.
@@ -115,7 +114,7 @@ Each phase in [roadmap.md](./roadmap.md) carries a checklist of which of these t
 Mandatory for **every** phase (not just the greenfield ones):
 
 1. **Pre-read.** Open [`antipatterns.md`](./antipatterns.md) — find your phase row — read every linked entry. These are PR-review checkpoints with our locked choice already filled in. Don't reintroduce them.
-2. **Research.** Investigate the listed `references/` repos via their `research/` digest. External docs as needed.
+2. **Research.** Investigate the listed public reference repos via their `research/` digest. External docs as needed.
 3. **Write `phase-N-research.md`** from [`phase-template.md`](./phase-template.md). Options, recommendation, trade-offs, success metrics.
 4. **Discuss + sign off with owner.** No code begins until approval.
 5. **Plan.** Invoke `gsd-plan-phase` to break the phase into atomic tasks. Result: `phase-N-plan.md`.

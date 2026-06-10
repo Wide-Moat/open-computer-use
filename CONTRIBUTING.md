@@ -56,12 +56,14 @@ See [docs/DYNAMIC-SKILLS.md](docs/DYNAMIC-SKILLS.md) for the skill format.
 By contributing to this project, you agree that:
 
 - Contributions to `skills/public/describe-image/` and `skills/public/sub-agent/` are licensed under the [MIT License](LICENSE-MIT).
-- Contributions to all other directories (except third-party skills) are licensed under the [Business Source License 1.1](LICENSE).
+- Contributions to all other directories (except third-party skills) are licensed under the [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0).
 
 See [NOTICE](NOTICE) for the full licensing model.
 
-## Release Process — Change Date
+## Release Process — FSL Apache conversion
 
-Each tagged release sets its own BSL Change Date to approximately 3 years in the future.
-When cutting a new release, update the `Change Date` field in `LICENSE` to 3 years from the
-release date (e.g., a release on 2026-07-01 gets Change Date 2029-07-01).
+Under FSL-1.1-Apache-2.0, each release automatically converts to Apache-2.0 two
+years after publication. No per-release LICENSE edit is required — the Grant
+of Future License clause in `LICENSE` carries this forward. When publishing a
+release, just tag the commit; conversion happens automatically on the second
+anniversary of the tag date.

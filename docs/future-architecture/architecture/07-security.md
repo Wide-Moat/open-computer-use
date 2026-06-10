@@ -1,10 +1,10 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 07 — Security
 
 > Threat model, secret-rotation strategy, egress controls, image signing, audit.
-> Derived from [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md), adapted to our stack.
+> Derived from internal security notes, adapted to our stack.
 
 ## Threat model
 
@@ -82,11 +82,11 @@ L2 carries the load for untrusted workloads. See the runtime matrix in [04-layer
 - **gVisor:** Sentry bugs (~500K LoC Go); passthrough syscalls.
 - **kata-fc / kata-ch:** Firecracker / CH bugs (Rust, ~50-80K LoC); KVM bugs; side-channels on shared CPUs.
 
-See [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md) for CVE history references.
+See internal security notes for CVE history references.
 
 ## Mandatory deny paths inside the workspace
 
-Even with full L2 isolation, the agent itself must refuse to write a small set of paths that are vectors for persistent shell takeover or self-exfiltration. The list is **always-on, regardless of template configuration** — modelled on Anthropic's local sandbox-runtime ([`research/13`](../research/13-anthropic-sandbox-runtime.md) §2):
+Even with full L2 isolation, the agent itself must refuse to write a small set of paths that are vectors for persistent shell takeover or self-exfiltration. The list is **always-on, regardless of template configuration** — following an industry-observed local-sandbox deny-path pattern:
 
 | Path / glob | Why blocked |
 |---|---|
@@ -99,7 +99,7 @@ Even with full L2 isolation, the agent itself must refuse to write a small set o
 | `.ssh/`, `.aws/`, `.gcp/`, `.kube/` | Credential exfil targets |
 | `$PATH` directories owned by the user (`~/.local/bin/*`, `bin/*`) | Shadow-binary injection |
 
-Enforcement: a Rust-side path-canonicalization check on every write in the L1 agent's file-ops handlers. Symlink targets are resolved before the check (see symlink-attack defenses in [`research/13`](../research/13-anthropic-sandbox-runtime.md) §6). Phase 7 implements; the antipattern reference is A1 / C-series.
+Enforcement: a Rust-side path-canonicalization check on every write in the L1 agent's file-ops handlers. Symlink targets are resolved before the check (standard symlink-attack defense). Phase 7 implements; the antipattern reference is A1 / C-series.
 
 ## Graceful-shutdown protocol
 
@@ -122,7 +122,7 @@ This is purely defense-in-depth (the binary's source-equivalent is public). Chea
 
 When a sandbox resumes from a frozen Firecracker snapshot, the guest is **stale by design** — the kernel knows it forked but userspace does not. Without explicit re-initialization, userspace RNGs reseed from snapshotted state (worst-case identical seeds across restores), wall-clock is wrong by minutes-to-days, and any cached page references point into a rootfs that was just swapped underneath.
 
-Mandatory on every restore (lifted from [`research/20`](../research/20-snapstart-hot-swap.md) §4):
+Mandatory on every restore (standard snapshot-restore hardening):
 
 | Action | Why |
 |---|---|
@@ -189,6 +189,6 @@ Retention: **≥ 90 days**. Append-only sink. See [10-observability.md](./10-obs
 
 ## Source
 
-- [`sandboxd/docs/security.md`](../../../sandboxd/docs/security.md)
+- Internal security notes
 - [`docs/future-architecture/references.md`](../references.md) (`agentbox`, `cosign`)
 - [ADR-0006](../adr/0006-no-agpl-no-bsl-dependencies.md) (license hygiene)

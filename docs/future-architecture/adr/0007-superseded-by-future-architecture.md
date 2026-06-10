@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # ADR-0007 — Old `docs/requirements/` superseded by `docs/future-architecture/`
@@ -11,7 +11,7 @@
 The directory `docs/requirements/` previously held our k8s architecture and 6-phase roadmap (committed 2026-05-16). On 2026-05-17 we:
 
 1. Renamed the directory to `docs/future-architecture/` via `git mv` (history preserved).
-2. Rewrote the contents around the 4-layer model imported from `sandboxd/`.
+2. Rewrote the contents around the internal 4-layer model.
 3. Re-folded the old 6 phases into the new 10-phase roadmap.
 
 ## Decision

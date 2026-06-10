@@ -1,0 +1,320 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Security gates — the three a bank auditor opens first, per CLAUDE.md
+# "Testing & QA discipline (next/v1)":
+#
+#   1. Secrets scan blocks merge (gitleaks + trufflehog).
+#   2. SAST/SCA CRITICAL blocks merge (Semgrep + Trivy).
+#   3. IaC scan (Checkov) — CRITICAL on Helm blocks merge (HIGH currently
+#      soft-fail during bootstrap; tightened once the baseline cleanup PR
+#      lands and Dockerfile/Compose/K8s scopes are added back in).
+#
+# Signed SBOM + Cosign attestations for release artifacts live in
+# supply-chain.yml; this file covers the commit-time / PR-time gates.
+#
+# Per-rule "HIGH exception" file: .github/security-exceptions.yml.
+#
+# Pinning policy (mandatory for every `uses:` and container `image:`):
+#   - Third-party actions pinned to a 40-char commit SHA, never to a
+#     movable tag (zizmor `unpinned-uses` would block merge on its own).
+#   - Container images pinned to `name:tag@sha256:<digest>`.
+#   - Every actions/checkout call sets `persist-credentials: false`
+#     (zizmor `artipacked`).
+
+name: security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - next/v1
+  schedule:
+    # Full-repo nightly re-scan (PRs are diff-only — re-confirm baseline).
+    - cron: "27 3 * * *"
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  # Do NOT cancel in-progress runs. On 5 quick commits to a PR, cancellation
+  # leaves intermediate commits unscanned by semgrep/trivy/checkov (they
+  # only see the working tree). gitleaks with fetch-depth: 0 catches
+  # history regardless. Letting runs queue is the safer default for
+  # merge-blocking gates.
+  cancel-in-progress: false
+
+jobs:
+  secrets-gitleaks:
+    name: secrets — gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      # Fork-PR-safe two-source pattern. The PR HEAD provides the source
+      # files to scan, but the gitleaks CONFIG comes from the BASE ref —
+      # never from the PR head. Without this split, a fork PR could ship
+      # a permissive allowlist (`paths = ['''.*''']`) and the gate would
+      # pass green for any secret introduced in that PR. Canonical CI
+      # supply-chain attack against allowlist-based scanners.
+      #
+      # We fetch the base-ref config directly via `gh api` rather than
+      # checking out the base branch. sparse-checkout has long-standing
+      # quirks with non-cone single-file patterns in actions/checkout@v4
+      # and silently produces an empty working tree, which would re-open
+      # the fork-bypass hole.
+      - name: Checkout PR head (source)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: pr-head
+      - name: Fetch base-ref .gitleaks.toml via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_REF: ${{ github.base_ref || github.ref_name }}
+          REPO: ${{ github.repository }}
+        # Always produce config/.gitleaks.toml. Two paths:
+        #
+        # 1. Base ref has a real .gitleaks.toml — fetch and use it.
+        # 2. Base ref has no .gitleaks.toml (bootstrap PRs, or any feature
+        #    branch off a base that hasn't merged the file yet) — write a
+        #    tiny stub that says "use the upstream default ruleset".
+        #
+        # Without this stub, the docker step would have to omit `--config`,
+        # and gitleaks falls back to autoload `/repo/.gitleaks.toml` per
+        # its documented config precedence (step 4 in `gitleaks detect
+        # --help`). `/repo` is the PR head, so a fork PR shipping a
+        # permissive allowlist (`paths = ['''.*''']`) would silently
+        # bypass the gate — the canonical attack the two-source pattern
+        # is supposed to close. Writing the stub keeps `--config` always
+        # on the command line and pins precedence to step 1.
+        #
+        # An explicit `gh api` `--jq` type check guards against the case
+        # where the URL resolves to a directory listing rather than a
+        # file — in that scenario `.content` is null and would produce a
+        # zero-byte file that gitleaks would silently accept.
+        run: |
+          mkdir -p config
+          content="$(gh api "repos/${REPO}/contents/.gitleaks.toml?ref=${BASE_REF}" \
+            --jq '.content // empty' 2>/dev/null || true)"
+          if [ -n "$content" ]; then
+            printf '%s' "$content" | base64 -d > config/.gitleaks.toml
+            echo "Fetched $(wc -c < config/.gitleaks.toml) bytes of base-ref gitleaks config."
+          else
+            printf '[extend]\nuseDefault = true\n' > config/.gitleaks.toml
+            echo "No .gitleaks.toml on base ref ${BASE_REF} — wrote useDefault stub."
+          fi
+      - name: Run gitleaks (Docker)
+        # The official gitleaks-action requires a paid license for GitHub
+        # Organizations. Use the upstream Docker image directly — same
+        # detect engine, no license server. Pinned by digest so a future
+        # `:latest` push cannot silently change scan behaviour on a
+        # merge-blocking gate.
+        #
+        # Two separate mounts: /repo for source (PR head), /config for
+        # the gitleaks config (always populated by the previous step —
+        # either the real base-ref file or a useDefault stub). `--config`
+        # is always passed so gitleaks cannot autoload
+        # `/repo/.gitleaks.toml`.
+        #
+        # :ro mounts + non-root user + --read-only container fs are
+        # defence-in-depth against a compromised gitleaks image (digest
+        # pin above is the first layer).
+        run: |
+          docker run --rm \
+            --read-only \
+            --user "$(id -u):$(id -g)" \
+            -v "${{ github.workspace }}/pr-head:/repo:ro" \
+            -v "${{ github.workspace }}/config:/config:ro" \
+            zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            detect --source=/repo --no-banner --redact --exit-code 1 \
+            --config=/config/.gitleaks.toml
+
+  secrets-trufflehog:
+    name: secrets — trufflehog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run trufflehog
+        uses: trufflesecurity/trufflehog@0ec3634f6cf66a61912a923fee9d20cc45633a67  # main as of 2026-05-24
+        with:
+          path: ./
+          # `--fail` is appended by the action's entrypoint — passing it
+          # here a second time triggers "flag 'fail' cannot be repeated".
+          #
+          # `--no-verification` removes the egress data-exfiltration path:
+          # default `--results=verified` dials AWS/GitHub/Slack/… from the
+          # runner to validate detected patterns. For a bank-targeting CI
+          # we accept the higher false-positive rate over outbound calls.
+          extra_args: --no-verification
+
+  sast-semgrep:
+    name: SAST — semgrep
+    runs-on: ubuntu-latest
+    container:
+      # Org renamed from `returntocorp/semgrep` to `semgrep/semgrep`. Same
+      # image; the old name is mirrored but won't be updated forever.
+      image: semgrep/semgrep:1.163.0@sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          # Diff-aware semgrep needs history back to the merge-base.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Semgrep CI (community rules)
+        env:
+          # Required for diff-aware scanning + PR commenting. Without it,
+          # `semgrep ci` falls back to a full-repo scan. Token is
+          # workflow-scoped and short-lived.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `semgrep ci` exits non-zero on findings by default. The
+          # `--suppress-errors` flag has the inverse meaning — DON'T set
+          # it. We pin it to false explicitly so a future runner-level
+          # env override can't silently downgrade the gate.
+          SEMGREP_SUPPRESS_ERRORS: "false"
+        run: |
+          # Verified registry packs as of 2026-05-24: p/bash and p/yaml
+          # do not exist on semgrep.dev (HTTP 404) — do not add them
+          # without first probing /c/p/<name>. Bash-in-YAML coverage
+          # comes from p/security-audit + p/github-actions; Docker
+          # socket misuse from p/dockerfile.
+          semgrep ci \
+            --config "p/security-audit" \
+            --config "p/owasp-top-ten" \
+            --config "p/python" \
+            --config "p/javascript" \
+            --config "p/dockerfile" \
+            --config "p/github-actions"
+
+  sca-trivy-fs:
+    name: SCA — trivy (filesystem)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          # Block merge on CRITICAL. HIGH gets a 14-day grace via the
+          # exceptions file; everything else is informational.
+          severity: CRITICAL
+          exit-code: "1"
+          # `ignore-unfixed: false` — a CRITICAL CVE without an upstream
+          # fix is exactly the class a bank auditor asks about first.
+          # Force an explicit dated entry in `security-exceptions.yml`
+          # before merge, rather than silently green-lighting it.
+          ignore-unfixed: false
+          skip-dirs: "node_modules,.venv,.planning,docs/future-architecture"
+          format: sarif
+          output: trivy-fs.sarif
+          # Without this, trivy-action drops `severity: CRITICAL` whenever
+          # `format: sarif` is set (entrypoint.sh unsets TRIVY_SEVERITY), so
+          # trivy scans for HIGH/MEDIUM/LOW too and exits 1 on the first
+          # finding — even though SARIF upload filters back to CRITICAL on
+          # the GitHub side. The "Building SARIF report with all severities"
+          # log line is the smoking gun. Issue:
+          # https://github.com/aquasecurity/trivy-action/issues/309
+          limit-severities-for-sarif: true
+      - name: Upload SARIF (CRITICAL)
+        if: always()
+        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+      # Second pass — HIGH severity, NON-blocking (exit-code 0). Without
+      # this the security-exceptions.yml schema and the CLAUDE.md
+      # "HIGH allowed for 14 days with a tracked exception file" rule
+      # both refer to a stream of findings that nothing in this workflow
+      # produces. Uploading HIGH as informational SARIF makes the
+      # exception ledger meaningful and gives a regulator something to
+      # audit against.
+      - name: Trivy filesystem scan (HIGH, informational)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH
+          exit-code: "0"
+          ignore-unfixed: true
+          skip-dirs: "node_modules,.venv,.planning,docs/future-architecture"
+          format: sarif
+          output: trivy-fs-high.sarif
+          limit-severities-for-sarif: true
+      - name: Upload SARIF (HIGH)
+        if: always()
+        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
+        with:
+          sarif_file: trivy-fs-high.sarif
+          category: trivy-fs-high
+
+  iac-checkov:
+    name: IaC — checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - name: Install checkov
+        run: pip install checkov==3.2.314
+      - name: Run checkov
+        # Scope: only Helm (the next/v1 deployment substrate). The legacy
+        # Dockerfile + older workflows have pre-existing findings that
+        # belong in a separate cleanup PR — they are not the subject of
+        # this gate.
+        #
+        # `--soft-fail-on LOW,MEDIUM,HIGH` means only CRITICAL Helm findings
+        # block merge for the bootstrap phase. We tighten to HIGH+ in a
+        # follow-up once the baseline cleanup PR lands, and we extend the
+        # framework list to dockerfile/compose/k8s at the same time.
+        run: |
+          checkov \
+            -d helm/ \
+            --quiet \
+            --compact \
+            --framework helm \
+            --soft-fail-on LOW,MEDIUM,HIGH
+
+  conventional-commits:
+    name: commits — conventional-commits
+    runs-on: ubuntu-latest
+    # Accept both events. If we ever switch to `pull_request_target` as
+    # mitigation for fork-PR config-injection (see secrets-gitleaks
+    # header), this gate keeps firing instead of silently disabling.
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825  # v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Match the Conventional Commits spec we use everywhere else.
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+            build
+            perf
+            style
+            revert
+          requireScope: false

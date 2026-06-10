@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """Patch for Open WebUI: truncate large tool results in output (DB + LLM).
 
@@ -25,7 +25,7 @@ Config env vars:
   ORCHESTRATOR_URL -- internal URL of computer-use-server for large-result uploads
 
 Must run AFTER fix_tool_loop_errors.py (Mod 2 targets its marker).
-Target: Open WebUI 0.9.6
+Target: Open WebUI 0.9.5
 """
 
 import os

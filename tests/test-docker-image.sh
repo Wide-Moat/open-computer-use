@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: BUSL-1.1
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 # Test Docker image for package availability, CLI tools, and correct npm layout.
 # Usage: ./tests/test-docker-image.sh [image-name]
@@ -302,8 +302,8 @@ for f in opencode.json codex.json; do
     fi
 done
 # _spdx key present in opencode.json
-if docker run --rm --platform linux/amd64 "$IMAGE" python3 -c "import json; assert json.load(open('/opt/cli-defaults/opencode.json'))['_spdx'] == 'BUSL-1.1'" 2>/dev/null; then
-    pass "/opt/cli-defaults/opencode.json carries _spdx=BUSL-1.1"
+if docker run --rm --platform linux/amd64 "$IMAGE" python3 -c "import json; assert json.load(open('/opt/cli-defaults/opencode.json'))['_spdx'] == 'FSL-1.1-Apache-2.0'" 2>/dev/null; then
+    pass "/opt/cli-defaults/opencode.json carries _spdx=FSL-1.1-Apache-2.0"
 else
     fail "/opt/cli-defaults/opencode.json missing _spdx key"
 fi

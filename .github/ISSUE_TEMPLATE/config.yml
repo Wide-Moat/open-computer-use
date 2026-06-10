@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Issue chooser configuration. Disables the free-form "Open a blank
+# issue" option so contributors pick a template — keeps backlog
+# triagable and matches PROCESS.md flows.
+
+blank_issues_enabled: false
+contact_links:
+  - name: Architecture discussion
+    url: https://github.com/Wide-Moat/open-computer-use/discussions/categories/architecture
+    about: For open-ended architecture discussion that isn't yet a concrete decision or component proposal. Promote to an issue once the question crystallizes.
+  - name: Security disclosure
+    url: https://github.com/Wide-Moat/open-computer-use/security/advisories/new
+    about: Report a security vulnerability privately. Do NOT open a public issue for security problems.

@@ -1,19 +1,19 @@
-<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 # 05 — Layer 1: Guest Agent
 
 > The PID 1 process inside every sandbox. Today: Python entrypoint + in-image MCP server. Future: small **Rust** static binary (Phase 7).
-> Language decision: **Rust** ([ADR-0002](../adr/0002-guest-agent-language-go.md)). Closest precedent: Anthropic `process_api` — see [`research/19`](../research/19-anthropic-process-api.md).
+> Language decision: **Rust** ([ADR-0002](../adr/0002-guest-agent-language-go.md)). Follows the established agent-in-microVM runtime pattern.
 
 ## Contract (target)
 
-The agent exposes **two ports**, on the model `process_api` validates:
+The agent exposes **two ports**:
 
 1. **Data plane — WebSocket.** Bidirectional, JSON frames (serde-tagged enums), zstd compression optional via capabilities negotiation. Carries every per-session interaction: exec, streaming I/O, signal forwarding, CDP/ttyd passthrough. Transport is **auto-detected**, not build-tag-gated:
    - `vsock` if `/dev/vsock` is present (microVM tiers `kata-ch`, `kata-fc`).
    - `TCP` otherwise (runc, sysbox, gVisor, dev).
-   - Same `handle_ws` accept loop drives both ([`research/19`](../research/19-anthropic-process-api.md) §2). Transport is operational, not architectural.
+   - Same `handle_ws` accept loop drives both. Transport is operational, not architectural.
 2. **Control plane — HTTP.** Stateless POSTs for actions that should not flow through the user-facing data plane. Separate listener, same binary:
    - `GET /healthz`, `GET /readyz` — liveness / readiness probes for L3.
    - `POST /shutdown` — graceful shutdown signal.
@@ -25,7 +25,7 @@ The L1 agent is **never** publicly reachable — only L3 (provider) talks to it.
 
 ## RPC surface (data plane)
 
-The methods below map to message variants on the WebSocket. The shape is sketched as a `.proto` for clarity, but the wire is **JSON frames + capabilities-negotiated V1/V2 variants**, not gRPC ([`research/19`](../research/19-anthropic-process-api.md) §4, §12).
+The methods below map to message variants on the WebSocket. The shape is sketched as a `.proto` for clarity, but the wire is **JSON frames + capabilities-negotiated V1/V2 variants**, not gRPC.
 
 ```proto
 service Agent {
@@ -49,7 +49,7 @@ The agent **does not** speak MCP. MCP semantics live in L4's gateway. L4 receive
 
 ## Capabilities negotiation (V1/V2)
 
-The server's first frame on each connection advertises capabilities, modelled on `process_api`'s `ConnectionCapabilities` ([`research/19`](../research/19-anthropic-process-api.md) §4):
+The server's first frame on each connection advertises capabilities via a `ConnectionCapabilities` message:
 
 ```json
 {
@@ -67,15 +67,15 @@ Old clients ignore unknown fields and stay on V1 message variants. New clients o
 The agent is the init process inside the sandbox. These primitives are mandatory together — none of them works alone:
 
 - **`SIGCHLD` reaping.** Wait on the signalfd or libc `signal()` and reap zombies. Without this, fork-heavy workloads (sub-agent CLIs, shell scripts) leak PIDs until cgroup limits trip.
-- **`SIGTERM` propagation.** L3's `/shutdown` POST or a connect-side `Shutdown` RPC drains via: page-cache drop → SIGTERM to the workload process group → grace-period wait → SIGKILL escalation. The two-phase shape mirrors `process_api`'s OOM killer ([`research/19`](../research/19-anthropic-process-api.md) §7).
-- **`PR_SET_DUMPABLE=0` post-init.** Disables core dumps and blocks `/proc/<pid>/mem` reads from other processes — even from inside the same UID. Cheap, prevents an entire class of "ptrace the agent to steal session JWT" attacks ([`research/13`](../research/13-anthropic-sandbox-runtime.md) §4 two-stage nested-namespace pattern).
-- **`killed_by_process_api`-style audit flag.** A per-child boolean that distinguishes "agent killed this" (timeout, OOM, signal RPC) from "kernel killed this" (cgroup OOM, external SIGKILL). Removes ambiguity from the audit log without parsing exit codes ([`research/19`](../research/19-anthropic-process-api.md) §6).
+- **`SIGTERM` propagation.** L3's `/shutdown` POST or a connect-side `Shutdown` RPC drains via: page-cache drop → SIGTERM to the workload process group → grace-period wait → SIGKILL escalation. The two-phase shape is the standard OOM-killer pattern.
+- **`PR_SET_DUMPABLE=0` post-init.** Disables core dumps and blocks `/proc/<pid>/mem` reads from other processes — even from inside the same UID. Cheap, prevents an entire class of "ptrace the agent to steal session JWT" attacks.
+- **`agent-killed` audit flag.** A per-child boolean that distinguishes "agent killed this" (timeout, OOM, signal RPC) from "kernel killed this" (cgroup OOM, external SIGKILL). Removes ambiguity from the audit log without parsing exit codes.
 - **Env-var scrub before fork.** Strip names matching `_TOKEN`, `_SECRET`, `_PASSWORD`, `API_KEY` from the child env unless the configure-time policy explicitly passes them through. Cross-link to [antipattern A1].
 
 ## What L1 does NOT do
 
 - **Authenticate users.** L4 does. L1 trusts whoever can reach its port — network policy ensures only L3 can.
-- **Authenticate L3 — for now.** Phase 7+ may add **Ed25519 JWT bound to `container_name`** read from `/container_info.json`, modelled on `process_api` ([`research/19`](../research/19-anthropic-process-api.md) §3). Pre-Phase-7+ the network boundary alone is the trust boundary. **Document this loudly; do NOT add a fake bearer token that lulls operators.**
+- **Authenticate L3 — for now.** Phase 7+ may add **Ed25519 JWT bound to `container_name`** read from `/container_info.json`. Pre-Phase-7+ the network boundary alone is the trust boundary. **Document this loudly; do NOT add a fake bearer token that lulls operators.**
 - **Persist state across sessions.** L3 owns the sandbox lifecycle and any volume binding.
 - **Manage its own lifecycle.** It runs until killed; L3 decides when.
 - **Hold long-lived secrets.** Secrets arrive via `Configure` (per-session, short-lived). Rotated by L4's secret broker. See [07-security.md](./07-security.md).
@@ -95,10 +95,10 @@ Phase 7 replaces this with the Rust agent.
 
 ## Future Rust agent — design notes
 
-- **Static-PIE binary**, `musl` target, x86-64 + arm64. Target size ~4–6 MB (precedent: `process_api` 4.3 MB, [`research/19`](../research/19-anthropic-process-api.md) §1).
+- **Static-PIE binary**, `musl` target, x86-64 + arm64. Target size ~4–6 MB (comparable microVM agents land around 4 MB).
 - **Crate footprint** ([ADR-0002](../adr/0002-guest-agent-language-go.md)): `tokio`, `hyper`, `tokio-tungstenite`, `tokio-vsock`, `ring`, `jsonwebtoken`, `clap`, `nix`, `serde_json`. Optional `zstd` if capabilities negotiation enables it. No `chromedp` equivalent — see CDP note below.
 - **PID 1 hygiene** as above (`SIGCHLD`, `SIGTERM`/`SIGKILL` chain, `PR_SET_DUMPABLE=0`, env-scrub).
-- **Process model:** spawn workloads as child process groups; stream stdout/stderr as `ExpectStdOut`/`ExpectStdErr` frames; track exit code; emit `ProcessExited` / `ProcessTimedOut` / `ProcessOutOfMemory` terminal states (mutually exclusive, modelled on [`research/19`](../research/19-anthropic-process-api.md) §6).
+- **Process model:** spawn workloads as child process groups; stream stdout/stderr as `ExpectStdOut`/`ExpectStdErr` frames; track exit code; emit `ProcessExited` / `ProcessTimedOut` / `ProcessOutOfMemory` terminal states (mutually exclusive).
 - **Cgroup-aware OOM monitor.** Per-container OOM watchdog polls cgroup memory at 100 ms; adopts orphans before scanning; two-phase kill (signal → wait → escalate). Replaces our current reliance on Docker's default OOM policy.
 - **CDP proxy.** Two options for Phase 7 research:
   - Use [`chromiumoxide`](https://github.com/mattsse/chromiumoxide) (Rust-native CDP client) and let L1 drive Chromium.
@@ -124,17 +124,15 @@ The agent itself does not need to know what's in `skills/`. Skills are mounted a
 - `chromiumoxide` vs raw CDP WebSocket passthrough — pick one, justify, document.
 - ttyd replacement (Rust-native) vs wrap-in-place (run ttyd as a subprocess and proxy its WS).
 - Transport auto-detect details: presence of `/dev/vsock` plus configure-time hint, or a CLI flag with a sensible default — Phase 7 picks the rule.
-- Connect-rust vs `process_api`-style WS-frame protocol on vsock ([ADR-0008](../adr/0008-internal-grpc-external-rest-mcp.md) Phase 7 gate). Driven by tooling maturity and binary-size measurement on real artefacts.
+- Connect-rust vs a WS-frame protocol on vsock ([ADR-0008](../adr/0008-internal-grpc-external-rest-mcp.md) Phase 7 gate). Driven by tooling maturity and binary-size measurement on real artefacts.
 - Whether Phase 7 ships JWT auth on day one, or starts network-only and adds JWT in Phase 7.1. Default leans toward the latter — small surfaces first.
 
 ## Related
 
 - ADR: [ADR-0002](../adr/0002-guest-agent-language-go.md) (Rust for L1), [ADR-0008](../adr/0008-internal-grpc-external-rest-mcp.md) (transport choice + Phase 7 gate), [ADR-0010](../adr/0010-lambda-as-inspiration-not-runtime.md) (Lambda framing).
-- Research: [`research/19-anthropic-process-api.md`](../research/19-anthropic-process-api.md) (primary precedent), [`research/13-anthropic-sandbox-runtime.md`](../research/13-anthropic-sandbox-runtime.md) (PID 1 + nested-ns hardening), [`research/02-e2b-infra.md`](../research/02-e2b-infra.md) (`envd` comparison).
+- Research: [`research/02-e2b-infra.md`](../research/02-e2b-infra.md) (`envd` comparison).
 - Antipatterns: A1 (secret leakage in env), and the deny-paths list (`.git/hooks/*`, `.bashrc`, `.mcp.json`, `.claude/`) enforced via [`07-security.md`](./07-security.md).
 
 ## Source
 
-- [`sandboxd/docs/architecture.md`](../../../sandboxd/docs/architecture.md) (Layer 1).
-- [`sandboxd/docs/agent-protocol.md`](../../../sandboxd/docs/agent-protocol.md).
-- [`sandboxd/anthropic/`](../../../sandboxd/anthropic/) — `process_api` pattern catalogue (closest documented precedent).
+- Internal design notes — Layer 1 architecture and the agent protocol contract.
