@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-03
+last-reviewed: 2026-06-13
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -31,7 +31,19 @@ Each row links the container's responsibility (Layer 6) and lists the spec file,
 
 The guest agent is the process that constitutes the Session sandbox container ([`05-c4-container.md`](../05-c4-container.md) §3), not a separate row; its protocol is specified inside `05-session-sandbox.md`.
 
-## 3. Maturation order
+## 3. Implementation repositories
+
+The specs above are the source of truth; the code lives in separate public repositories under the `Wide-Moat` org. Each implements the containers named here against the contracts and ADRs the table binds.
+
+| Repository | Implements | Side |
+|---|---|---|
+| [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) | Control / operator API (02), Session sandbox (05) | Host control plane + sandbox executor |
+| [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) | Storage broker (04) | Host-side broker daemon |
+| [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) | Storage broker (04), south face | Guest-side mount binary |
+
+Containers 01 (MCP gateway), 06 (Egress trust-edge), and 07 (Audit pipeline) have no implementation repository yet.
+
+## 4. Maturation order
 
 All six are at `draft`. The ones a contract or a pending decision already pins harden to `proposed`/`accepted` first, because their spec has the least free design left and the most to verify against:
 
