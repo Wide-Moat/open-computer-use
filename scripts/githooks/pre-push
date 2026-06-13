@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Versioned pre-push policy. Git does not run this copy directly — hooks live
+# in .git/hooks/, which is not tracked. Install it once per clone:
+#
+#   ln -sf ../../scripts/githooks/pre-push .git/hooks/pre-push
+#
+# (or copy it). CONTRIBUTING.md documents the one-line install. This file is
+# the source of truth; the installed copy must match it.
+#
+# Two gates, both blocking:
+#   1. .planning/ guard — never push planning/roadmap/phase artefacts to the
+#      public GitHub remote.
+#   2. Documentation identity gate — the personal address i@yambr.com must not
+#      appear in tracked file content; rewrite it to developer@widemoat.ai.
+#      (This checks file CONTENT only, not commit author/committer metadata.)
+
+set -euo pipefail
+
+remote_name="$1"
+remote_url="$2"
+
+z40=$(printf '%040d' 0)
+exit_code=0
+
+# Recognise the public remote by URL host.
+case "$remote_url" in
+    *github.com*) is_public=true ;;
+    *)            is_public=false ;;
+esac
+
+# ---- Gate 1: .planning/ guard (public remote only) --------------------------
+if [ "$is_public" = "true" ]; then
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        [ "$local_sha" = "$z40" ] && continue   # deletion
+
+        if [ "$remote_sha" = "$z40" ]; then
+            range="$local_sha"                  # new branch
+            bad_files=$(git ls-tree -r "$local_sha" --name-only | grep -E '^\.planning/' || true)
+        else
+            range="${remote_sha}..${local_sha}"
+            bad_files=$(git log "$range" --name-only --pretty=format: | grep -E '^\.planning/' | sort -u || true)
+        fi
+
+        if [ -n "$bad_files" ]; then
+            echo "-----------------------------------------------------------------"
+            echo "BLOCKED: this push to $remote_url would include .planning/ files."
+            echo "The public GitHub remote must not carry planning/roadmap/phase"
+            echo "artefacts."
+            echo ""
+            echo "Offending paths in range $range:"
+            echo "$bad_files" | sed 's/^/  /'
+            echo "-----------------------------------------------------------------"
+            exit_code=1
+        fi
+    done
+fi
+
+# ---- Gate 2: banned address in tracked file content -------------------------
+ROOT="$(git rev-parse --show-toplevel)"
+if [ -x "$ROOT/scripts/docs-lint/identity-email-detector.sh" ]; then
+    if ! "$ROOT/scripts/docs-lint/identity-email-detector.sh"; then
+        exit_code=1
+    fi
+fi
+
+exit $exit_code

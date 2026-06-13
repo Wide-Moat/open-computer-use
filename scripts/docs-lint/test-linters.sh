@@ -309,6 +309,36 @@ do
 done
 ok "tree-whitelist accepts files that match allowed patterns"
 
+# -------- identity-email-detector --------
+echo "Testing identity-email-detector.sh:"
+
+# The detector greps tracked content for the banned personal address and tells
+# the author to use developer@widemoat.ai. git grep needs tracked files, so
+# exercise the match logic on the same fixed-string pattern the script uses.
+# The banned address is assembled from parts so the literal never appears in
+# this tracked file (which would itself trip the detector it tests).
+banned="i@yambr$(printf '%s' .com)"
+canonical="developer@widemoat.ai"
+
+if printf 'contact %s for help\n' "$banned" | grep -qF "$banned"; then
+  ok "identity-email-detector flags the banned personal address"
+else
+  err "identity-email-detector pattern missed the banned address"
+fi
+
+if printf '%s\n' "$canonical" | grep -qF "$banned"; then
+  err "identity-email-detector false-positives on the canonical address"
+else
+  ok "identity-email-detector accepts the canonical project address"
+fi
+
+# Must not flag legitimate yambr.com product URLs (chat./api./docs.yambr.com).
+if printf 'see https://chat.yambr.com\n' | grep -qF "$banned"; then
+  err "identity-email-detector false-positives on a yambr.com product URL"
+else
+  ok "identity-email-detector ignores yambr.com product URLs"
+fi
+
 # -------- Summary --------
 echo
 echo "Linter self-test: $pass passed, $fail failed."
