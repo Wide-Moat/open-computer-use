@@ -59,11 +59,17 @@ if [ "$is_public" = "true" ]; then
 fi
 
 # ---- Gate 2: banned address in tracked file content -------------------------
+# Run the detector through bash, not as an executable: a checkout that drops the
+# exec bit (no-exec filesystem, archive export) must not silently skip the gate.
 ROOT="$(git rev-parse --show-toplevel)"
-if [ -x "$ROOT/scripts/docs-lint/identity-email-detector.sh" ]; then
-    if ! "$ROOT/scripts/docs-lint/identity-email-detector.sh"; then
+detector="$ROOT/scripts/docs-lint/identity-email-detector.sh"
+if [ -f "$detector" ]; then
+    if ! bash "$detector"; then
         exit_code=1
     fi
+else
+    echo "BLOCKED: identity detector missing: $detector"
+    exit_code=1
 fi
 
 exit $exit_code
