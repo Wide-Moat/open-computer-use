@@ -17,11 +17,11 @@ The wire contracts OCU defines or conforms to, one file per boundary. Read [`doc
 | `mcp/2025-06-18/ocu-constraints.schema.json` | Agent tool-call ingress (caller → MCP gateway) | JSON Schema 2020-12 (MCP conform profile) | `json-schema` CI job |
 | `exec/exec-channel.schema.json` | Exec / PTY+CDP (control API → sandbox, machine-to-machine) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/mount-config.schema.json` | Mount-plane mount config (control plane → in-guest mount client) | JSON Schema 2020-12 | `json-schema` CI job |
-| `storage/file-ops.schema.json` | Object-store client RPC (in-guest mount client → backend origin) | JSON Schema 2020-12 | `json-schema` CI job |
-| `storage/file-artifact-api.schema.json` | Artifact-plane file/artifact data plane (data-plane client → artifact-plane) | JSON Schema 2020-12 | `json-schema` CI job |
+| `storage/file-ops.schema.json` | Object-store client RPC (in-guest mount client → storage engine) | JSON Schema 2020-12 | `json-schema` CI job |
+| `storage/file-artifact-api.schema.json` | Web UI file/artifact data plane (data-plane client → Web UI) | JSON Schema 2020-12 | `json-schema` CI job |
 | `audit/audit-fanin.asyncapi.yaml` | Audit event fan-in (five source channels → audit → SIEM) | AsyncAPI 3.0 / OCSF | `asyncapi` CI job |
 
-The storage surface is three files: the guest mount config, the object-store client RPC to the backend origin, and the artifact-plane HTTP API. The two stay distinct — `file-ops` is the in-guest mount client's RPC to the backend origin (the narrow object-store client speaks the backend protocol guest-out, holds no signing key, and forwards a pre-minted Storage-JWT unmodified; scope is enforced at the backend origin), `file-artifact-api` is the data-plane client's HTTP surface to the artifact-plane. Not-yet-built surfaces (operator REST, session-setup gRPC, transparency-log envelope, mock servers) are tracked in `08-contracts.md` §5.
+The storage surface is three files: the guest mount config, the object-store client RPC to the storage engine, and the Web UI HTTP API. The two stay distinct — `file-ops` is the in-guest mount client's RPC to the storage engine (the narrow object-store client speaks the storage protocol guest-out, holds no signing key, and forwards a pre-minted Storage-JWT unmodified; scope is enforced at the storage engine), `file-artifact-api` is the data-plane client's HTTP surface to the artifact-plane. Not-yet-built surfaces (operator REST, session-setup gRPC, transparency-log envelope, mock servers) are tracked in `08-contracts.md` §5.
 
 ## How to read a schema file
 

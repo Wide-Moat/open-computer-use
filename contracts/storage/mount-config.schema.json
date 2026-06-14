@@ -3,7 +3,7 @@
   "$id": "https://schemas.open-computer-use.dev/storage/mount-config.schema.json",
   "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation mount surface (mount-plane provisioning push: control plane -> host -> Session sandbox): provisioning config (carries the pre-issued Storage-JWT), guest-facing config (no token). The per-operation file-op RPC bodies live in file-ops.schema.json. NFR-SEC-25. JSON Schema 2020-12 (json-schema.org).",
   "title": "File-operation mount config",
-  "description": "Two mount-config variants: a provisioning config (carries the pre-issued Storage-JWT) and a guest-facing config (no token). Each mount's RW/RO posture is the `writes` flag plus the structural `mounts` (RW) / `readonly_mounts` (RO) split; its freshness window is the per-mount `cache_duration_s` (short for RO inputs, long for the RW sink). The transport substrate (FUSE/virtio-fs/9p) is a component-spec choice and is deliberately absent from this schema (NFR-SEC-25). No object-store/S3 fields. No backend-encryption fields: isolation is by filesystem_id scope enforced at the backend origin, not per-session crypt keys; crypt is not modelled on. The file-op RPC message set is split out to file-ops.schema.json (status TBD).",
+  "description": "Two mount-config variants: a provisioning config (carries the pre-issued Storage-JWT) and a guest-facing config (no token). Each mount's RW/RO posture is the `writes` flag plus the structural `mounts` (RW) / `readonly_mounts` (RO) split; its freshness window is the per-mount `cache_duration_s` (short for RO inputs, long for the RW sink). The transport substrate (FUSE/virtio-fs/9p) is a component-spec choice and is deliberately absent from this schema (NFR-SEC-25). No object-store/S3 fields. No backend-encryption fields: isolation is by filesystem_id scope enforced at the storage engine, not per-session crypt keys; crypt is not modelled on. The file-op RPC message set is split out to file-ops.schema.json (status TBD).",
 
   "$defs": {
     "SchemaVersion": {
@@ -99,12 +99,12 @@
         "dir_perms": { "$ref": "#/$defs/Octal" },
         "file_perms": { "$ref": "#/$defs/Octal" }
       },
-      "$comment": "RW/RO is carried by `writes` and the structural `mounts` (RW) / `readonly_mounts` (RO) split, host-enforced. cache_duration_s sets the per-mount directional window (short for RO inputs, long for the RW sink; defaults pinned in CacheDurationSeconds, tunable per deployment). The backend source path is resolved at the backend origin from filesystem_id + the mount's RW/RO intent and is deliberately off the wire (least-data, NFR-SEC-25) — not a guest- or host-facing mount field. NFR-SEC-25.",
+      "$comment": "RW/RO is carried by `writes` and the structural `mounts` (RW) / `readonly_mounts` (RO) split, host-enforced. cache_duration_s sets the per-mount directional window (short for RO inputs, long for the RW sink; defaults pinned in CacheDurationSeconds, tunable per deployment). The backend source path is resolved at the storage engine from filesystem_id + the mount's RW/RO intent and is deliberately off the wire (least-data, NFR-SEC-25) — not a guest- or host-facing mount field. NFR-SEC-25.",
       "$comment-no-role": "No `role` field. RW/RO is structural (the mounts / readonly_mounts split) and the directional cache window is cache_duration_s itself; a role enum (uploads/tool_results/transcripts/outputs) bound to writes/cache would only duplicate values already carried by `writes` and cache_duration_s, with no source. The role names survive solely as the directional-window vocabulary in CacheDurationSeconds."
     },
 
     "GuestMountConfig": {
-      "description": "Host -> in-guest mount agent. Token-absent by construction: no field carries the Storage-JWT (NFR-SEC-25, the guest holds the bearer only in its mount config, not on this provisioning wire). The mount client dials service_url guest-out over the single egress hop and forwards the bearer unmodified as a static Authorization: Bearer; scope is enforced at the backend origin (a foreign filesystem_id is rejected there).",
+      "description": "Host -> in-guest mount agent. Token-absent by construction: no field carries the Storage-JWT (NFR-SEC-25, the guest holds the bearer only in its mount config, not on this provisioning wire). The mount client dials service_url guest-out over the single egress hop and forwards the bearer unmodified as a static Authorization: Bearer; scope is enforced at the storage engine (a foreign filesystem_id is rejected there).",
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "service_url", "mounts"],

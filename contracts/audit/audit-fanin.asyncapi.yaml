@@ -50,7 +50,7 @@ channels:
 
   storageAudit:
     address: audit.ingest.storage
-    description: STORAGE — File System Activity on both storage surfaces — the mount-plane (list/read/write/create/stat, host-authored per NFR-SEC-47) and the artifact-plane data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79. The object-store client and the artifact-plane share this one source channel; there is no credential-custody producer — OCU mints nothing and the signing key is off-box.
+    description: STORAGE — File System Activity on both storage surfaces — the mount-plane (list/read/write/create/stat, host-authored per NFR-SEC-47) and the Web UI data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79. The object-store client and the Web UI share this one source channel; there is no credential-custody producer — OCU mints nothing and the signing key is off-box.
     messages:
       fileSystemActivity:
         $ref: '#/components/messages/FileSystemActivity'
@@ -260,7 +260,7 @@ components:
       title: File System Activity (OCSF 1001)
       summary: >-
         File activity on both storage surfaces — the mount-plane
-        (list/read/write/create/stat, host-authored) and the artifact-plane
+        (list/read/write/create/stat, host-authored) and the Web UI
         data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
       contentType: application/json
       traits:
@@ -288,7 +288,7 @@ components:
                   description: Operation intent axis (NFR-SEC-49).
                 downloadable:
                   type: boolean
-                  description: Downloadable disposition resolved at the backend origin at read (NFR-SEC-73).
+                  description: Downloadable disposition resolved at the storage engine at read (NFR-SEC-73).
 
     ProcessActivity:
       name: ProcessActivity

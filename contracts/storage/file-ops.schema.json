@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.open-computer-use.dev/storage/file-ops.schema.json",
-  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | Mount-plane file-operation RPC surface (in-guest mount client -> backend object-store origin, guest-out over the single inspecting egress hop). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | Mount-plane file-operation RPC surface (in-guest mount client -> storage engine, guest-out over the single inspecting egress hop). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
   "title": "File-operation RPC surface (TBD)",
-  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the backend object-store origin. The substrate is Connect-RPC over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
+  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the storage engine. The substrate is Connect-RPC over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
 
   "$defs": {
     "SchemaVersion": {
@@ -14,7 +14,7 @@
     },
 
     "FilesystemId": {
-      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The pre-issued Storage-JWT is scoped to this id; a request for a foreign filesystem_id is rejected at the backend object-store origin (401), not at the egress hop (NFR-SEC-25).",
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The pre-issued Storage-JWT is scoped to this id; a request for a foreign filesystem_id is rejected at the storage engine (401), not at the egress hop (NFR-SEC-25).",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
@@ -22,7 +22,7 @@
     },
 
     "Intent": {
-      "description": "Operation class. The backend object-store origin can deny by intent.",
+      "description": "Operation class. The storage engine can deny by intent.",
       "type": "string",
       "enum": ["read", "write", "preview"]
     },
@@ -68,7 +68,7 @@
     },
 
     "DenyReason": {
-      "description": "Structured deny returned by the backend object-store origin on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). Transported as the x-deny-reason response header. The header NAME is sourced; the reason-code vocabulary below is an OCU default pending NFR-SEC-51 sign-off, not a frozen const set.",
+      "description": "Structured deny returned by the storage engine on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). Transported as the x-deny-reason response header. The header NAME is sourced; the reason-code vocabulary below is an OCU default pending NFR-SEC-51 sign-off, not a frozen const set.",
       "type": "object",
       "additionalProperties": false,
       "required": ["x_deny_reason"],
@@ -108,25 +108,25 @@
     },
 
     "ListDirectoryRecursiveCursor": {
-      "description": "Opaque pagination cursor carried across pages of a recursive listDirectory. Sourced as an opaque token; the backend object-store origin mints and validates it, the mount client echoes it unmodified. Absent on the first page; the origin omits it on the last page.",
+      "description": "Opaque pagination cursor carried across pages of a recursive listDirectory. Sourced as an opaque token; the storage engine mints and validates it, the mount client echoes it unmodified. Absent on the first page; the origin omits it on the last page.",
       "type": "string",
       "minLength": 1,
       "x-ocu-tbd": "Cursor wire ENCODING (what the opaque token packs) is not pinned; the opaque-string contract is sourced, the internal structure stays TBD. Do not model decoded subfields."
     },
 
     "FileUploadRequest_Params": {
-      "description": "Chunked-upload params sub-message on a fileUpload request. The backend object-store origin reassembles the streamed chunks; this is NOT a single inline body. Chunking is mandatory because a single RPC message is capped (see SizeLimits.rpc_message_ceiling_bytes), independent of the backend max-file-size and the per-mount VFS cache ceiling.",
+      "description": "Chunked-upload params sub-message on a fileUpload request. The storage engine reassembles the streamed chunks; this is NOT a single inline body. Chunking is mandatory because a single RPC message is capped (see SizeLimits.rpc_message_ceiling_bytes), independent of the backend max-file-size and the per-mount VFS cache ceiling.",
       "type": "object",
       "additionalProperties": false,
       "required": ["chunk", "numChunks"],
       "properties": {
         "chunk": {
-          "description": "One chunk of the upload byte stream. The backend object-store origin reassembles chunks in order into the target object. A chunk's encoded size stays under the RPC message ceiling.",
+          "description": "One chunk of the upload byte stream. The storage engine reassembles chunks in order into the target object. A chunk's encoded size stays under the RPC message ceiling.",
           "type": "string",
           "contentEncoding": "base64"
         },
         "numChunks": {
-          "description": "Total chunk count the backend object-store origin expects before reassembly completes.",
+          "description": "Total chunk count the storage engine expects before reassembly completes.",
           "type": "integer",
           "minimum": 1
         }
@@ -153,7 +153,7 @@
           "x-ocu-default": "128 MiB default read-chunk size; configurable per workload tier."
         },
         "broker_max_file_size_bytes": {
-          "description": "Maximum object size enforced at the backend object-store origin. A deployment policy figure, not fixed in this contract. (Field name retained for wire compatibility.)",
+          "description": "Maximum object size enforced at the storage engine. A deployment policy figure, not fixed in this contract. (Field name retained for wire compatibility.)",
           "type": "integer",
           "minimum": 1,
           "x-ocu-tbd": "Server-side figure, not fixed in the contract. No const."
@@ -177,7 +177,7 @@
       "readMetadata": "request body field set TBD",
       "getFileMetadata": "single-object metadata read; response field set TBD (distinct from listFiles, the directory-enumeration op)",
       "listFiles": "object enumeration under a scope; response entry shape TBD (distinct from getFileMetadata)",
-      "fileDownload": "mount-plane read-path counterpart to the chunked fileUpload; streams the object back, the backend object-store origin chunks it under the RPC message ceiling; request/response field set TBD",
+      "fileDownload": "mount-plane read-path counterpart to the chunked fileUpload; streams the object back, the storage engine chunks it under the RPC message ceiling; request/response field set TBD",
       "importFiles": "session-pseudobucket import; request/response field set TBD",
       "importZip": "one-op zip import (the whole archive imported in a single op); request/response field set TBD",
       "migrateFilesystem": "in-session pseudobucket control primitive (rebind the session scope, not a durable-store data migration); request/response field set TBD",
