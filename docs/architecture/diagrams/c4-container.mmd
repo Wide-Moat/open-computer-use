@@ -2,9 +2,10 @@
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
 %% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
-%% Six containers across five Layer-3 trust zones: the Control plane splits into an agent-facing
-%% MCP gateway and an operator/lifecycle API (the kill-switch lives only on the latter); the other
-%% four zones map 1:1. Substrate differs by shelf (see 05-c4-container.md §5); the count does not.
+%% Containers across the Layer-3 trust zones: the Control plane splits into an agent-facing MCP gateway
+%% and an operator/lifecycle API (the kill-switch lives only on the latter); the storage concern splits
+%% into a narrow object-store client and an artifact-plane (different counterparties, ADR-0015).
+%% The count is a then-true observation, not an invariant (05-c4-container.md §1). Substrate differs by shelf (§5).
 %% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
 
 %%{init: {"theme": "neutral"} }%%
@@ -14,41 +15,47 @@ flowchart LR
     PEER["MCP-speaking caller<br/>(runs the loop)"]:::ext
     OPER["Operator<br/>(PAM-JIT human)"]:::ext
     FILE["Data-plane client<br/>(OCU SPA · file/artifact API)"]:::extOpt
-    UPSTREAM["Outbound endpoints<br/>(LLM · object store · internal API)"]:::ext
+    UPSTREAM["Outbound endpoints<br/>(LLM · filestore backend · internal API)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
     SDS["SDS source<br/>(static file solo · customer store enterprise)"]:::extOpt
+    ISSUER["Off-box credential issuer<br/>(storage JWT signing key · out of request path)"]:::extOpt
 
     %% ─── containers inside the system under design ───
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
-        CTRL["Control / operator API<br/>lifecycle · quota · kill-switch"]
-        STORE["Storage broker<br/>object-store client · signs own requests<br/>guest mount (south) + SPA · file/artifact API · preview (north)"]
-        VM["Session sandbox [1..N]<br/>guest agent = PID 1 · one per session"]
-        EDGE["Egress trust-edge proxy<br/>single outbound path · allow-list<br/>edge-inject via Envoy SDS (Envoy data plane + SDS minter)"]
+        CTRL["Control / operator API<br/>lifecycle · quota · kill-switch · credential DELIVERY"]
+        OSC["Narrow object-store client<br/>capability-free · speaks backend protocol · no signing key"]
+        AP["Artifact-plane<br/>file/artifact API · SPA · preview (parser-sandbox)<br/>OUR design · no signing key"]
+        VM["Session sandbox [1..N]<br/>guest agent = PID 1 · in-guest mount client (client + transport, one binary)"]
+        EDGE["Egress trust-edge proxy<br/>single TLS-inspected hop · forwards, no re-credential<br/>(Envoy data plane + SDS leaf-minter)"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
-    %% ─── inbound (two distinct surfaces of the Control plane) ───
-    PEER -->|"MCP authz spec"| MCPG
-    OPER -->|"PAM-JIT credential · operator-only ingress"| CTRL
-    MCPG -->|"session create / status<br/>service identity"| CTRL
+    %% ─── inbound (two distinct surfaces of the Control plane; the artifact-plane fronts E5) ───
+    PEER -->|"F1: MCP authz spec"| MCPG
+    OPER -->|"F2: PAM-JIT credential · operator-only ingress"| CTRL
+    MCPG -->|"F5: session create / status<br/>service identity"| CTRL
+    FILE -.->|"F11: SPA · file/artifact API<br/>embed token → first-party session · bytes direct"| AP
 
-    %% ─── control + storage reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
-    CTRL -->|"Session JWT bound to container_name<br/>rotated · host dials guest"| VM
-    STORE -->|"mount · resource handle (filesystem_id)"| VM
-    FILE -.->|"SPA · file/artifact API (north)<br/>embed token → first-party session · bytes direct"| STORE
+    %% ─── control + provisioning reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
+    CTRL -->|"F6: Session JWT bound to container_name<br/>host-attested caller · host dials guest"| VM
+    CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>host-issued scoped JWT + ca_cert · host dials guest"| VM
+    ISSUER -.->|"pre-signed scoped JWT (out of band)"| CTRL
 
-    %% ─── egress: guest carries no long-lived upstream secret; on injection-needing legs the edge
-    %%     receives the credential over SDS and injects at the egress-wide-bump rung (see 05 §3, §6; ADR-0007) ───
-    VM -->|"single outbound · no long-lived upstream secret"| EDGE
-    SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (bump rung)"| EDGE
-    STORE -->|"backend request · broker-signed · storage lane (NFR-SEC-85)<br/>allow-list-only · signature intact"| EDGE
-    EDGE -->|"injection-needing leg: upstream auth injected (bump rung)"| UPSTREAM
+    %% ─── ONE backend network leg: the in-guest mount client (= the object-store client + transport,
+    %%     one binary) dials out through the single egress hop. The artifact-plane reaches the backend
+    %%     by calling that same client behind the credential seam (F9), NOT a second egress leg. ───
+    VM -->|"F8: single outbound · guest dials out"| EDGE
+    VM -.->|"F7a: storage data leg over F8<br/>service_url · static Bearer (scoped JWT forwarded)"| EDGE
+    SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (hardening rung)"| EDGE
+    AP -->|"F9: file-op intent · credential seam<br/>(intra-deployment, no network hop)"| OSC
+    EDGE -->|"forwards to origin · backend validates filesystem_id claim · scope at origin (ADR-0013)"| UPSTREAM
 
     %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
     MCPG -->|OCSF| AUD
     CTRL -->|OCSF| AUD
-    STORE -->|OCSF| AUD
+    OSC -->|OCSF| AUD
+    AP -->|OCSF| AUD
     VM -->|OCSF| AUD
     EDGE -->|OCSF| AUD
     AUD -.->|"OCSF bridge<br/>full shelf"| SINK

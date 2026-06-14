@@ -33,9 +33,9 @@ The in-progress materials at [`docs/future-architecture/`](../future-architectur
 
 These specs are the source of truth; the code lives in separate public repositories under the `Wide-Moat` org. The per-container mapping is in [`components/00-overview.md`](./components/00-overview.md#3-implementation-repositories).
 
-- [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) — control plane and sandbox executor (containers 02, 05).
-- [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) — storage broker (container 04).
-- [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) — guest-side filestore mount (container 04, south face).
+- [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) — sandbox executor (container 05), transiently the control plane (02) until the carve-out to `ocu-control` lands.
+- [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) — narrow object-store client (container 04).
+- [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) — in-guest mount client: the object-store client and transport in one binary (container 04).
 
 ## Reading order
 

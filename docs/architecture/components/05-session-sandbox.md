@@ -3,13 +3,13 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: contracts/exec/exec-channel.schema.json
-adr: [0003]
+adr: [0003, 0005, 0007, 0013, 0014, 0015, 0016, 0017]
 ---
 
 Internal design of the per-session execution container, for engineers implementing and auditing the guest agent and its host-side edges. The guest agent is the process that constitutes this container ([`05-c4-container.md`](../05-c4-container.md) §3): it is PID 1 and dies with the session.
@@ -22,20 +22,20 @@ Executes one session's tool-calls in an isolated runtime that holds no standing 
 
 ## Boundaries
 
-Intra-container, the container is one process tree rooted at the guest agent (PID 1). Two host-side mediators sit outside the guest's network yet terminate the channels the guest uses: a per-session exec supervisor (terminates the exec WebSocket, spawns and reaps guest processes, bounds stdio) and the runtime supervisor (the user-space-kernel sentry on the gVisor tier, the VMM on the microVM tier, the host kernel on runc). The mount and egress edges are owned by other containers (Storage broker, Egress trust-edge); the guest holds only the handle and the route, never the credential.
+Intra-container, the container is one process tree rooted at the guest agent (PID 1). Two host-side mediators sit outside the guest's network yet terminate the channels the guest uses: a per-session exec supervisor (terminates the exec WebSocket, spawns and reaps guest processes, bounds stdio) and the runtime supervisor (the user-space-kernel sentry on the gVisor tier, the VMM on the microVM tier, the host kernel on runc). The mount and egress edges are owned by other containers (the narrow object-store client and the Egress trust-edge); the guest holds only the scoped bearer and the route, never the signing key.
 
 | Direction | What crosses | Internal terminator | Note |
 |---|---|---|---|
 | host → guest | exec/PTY+CDP control union + stdin frames | exec supervisor (host-dialled; non-host peer dropped at accept) | one WebSocket per session; envelope frozen in [`exec/exec-channel`](../../../contracts/exec/exec-channel.schema.json) |
 | guest → host | stdout/stderr binary frames + result/EOF | exec supervisor | length-prefixed, bounded per call (Invariants) |
 | host → guest | Session JWT (selects session identity) | guest agent | Session JWT class, TTL per [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 |
-| broker → guest | file-operation mount + Storage-mount handle | guest agent (mount client) | guest names file-op verbs, never the object-store protocol; substrate is named by role |
+| object-store client → guest | file-operation mount + Storage-mount handle | guest agent (mount client) | guest names file-op verbs, never the object-store protocol; substrate is named by role |
 | guest → edge | outbound network leg | guest agent | guest carries no long-lived upstream secret on this leg; the edge attaches upstream authorization ([ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md), [ADR-0007](../adr/0007-egress-auth-mechanism.md)) keyed on a presented scoped credential, never on the route's network origin; this route is the container's sole egress (invariant 4) |
 | guest → audit | OCSF tool-call events (fan-in flow F10, defined in [`05-c4-container.md`](../05-c4-container.md) §4) | exec supervisor / runtime-monitor | host-authored, not guest-authored (Operational concerns) |
 
-The inbound exec/PTY+CDP edge, the broker mount edge, and the outbound egress leg are the boundaries [`05-c4-container.md`](../05-c4-container.md) §4 names; their `F6`/`F7`/`F8` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4.
+The inbound exec/PTY+CDP edge, the mount edge, and the outbound egress leg are the boundaries [`05-c4-container.md`](../05-c4-container.md) §4 names; their `F6`/`F7`/`F8` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4.
 
-Owned state: the live process tree and its scratch/tmpfs, the per-process resource counters the exec supervisor keeps, and the guest's in-memory Session JWT and Storage-mount handle for the life of the session. It provably does NOT hold any upstream/backend credential, the Custody credential lease, the session denylist, or any kill-switch route — those sit host-side of the guest. The guest resolves no name for the Control plane or the Storage broker; those are reached over the host-opened off-network channel, so no guest-side lookup exists to retarget.
+Owned state: the live process tree and its scratch/tmpfs, the per-process resource counters the exec supervisor keeps, and the guest's in-memory Session JWT and Storage-JWT for the life of the session. It provably does NOT hold any upstream/backend credential, any storage signing key, the session denylist, or any kill-switch route — those sit host-side of the guest or off-box at the credential issuer. The guest resolves no name for the Control plane; that is reached over the host-opened off-network channel, so no guest-side lookup exists to retarget. The storage backend `service_url` it does resolve is an egress destination under the one proxy-owned resolver, not a host-side control endpoint.
 
 The contract carries the tagged-JSON control union and out-of-band binary stdio frames; field types and the bounded-reason error envelope live in the schema and are not restated. The schema does not encode two facts: the exec supervisor — not the guest — terminates the socket, and the runtime tier is selected by `workload_trust_profile`, not by the contract. The schema records the spawn-time environment fields; it does not pin which component enforces the strip — that actor is the host supervisor (Invariants).
 
@@ -55,6 +55,7 @@ Each is falsifiable by the named check; cross-cutting zone, egress-mode, retenti
 10. Per-sandbox resource use is contained beyond the cgroup ceiling — scratch disk quota and deterministic OOM scoping (the breaching sandbox is the victim) — so one sandbox's flood holds co-resident sandboxes within the noisy-neighbour latency budget (red-team noisy-neighbour suite, NFR-SEC-46).
 11. No session-scoped secret is present in guest RAM or disk at snapshot-create time, and on resume the guest re-derives a fresh host-attested identity and reseeds entropy and unique IDs so no two guests restored from one image share a token, nonce, RNG stream, or `boot_id` (offline image-extraction scan + N-fork uniqueness test, NFR-SEC-44 + NFR-SEC-71).
 12. Every TTL/expiry decision the guest is subject to reads a monotonic clock immune to wall-clock setback, and on resume the wall clock is corrected before any time-bound check runs (red-team clock-rollback harness, NFR-SEC-48 + NFR-SEC-63 — theme [#185](https://github.com/Wide-Moat/open-computer-use/issues/185), owned by [`02-trust-boundaries.md`](../02-trust-boundaries.md)).
+13. A recycled mount substrate carries no readable session-1 content into session-2: the page cache is dropped and the local mount/scratch region is zeroized (or its per-session DEK destroyed) before the region is re-granted, so erase completes-before re-grant (property test: write a session-1 marker, recycle, assert session-2 cannot read it, NFR-SEC-54 + NFR-SEC-64 + NFR-SEC-66). The resume-time CSPRNG/identity reseed that prevents a shared RNG stream is invariant 11, not restated here.
 
 ## Failure modes
 
@@ -71,6 +72,7 @@ Each row traces to one P5 STRIDE row in [`06-threat-model.md`](../06-threat-mode
 | P5-T1 | A1 | With root the guest suppresses, fabricates, or reorders the OCSF events it would author for its own in-sandbox actions. The guest is never the authoritative source: a host-side mediation layer and a not-guest-disableable runtime-monitor session author the record out of band. Residual: purely in-sandbox actions with no host-side side-effect — guest-self-audit theme [#181](https://github.com/Wide-Moat/open-computer-use/issues/181). | NFR-SEC-47 |
 | P5-R1 | A1 | An in-sandbox action cannot be non-repudiably attributed because its only candidate record originates inside the guest. Out-of-band host-authored evidence supplies the record and the monotonic-clock envelope orders accepted events. Residual: the in-sandbox-evidence gap (theme [#181](https://github.com/Wide-Moat/open-computer-use/issues/181)) plus the clock-trust dependency (theme [#185](https://github.com/Wide-Moat/open-computer-use/issues/185)). | NFR-SEC-47 + NFR-SEC-48 |
 | P5-I2 | A3 | A snapshot/hibernation image freezes a live Session JWT and mount handle at rest; an image read recovers a usable token before TTL. The image is taken at minimal-init before session material is layered, live token buffers are zeroized before a retained hibernate, and a single-restore guard prevents fork replay. Residual: a live secret in an off-cycle image — snapshot theme [#184](https://github.com/Wide-Moat/open-computer-use/issues/184). | NFR-SEC-44 + NFR-SEC-66 |
+| P4-mount-I2 | A1 | A reused mount substrate leaks session-1 user-data into session-2 via page-cache or device-backend residue. Erase-before-reuse (invariant 13): the page cache is dropped and the local mount/scratch region zeroized — or its per-session DEK destroyed — before the region is re-granted, so erase completes-before re-grant; mount and handle are session-scoped, list/read stay confined to the `filesystem_id` prefix. Residual: deterministic per-session erasure ordering not yet pinned to an NFR scenario — re-homed from [`06-threat-model.md`](../06-threat-model.md) P4-mount-I2. | NFR-SEC-15 + NFR-SEC-54 + NFR-SEC-13 + NFR-SEC-64 + NFR-SEC-25 |
 
 The host-facing default is fail-closed on every boundary the guest can pressure: an unreachable exec channel, a dropped egress route, and a failed teardown each deny authority rather than degrade open. Sandbox escape to the host kernel and the exec/PTY+CDP channel-spoof variants are MITIGATED in [`06-threat-model.md`](../06-threat-model.md) §4 (NFR-SEC-02/14, NFR-SEC-43) and are not live rows here.
 

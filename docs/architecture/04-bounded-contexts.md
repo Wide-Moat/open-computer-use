@@ -3,7 +3,7 @@
 
 ---
 status: proposed
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -12,7 +12,7 @@ Cuts the domain into bounded contexts and classifies each as core, supporting, o
 
 ## 1. Context layer vs trust zones
 
-[`02-trust-boundaries.md`](02-trust-boundaries.md) §2 draws five zones — Control plane, Storage broker, Compute plane, Egress trust-edge, Audit pipeline. Those answer "where does it run and under what protection." This layer answers a different question: "which slices of the domain carry the competitive value, and which are solved problems we integrate." A trust zone is a deploy/protection slice; a bounded context is a domain slice. They do not map one-to-one, and the mismatches are the point.
+[`02-trust-boundaries.md`](02-trust-boundaries.md) §2 draws five zones — Control plane, Storage, Compute plane, Egress trust-edge, Audit pipeline. Those answer "where does it run and under what protection." This layer answers a different question: "which slices of the domain carry the competitive value, and which are solved problems we integrate." A trust zone is a deploy/protection slice; a bounded context is a domain slice. They do not map one-to-one, and the mismatches are the point.
 
 The classification drives the next layer: a context marked `generic` becomes an integration in [`03-c4-context.md`](03-c4-context.md)'s external-actor set, not a container we build; a `core` context becomes containers we own in the C4 Container layer.
 
@@ -21,7 +21,8 @@ The classification drives the next layer: a context marked `generic` becomes an 
 ```mermaid
 flowchart TB
     subgraph CORE["Core — built in-house"]
-        AEX["Agent Execution &amp; Sandbox Lifecycle"]
+        AEX["Agent Execution &amp; Sandbox Lifecycle<br/>(incl. storage mount-plane)"]
+        ART["Artifact-plane<br/>(core sub-context, OUR design)"]
         CEV["Compliance Evidence &amp; Audit Lineage"]
     end
     subgraph SUP["Supporting — built, not differentiating"]
@@ -32,14 +33,16 @@ flowchart TB
         IDF["Identity federation"]
         SEC["Secrets custody"]
         POL["Policy evaluation"]
+        ENG["Object-store engine<br/>(pluggable adapter)"]
     end
     AEX -->|"OCSF event"| CEV
+    AEX -->|"narrow object-store client"| ENG
     style CORE fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px
     style SUP fill:#fff8e1,stroke:#b8860b
     style GEN fill:#f5f5f5,stroke:#9e9e9e,stroke-dasharray:5 5
 ```
 
-The diagram shows only the core-to-core domain edge; the full set of context relationships (inbound, generic integrations) is the context map in §4.
+The diagram shows the core-to-core domain edge and the storage split: the mount-plane sits inside Agent Execution, the artifact-plane is a core sub-context, and the object-store engine is a generic integration. The full set of context relationships (inbound, generic integrations) is the context map in §4.
 
 | Subdomain | Class | Value axis | Build-vs-buy |
 |---|---|---|---|
@@ -47,6 +50,9 @@ The diagram shows only the core-to-core domain edge; the full set of context rel
 | **Compliance Evidence & Audit Lineage** | core | domain complexity — binding every agent action into a replayable, hash-linked lineage that survives an adversarial workload (the lineage, not the OCSF schema or the SIEM sink, is the defensible part) | build |
 | **Tenancy & Isolation** | supporting | owns the T0–T3 isolation-tier selection logic | build |
 | **Operator Access** | supporting | owns the PAM-JIT human-to-platform contract ([NFR-COMP-29](manifesto/02-nfrs.md)); bespoke to us, sits outside the value axis | build |
+| **Storage mount-plane** | core (within Agent Execution) | the `filesystem_id`-scoped file-operation surface the session reaches; its invariants exist to serve the running session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
+| **Artifact-plane** | core sub-context (own component) | the client file/artifact API, embeddable SPA, and preview-render; an OCU design addition, not a reproduction; aggregate root is the artifact plus the embed-asserted principal, distinct from the session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
+| **Storage backend protocol** (narrow object-store client) | supporting → generic engine | the object-store wire protocol is a solved problem; the engine is a pluggable adapter (local-volume / S3) | build the client, integrate the engine ([ADR-0010](adr/0010-storage-backend-pluggable-adapter.md)) |
 | **Identity federation** | generic | relying-party to customer IdP | integrate |
 | **Secrets custody** | generic | key custody behind PKCS#11 / KMIP | integrate |
 | **Policy evaluation** | generic | externalised authorization decisions | integrate |
@@ -54,6 +60,8 @@ The diagram shows only the core-to-core domain edge; the full set of context rel
 Source availability is a go-to-market property, not a classification axis. The security primitives ship in the open artifact ([`01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) §"Audience"); that does not demote Agent Execution to generic. Applying an open runtime correctly to adversarial in-perimeter agent-issued code is where the domain complexity sits, so it stays core.
 
 Compliance Evidence is core for the same reason — domain depth, not deal-decisiveness. It clears the TPRM veto (the buyer chain in `01-audience-and-buyer.md`), but that proves it is commercially important, not that it is core. What makes it core is the *lineage*: the OCSF schema, the pluggable SIEM sinks, and the customer-chosen transparency log are generic substrate we integrate; reconstructing a tamper-evident, replayable chain of agent actions across an adversarial workload is the part no competitor hands over and the part we build.
+
+Storage classifies on the same axis once split by counterparty. The mount-plane is core because its language is the running session's; the artifact-plane is a core sub-context because it fronts an external data-plane client with its own aggregate root and is an OCU design, not a reproduction; the object-store wire protocol is a solved problem, so the client stays narrow and capability-free and the engine integrates as a pluggable adapter. The earlier single welded storage component carried all three counterparties under one identity; the cut places each on its build-vs-buy class without moving a key — the storage signing key is held off-box by a separate issuer and no plane below it holds one ([ADR-0013](adr/0013-storage-credential-custody.md)).
 
 ## 3. Trust zones to contexts
 
@@ -63,15 +71,15 @@ The five zones group into two core contexts. The mismatch is deliberate: four zo
 |---|---|---|
 | Control plane | Agent Execution | session lifecycle is execution machinery |
 | Compute plane (sandbox) | Agent Execution | the sandbox is where the tool-calls execute |
-| Storage broker | Agent Execution | host-side broker serves the session's user-data mount |
+| Storage | Agent Execution | the session's mount-plane and its narrow object-store client serve the running session's user data |
 | Egress trust-edge | Agent Execution | the single outbound path is part of running safely |
 | Audit pipeline | Compliance Evidence | different reason to exist: prove, not run |
 
 The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution.
 
-Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. The Storage broker (mount terms: `filesystem_id`, `resource-handle`, `backend-credential`; north-face delivery terms: `artifact`, `preview`, `downloadable`, `SPA-render`) and the Egress trust-edge (enforcement and injection terms: `SNI pre-filter`, `egress-wide bump`, `x-deny-reason`, `auth-injection`, the SDS-delivered upstream credential) speak narrower sub-languages; they sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session).
+Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. The session mount-plane (file-operation terms: `filesystem_id`, scoped bearer, open / read / write / list, the whole-filesystem control verbs import / migrate / remove) and the narrow object-store client behind it (engine, `filesystem_id`→prefix, multipart) speak a narrower sub-language; the Egress trust-edge speaks another (`SNI`, per-host inspection leaf, the single governed hop). They sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). The artifact-plane does not — it fronts an external data-plane client over an embed-token flow, with the artifact plus the embed-asserted principal as its aggregate root, so it is a sub-context of its own (§2), not part of the session's language ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)).
 
-The supporting and generic contexts are not Layer 3 zones we own. Of the three generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM). Policy evaluation is not yet drawn in Layer 3; it is consumed at the Egress trust-edge (egress allow-list and credential injection) within Agent Execution. The remaining Layer 3 §3 actors are not new contexts: Customer SIEM, SOAR, and the transparency log are downstream consumers of the Compliance Evidence context (§4); the customer outbound proxy and DLP-ICAP are configurations of the Egress trust-edge already inside Agent Execution. An LLM, if a sandbox tool reaches one, is just another allow-listed egress endpoint behind that edge — not a context we model.
+The supporting and generic contexts are not Layer 3 zones we own. Of the three generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM). Policy evaluation is not yet drawn in Layer 3; it is consumed at the Egress trust-edge within Agent Execution, by the optional deny-by-default allow-list hardening on the baseline inspection hop ([ADR-0016](adr/0016-egress-baseline-inspection-hop-backend-scope.md)). The remaining Layer 3 §3 actors are not new contexts: Customer SIEM, SOAR, and the transparency log are downstream consumers of the Compliance Evidence context (§4); the customer outbound proxy and DLP-ICAP are configurations of the Egress trust-edge already inside Agent Execution. An LLM, if a sandbox tool reaches one, is just another allow-listed egress endpoint behind that edge — not a context we model.
 
 ## 4. Context map
 

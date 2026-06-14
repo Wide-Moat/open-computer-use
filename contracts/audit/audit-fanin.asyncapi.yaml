@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-# Audit fan-in contract: six host-attested source containers publish OCSF events
-# to the Audit pipeline. AsyncAPI 3.0.0 names the channel/operation; the OCSF
-# event class is the payload (Published Language), referenced by $ref to the
-# public OCSF schema, never inlined.
+# Audit fan-in contract: five host-attested source channels publish OCSF events
+# to the Audit pipeline (control plane, storage, session sandbox, egress edge,
+# and the pipeline's own self-emitted metering). AsyncAPI 3.0.0 names the
+# channel/operation; the OCSF event class is the payload (Published Language),
+# referenced by $ref to the public OCSF schema, never inlined. There is no
+# credential-custody producer: OCU mints nothing and the storage signing key is
+# off-box at a separate issuer.
 
 asyncapi: 3.0.0
 
@@ -11,7 +14,7 @@ info:
   title: OCU Audit Fan-in
   version: 1.0.0
   description: >-
-    One-directional fan-in from six host-attested source containers into the
+    One-directional fan-in from five host-attested source channels into the
     Audit pipeline. Payload is an OCSF v1.x event class (Published Language).
     Delivery is durable and ordered into a per-source hash-chained append-only
     log (NFR-SEC-03). The SIEM fan-out and the SOAR webhook are separate
@@ -45,16 +48,9 @@ channels:
       entityManagement:
         $ref: '#/components/messages/EntityManagement'
 
-  credentialCustodyAudit:
-    address: audit.ingest.credential-custody
-    description: BR — Authorize Session (lease mint/rotate/scope/revoke).
-    messages:
-      authorizeSession:
-        $ref: '#/components/messages/AuthorizeSession'
-
-  storageBrokerAudit:
-    address: audit.ingest.storage-broker
-    description: SB — File System Activity on both broker faces — south-face mount (list/read/write/create/stat) and north-face data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
+  storageAudit:
+    address: audit.ingest.storage
+    description: STORAGE — File System Activity on both storage surfaces — the mount-plane (list/read/write/create/stat, host-authored per NFR-SEC-47) and the artifact-plane data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79. The object-store client and the artifact-plane share this one source channel; there is no credential-custody producer — OCU mints nothing and the signing key is off-box.
     messages:
       fileSystemActivity:
         $ref: '#/components/messages/FileSystemActivity'
@@ -104,23 +100,14 @@ operations:
       - $ref: '#/channels/controlPlaneAudit/messages/authentication'
       - $ref: '#/channels/controlPlaneAudit/messages/entityManagement'
 
-  receiveCredentialCustody:
+  receiveStorage:
     action: receive
     channel:
-      $ref: '#/channels/credentialCustodyAudit'
+      $ref: '#/channels/storageAudit'
     security:
       - $ref: '#/components/securitySchemes/sourceMtls'
     messages:
-      - $ref: '#/channels/credentialCustodyAudit/messages/authorizeSession'
-
-  receiveStorageBroker:
-    action: receive
-    channel:
-      $ref: '#/channels/storageBrokerAudit'
-    security:
-      - $ref: '#/components/securitySchemes/sourceMtls'
-    messages:
-      - $ref: '#/channels/storageBrokerAudit/messages/fileSystemActivity'
+      - $ref: '#/channels/storageAudit/messages/fileSystemActivity'
 
   receiveSessionSandbox:
     action: receive
@@ -268,25 +255,13 @@ components:
         schema:
           $ref: "https://schema.ocsf.io/api/1.5.0/classes/entity_management"
 
-    AuthorizeSession:
-      name: AuthorizeSession
-      title: Authorize Session (OCSF 3003)
-      summary: Custody lease mint/rotate/scope/revoke (NFR-SEC-29).
-      contentType: application/json
-      traits:
-        - $ref: '#/components/messageTraits/auditEnvelope'
-      payload:
-        schemaFormat: application/schema+json;version=draft-07
-        schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/authorize_session"
-
     FileSystemActivity:
       name: FileSystemActivity
       title: File System Activity (OCSF 1001)
       summary: >-
-        File activity on both broker faces — south-face mount
-        (list/read/write/create/stat) and north-face data plane
-        (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
+        File activity on both storage surfaces — the mount-plane
+        (list/read/write/create/stat, host-authored) and the artifact-plane
+        data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
@@ -313,7 +288,7 @@ components:
                   description: Operation intent axis (NFR-SEC-49).
                 downloadable:
                   type: boolean
-                  description: Downloadable disposition resolved broker-side at read (NFR-SEC-73).
+                  description: Downloadable disposition resolved at the backend origin at read (NFR-SEC-73).
 
     ProcessActivity:
       name: ProcessActivity

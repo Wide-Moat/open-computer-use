@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -16,7 +16,7 @@ OCU is one component of the Wide-Moat opinionated bundle (other peers in the bun
 
 ## 2. Inside the box
 
-OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Storage broker + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
+OCU is the tool-execution component: MCP server / Control plane → guest agent → sandbox runtime → Egress trust-edge + Storage + Audit pipeline ([`02-trust-boundaries.md`](02-trust-boundaries.md) §1). The guest agent is OCU's in-sandbox executor. Internal decomposition is out of scope at this layer.
 
 ## 3. C4 Context diagram
 
@@ -32,7 +32,7 @@ The boundary-crossing actors are defined canonically in [`02-trust-boundaries.md
 | **Admin / Operator** (PAM-JIT human) | Operates OCU; host-rooted local credential on the minimal shelf, short-lived OIDC-asserted claim on the full shelf — no shared service accounts on either | required | [NFR-COMP-29](manifesto/02-nfrs.md) |
 | **Customer IdP** (OIDC) | Authenticates inbound peers and operators on the full shelf; OCU is a relying party; a SAML-only IdP federates in through Dex or Keycloak | not on the minimal shelf (operators use a host-rooted local credential) — required on the full-capability shelf | — |
 | **Customer SIEM** | OCSF v1.x event bridge consumed by the customer's SIEM | optional on minimal shelf (file-system sink); required where SIEM is the system of record | [NFR-MAINT-AUDIT-SCHEMA](manifesto/02-nfrs.md) |
-| **Customer KMS / HSM** | Key custody for the broker and audit signing chain on the full-capability shelf | optional — full shelf only; minimal shelf uses host-local keys | [NFR-FLEX-04](manifesto/02-nfrs.md) |
+| **Customer KMS / HSM** | Key custody for the off-box storage-credential issuer (full shelf) and the audit signing chain | optional — full shelf only; minimal shelf uses host-local keys | [NFR-FLEX-04](manifesto/02-nfrs.md) |
 | **Customer outbound proxy** | Chained-proxy hop for egress; OCU's trust-edge proxy speaks the chained contract | optional | — |
 | **Customer DLP-ICAP service** | ICAP req-mod / resp-mod hook at the egress-wide bump rung | optional — engaged only at the bump rung | [NFR-COMP-28](manifesto/02-nfrs.md) |
 | **SOAR** (incident automation) | Bidirectional: signed webhook from OCU on alert, admin API back for revoke | optional | — |

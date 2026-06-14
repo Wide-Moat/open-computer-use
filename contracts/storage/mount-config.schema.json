@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.open-computer-use.dev/storage/mount-config.schema.json",
-  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation mount surface (Storage broker -> host -> Session sandbox): broker-side provisioning config (carries lease), guest-facing config (no lease). The per-operation file-op RPC bodies live in file-ops.schema.json. NFR-SEC-25. JSON Schema 2020-12 (json-schema.org).",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-operation mount surface (mount-plane provisioning push: control plane -> host -> Session sandbox): provisioning config (carries the pre-issued Storage-JWT), guest-facing config (no token). The per-operation file-op RPC bodies live in file-ops.schema.json. NFR-SEC-25. JSON Schema 2020-12 (json-schema.org).",
   "title": "File-operation mount config",
-  "description": "Two mount-config variants: a broker-side provisioning config (carries the lease) and a guest-facing config (no lease). Each mount's RW/RO posture is the `writes` flag plus the structural `mounts` (RW) / `readonly_mounts` (RO) split; its freshness window is the per-mount `cache_duration_s` (short for RO inputs, long for the RW sink). The transport substrate (FUSE/virtio-fs/9p) is a component-spec choice and is deliberately absent from this schema (NFR-SEC-25). No object-store/S3 fields. No backend-encryption fields: isolation is by filesystem_id scope, not per-session crypt keys; crypt is not modelled on. The file-op RPC message set is split out to file-ops.schema.json (status TBD).",
+  "description": "Two mount-config variants: a provisioning config (carries the pre-issued Storage-JWT) and a guest-facing config (no token). Each mount's RW/RO posture is the `writes` flag plus the structural `mounts` (RW) / `readonly_mounts` (RO) split; its freshness window is the per-mount `cache_duration_s` (short for RO inputs, long for the RW sink). The transport substrate (FUSE/virtio-fs/9p) is a component-spec choice and is deliberately absent from this schema (NFR-SEC-25). No object-store/S3 fields. No backend-encryption fields: isolation is by filesystem_id scope enforced at the backend origin, not per-session crypt keys; crypt is not modelled on. The file-op RPC message set is split out to file-ops.schema.json (status TBD).",
 
   "$defs": {
     "SchemaVersion": {
@@ -36,7 +36,7 @@
     },
 
     "BackendCacheTtlSeconds": {
-      "description": "Config-level backend (broker-side) cache freshness window in whole seconds, distinct from the per-mount local-VFS window cache_duration_s. Broker-side, so it sits on the provisioning variant only.",
+      "description": "Config-level backend cache freshness window in whole seconds, distinct from the per-mount local-VFS window cache_duration_s. A host-side provisioning concern, so it sits on the provisioning variant only.",
       "type": "integer",
       "minimum": 0,
       "x-ocu-tbd": "Config-level backend cache TTL. Units (seconds) and config-level-vs-per-mount scope are design-derived from the field name; confirm against a source before freezing."
@@ -99,23 +99,23 @@
         "dir_perms": { "$ref": "#/$defs/Octal" },
         "file_perms": { "$ref": "#/$defs/Octal" }
       },
-      "$comment": "RW/RO is carried by `writes` and the structural `mounts` (RW) / `readonly_mounts` (RO) split, host-enforced. cache_duration_s sets the per-mount directional window (short for RO inputs, long for the RW sink; defaults pinned in CacheDurationSeconds, tunable per deployment). The backend source path is broker-derived from filesystem_id + the mount's RW/RO intent and is deliberately off the wire (least-data, NFR-SEC-25) — not a guest- or host-facing mount field. NFR-SEC-25.",
+      "$comment": "RW/RO is carried by `writes` and the structural `mounts` (RW) / `readonly_mounts` (RO) split, host-enforced. cache_duration_s sets the per-mount directional window (short for RO inputs, long for the RW sink; defaults pinned in CacheDurationSeconds, tunable per deployment). The backend source path is resolved at the backend origin from filesystem_id + the mount's RW/RO intent and is deliberately off the wire (least-data, NFR-SEC-25) — not a guest- or host-facing mount field. NFR-SEC-25.",
       "$comment-no-role": "No `role` field. RW/RO is structural (the mounts / readonly_mounts split) and the directional cache window is cache_duration_s itself; a role enum (uploads/tool_results/transcripts/outputs) bound to writes/cache would only duplicate values already carried by `writes` and cache_duration_s, with no source. The role names survive solely as the directional-window vocabulary in CacheDurationSeconds."
     },
 
     "GuestMountConfig": {
-      "description": "Host -> in-guest mount agent. Token-absent by construction: no field can carry an upstream credential (NFR-SEC-25, no-creds-in-guest invariant). The bearer credential is injected at the egress edge, never seen in the guest.",
+      "description": "Host -> in-guest mount agent. Token-absent by construction: no field carries the Storage-JWT (NFR-SEC-25, the guest holds the bearer only in its mount config, not on this provisioning wire). The mount client dials service_url guest-out over the single egress hop and forwards the bearer unmodified as a static Authorization: Bearer; scope is enforced at the backend origin (a foreign filesystem_id is rejected there).",
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "service_url", "mounts"],
       "properties": {
         "schema_version": { "$ref": "#/$defs/SchemaVersion" },
         "service_url": {
-          "description": "Single allow-listed broker egress endpoint the mount agent dials.",
+          "description": "Single allow-listed backend service_url the mount agent dials guest-out over the egress hop.",
           "type": "string",
           "format": "uri",
           "pattern": "^https://",
-          "examples": ["https://broker.internal"]
+          "examples": ["https://storage.internal"]
         },
         "mounts": {
           "description": "Read-write mounts provisioned in the guest. `writes` MUST be true; a read-only mount belongs in `readonly_mounts`.",
@@ -142,7 +142,7 @@
     },
 
     "ProvisionMountConfig": {
-      "description": "Storage broker -> host provisioning variant. Carries the broker-signed lease and the inspection-CA trust anchor. Never delivered into the guest as-is; the host strips the lease before handing the GuestMountConfig to the in-guest agent.",
+      "description": "Mount-plane provisioning variant (control plane -> host). Carries the pre-issued Storage-JWT and the inspection-CA trust anchor. Never delivered into the guest as-is; the host strips the token before handing the GuestMountConfig to the in-guest agent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["schema_version", "service_url", "filesystem_id", "auth_token", "ca_cert_pem", "mounts"],
@@ -152,16 +152,16 @@
           "type": "string",
           "format": "uri",
           "pattern": "^https://",
-          "examples": ["https://broker.internal"]
+          "examples": ["https://storage.internal"]
         },
         "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
         "auth_token": {
-          "description": "Broker-signed lease, opaque to the holder. Bound to filesystem_id and a TTL by the broker (lease semantics live in the Lease-pull surface). Present only in this broker-side variant; absent from GuestMountConfig.",
+          "description": "Pre-issued ES256 Storage-JWT bearer, opaque to the holder. Scoped {filesystem_id + workspace + org} with a ~6h fixed TTL and no refresh; signed off-box by a separate credential issuer and delivered (never signed) by the control plane in this provisioning push. Present only in this provisioning variant; absent from GuestMountConfig.",
           "type": "string",
           "minLength": 1
         },
         "ca_cert_pem": {
-          "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress edge that injects the bearer credential.",
+          "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress hop that terminates TLS and forwards the static bearer unmodified.",
           "type": "string",
           "contentMediaType": "application/x-pem-file",
           "pattern": "-----BEGIN CERTIFICATE-----"

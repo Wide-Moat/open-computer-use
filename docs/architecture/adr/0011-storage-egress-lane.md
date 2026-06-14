@@ -3,11 +3,12 @@
 
 ---
 status: proposed
-last-reviewed: 2026-06-07
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
 superseded-by: null
+amended-by: [0013, 0016]
 compliance-impact: [SOC2-CC6.1, ISO27001-A.8.10, NYDFS-500.15, DORA-Art.28]
 license-impact: none
 threat-mitigation-link: ../06-threat-model.md
@@ -19,7 +20,7 @@ The storage-backend leg is reached over a storage-dedicated lane on the Egress t
 
 ## Status
 
-`proposed`
+`proposed` — amended by [ADR-0013](0013-storage-credential-custody.md) and [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md). The premises this ADR rests on — a host-side broker that holds the backend credential and signs each request, and a storage lane that forwards "allow-list-only, no TLS termination" so a per-request signature stays byte-intact — do not hold against the reference. The storage credential is a guest-held, off-box-issued static bearer (ADR-0013); the egress hop terminates TLS and forwards that bearer unmodified, and there is no per-request signature to preserve (ADR-0016). Scope is enforced at the backend origin, not on the lane. Read this ADR's traffic-class separation (storage is a distinct egress purpose, not the guest-internet class) as the surviving decision; read its credential-holder and byte-intact-lane mechanics as superseded by ADR-0013/0016.
 
 ## Context
 

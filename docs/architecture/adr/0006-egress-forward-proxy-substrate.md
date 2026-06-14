@@ -3,11 +3,12 @@
 
 ---
 status: proposed
-last-reviewed: 2026-06-01
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
 superseded-by: null
+amended-by: [0016]
 compliance-impact: [SOC2-CC6.6, SOC2-CC6.7, NYDFS-500.15, DORA-Art.9, EU-AI-Act-Art.12]
 license-impact: Envoy Apache-2.0; clears the allow-list, bundled by this ADR
 threat-mitigation-link: ../components/06-egress-trust-edge.md
@@ -38,7 +39,7 @@ The Egress trust-edge runs an Apache-2.0/MIT/BSD forward proxy — Envoy is the 
 - Component 06 records this ADR in its `adr:` front-matter (`[]` → `[0006]`). The allow-list at connect time satisfies NFR-SEC-08 and NFR-SEC-17; the proxy-owned resolver enforces NFR-SEC-12's mandatory deny-set; the structured block carries the `x-deny-reason` vocabulary the spec already defines. This ADR does not restate those NFRs.
 - The `ext_authz`/`ext_proc` seam ships with a static allow-list as its default backend — the solo path configures no policy engine. OPA as a full-shelf backend behind the same seam is deferred, not v1.
 - The credential-origination hook is the seam where the edge attaches the upstream authorization received over Envoy SDS ([ADR-0005](0005-egress-credential-delivery-envoy-sds.md)); it fires only on a leg that needs it, never on the transparent default route. No CA, cert-issuer, ICAP, or credential wiring lands on the transparent path.
-- The broker backend leg ([component 04](../components/04-storage-broker.md), F9) traverses the proxy on a storage-dedicated lane, distinct from the guest egress lane ([NFR-SEC-85](../manifesto/02-nfrs.md), [ADR-0011](0011-storage-egress-lane.md)), with no TLS termination, so the broker-signed request is forwarded byte-intact per NFR-SEC-25.
+- The storage data leg is the in-guest mount client ([component 04](../components/04-storage-broker.md)) dialling its backend `service_url` guest-out (F7a, riding the single egress path F8) over this same hop; the hop terminates TLS and forwards the static `Authorization: Bearer` Storage-JWT unmodified, with scope enforced at the backend origin, not here. There is no storage-dedicated lane and no broker-signed byte-intact backend leg on the edge — that retired model is amended by [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md). F9 is the intra-deployment artifact-plane → object-store-client credential seam ([component 08](../components/08-artifact-plane.md)), not an edge leg.
 - Every allow and every deny is emitted as an OCSF event through the Audit pipeline ([component 07](../components/07-audit-pipeline.md)); the payload-independent exfil tripwire (NFR-SEC-57) runs on this path with no CA. This ADR adds no requirement to either.
 - The egress posture is the NFR-FLEX-15 ladder (deny-all / transparent pass-through / egress-wide bump / external SDS): this ADR fixes the forward-proxy substrate and the deny-by-default floor that every rung shares; egress-wide-bump origination (NFR-SEC-30, NFR-SEC-37, NFR-SEC-50) and DLP/ICAP as a bump-rung config (NFR-COMP-28) ride the same substrate and are decided in [ADR-0007](0007-egress-auth-mechanism.md) (which resolves component 06 open question #2).
 - xDS dynamic config and per-node sharding ([#175](https://github.com/Wide-Moat/open-computer-use/issues/175)) are deferred seams this ADR names but does not design.

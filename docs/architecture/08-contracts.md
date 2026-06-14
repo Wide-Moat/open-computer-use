@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -24,28 +24,28 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | SOAR revoke (inbound) | SOAR → Control / operator API | OpenAPI 3.1 | define | NFR-SEC-01 |
 | Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
-| File-operation mount | Storage broker → Session sandbox | file-operation interface — HTTP+JSON mount config (`filesystem_id`, broker-signed lease) over a FUSE/virtio-fs/9p substrate | define | NFR-SEC-25 |
-| File / artifact data plane (north face) | Data-plane client → Storage broker (north face) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
-| Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | wire off-the-shelf; the dynamic per-SNI minter implementing the SDS server is OCU code ([ADR-0007](adr/0007-egress-auth-mechanism.md)), the file SDS source is off-the-shelf | NFR-SEC-29 |
-| Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27 |
-| Broker backend leg | Storage broker → backend engine (network leg via the storage lane on the Egress trust-edge, ADR-0011) | external backend protocol (pluggable adapter, ADR-0010) | conform | NFR-SEC-16, NFR-SEC-25, NFR-SEC-85 |
-| Audit fan-in / SIEM | five containers → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
+| Mount provisioning push | Control / operator API → Session sandbox | HTTP+JSON mount config (`filesystem_id`, `service_url`, host-issued scoped JWT, `ca_cert_pem`, mount set) pushed host-to-guest before the mount client starts | define | NFR-SEC-25 |
+| Storage [data leg](glossary.md#data-leg) | Session sandbox → backend origin (over the Egress trust-edge) | the in-guest mount client (object-store client + transport, one binary) dials `service_url` guest-out, static `Authorization: Bearer`; scope verified at the backend origin | define | NFR-SEC-25, NFR-SEC-46, NFR-SEC-85 |
+| File / artifact data plane | Data-plane client → [Artifact-plane](components/08-artifact-plane.md) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
+| Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | wire off-the-shelf; the v1 inspection leaf is pre-minted out of band and served over Envoy-native file SDS (zero OCU minter on the data path), a dynamic per-SNI minter is specified for a non-enumerable destination set but unbuilt at GA ([ADR-0007](adr/0007-egress-auth-mechanism.md)) | NFR-SEC-29 |
+| Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27, NFR-SEC-85 |
+| Audit fan-in / SIEM | five source channels → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
 | SOAR webhook (outbound) | Audit pipeline → SOAR | AsyncAPI 3.0 | define | NFR-COMP-27 |
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
 Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (Connect-RPC over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
 
-The broker backend leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend's API or the log operator's Merkle-head signing.
+The storage data leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the backend origin's API or the log operator's Merkle-head signing.
 
-The Storage broker has two faces on one client: the south mount (above) and the north file/artifact data plane, served on a dedicated file/UI ingress, not the MCP-tool-call listener (NFR-SEC-78). The transport substrate under each into-sandbox leg (TCP / UDS / vsock for the exec channel; FUSE / virtio-fs / 9p for the mount) is a deployment-overlay and component-spec choice, not a contract (NFR-SEC-26, NFR-SEC-25). What the contract fixes is channel direction, per channel: the control/exec channel is host-dialled — the host opens it and a non-host peer is rejected at accept (NFR-SEC-43); the outbound leg runs the opposite way, guest-out and intercepted at the edge under egress policy (NFR-SEC-27).
+The storage concern is reached over two surfaces, not one face split in two. The mount surface is a host-to-guest provisioning push followed by a guest-out [data leg](glossary.md#data-leg): the Control / operator API pushes the mount config — the off-box-issued scoped JWT (`auth_token`), the inspection-CA anchor (`ca_cert_pem`), `service_url`, and the mount set — over the host-only control channel before the mount client starts; the guest mount client (the object-store client and transport in one binary, no host-side object-store-client hop carrying the guest's request) holds the bearer, scrubs the on-disk source after load, then dials `service_url` outbound and forwards the bearer unmodified as a static `Authorization: Bearer`. Scope is the signed `filesystem_id` claim the backend origin validates; a foreign-scope token is rejected at the backend origin, not at any middlebox ([ADR-0013](adr/0013-storage-credential-custody.md), [ADR-0014](adr/0014-storage-transport-tier-universal-network-leg.md)). The signing key stays off-box at the credential issuer; the Control plane delivers and never signs. The [Artifact-plane](components/08-artifact-plane.md) is a separate surface with an external counterparty (a [Data-plane client](glossary.md#data-plane-client)) and its own deployable — OCU's design addition, not a second face of one backend client ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)). The transport substrate under each into-sandbox leg (TCP / UDS / vsock for the exec channel; FUSE / virtio-fs / 9p for the mount) and the file-op message set (Connect-RPC over HTTP/2) are deployment-overlay and component-spec choices, not contract (NFR-SEC-26, NFR-SEC-25). What the contract fixes is channel direction, per channel: the control/exec channel and the mount provisioning push are host-dialled — the host opens them and a non-host peer is rejected at accept (NFR-SEC-43); the storage data leg and the artifact-plane fetch run the opposite way, guest-out or client-in, intercepted at the edge under egress policy (NFR-SEC-27).
 
 ## 2. Format choice
 
 Five formats cover every surface OCU defines; the choice follows the boundary shape, not preference.
 
 - **MCP JSON-Schema (over JSON-RPC 2.0)** — the agent tool surface. The protocol fixes the format; OCU does not choose it. Tool definitions carry JSON Schema; an embedded schema defaults to JSON Schema 2020-12 and may declare another dialect with `$schema`, so the validator honours the declared dialect and falls back to 2020-12 ([MCP spec 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
-- **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke) and the north-face file/artifact data plane (upload/list/download/getManifest/preview-render), an HTTP+JSON surface served on a dedicated ingress. SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
+- **OpenAPI 3.1** — inbound human/operator and third-party REST (operator API, SOAR revoke) and the artifact-plane file/artifact data plane (upload/list/download/getManifest/preview-render), an HTTP+JSON surface served on a dedicated ingress. SDK-generatable; its schemas are JSON Schema 2020-12 ([3.1 alignment](https://learn.openapis.org/upgrading/v3.0-to-v3.1.html)), the same dialect MCP defaults to, so inbound validation reads one dialect across both surfaces.
 - **Protobuf/gRPC** — unary internal RPC between OCU containers, where both ends version together: session set-up. Field-number rules plus `buf breaking` give machine-checked compatibility with no public-SDK obligation. Internal-only by policy. Egress secret delivery is Envoy SDS (gRPC xDS) between Envoy and the SDS source: the wire is off-the-shelf and not an OCU RPC surface, but the dynamic per-SNI minter that implements the SDS server for a non-enumerable allow-list is self-hosted OCU code ([ADR-0007](adr/0007-egress-auth-mechanism.md)); the file SDS source needs none.
 - **WebSocket** — the bidirectional exec/PTY+CDP surface, one socket per session. A PTY carries interleaved stdin/stdout/stderr bytes plus in-band resize and signal control, so the frame is tagged-JSON control alongside raw binary stream frames, not a unary call (NFR-IC-03). gRPC fits request/response, not a live byte stream, which is why this surface is WebSocket and the set-up RPC is not.
 - **AsyncAPI 3.0** — one-directional decoupled event fan-in to the Audit pipeline and fan-out to SIEM. Payload is the OCSF Published Language; AsyncAPI names the channel, OCSF types the event ([AsyncAPI 3.0](https://www.asyncapi.com/docs/concepts/asyncapi-document/define-payload)).
@@ -60,16 +60,16 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Bounded error verbosity | caller gets a stable reason code; `error.message`/`error.data` leak no internal topology or stack | NFR-SEC-51 |
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |
-| Bounded payload | gateway/REST/gRPC bound body size, array length, and object depth at the closed schema; the broker and exec transport cap max-message/max-object | NFR-SEC-51, NFR-SEC-46 |
-| Bounded north-face inbound body | reject a body above the configured ceiling (default ≤50 MiB) pre-buffer, never partially staged; per-validated-caller op/byte rate limits on a dedicated file/UI ingress | NFR-SEC-78 |
+| Bounded payload | gateway/REST/gRPC bound body size, array length, and object depth at the closed schema; the file-op and exec transport cap max-message/max-object | NFR-SEC-51, NFR-SEC-46 |
+| Bounded artifact-plane inbound body | reject a body above the configured ceiling (default ≤50 MiB) pre-buffer, never partially staged; per-validated-caller op/byte rate limits on a dedicated file/UI ingress | NFR-SEC-78 |
 | Archive validation | reject pre-extraction on uncompressed-total / entry-count / traversal / symlink ceilings | NFR-SEC-80 |
 | Content classification | resolve content type on ingest (magic-byte + declared media type), record before mount-visibility; pre-stage deny on a policy-denied type | NFR-SEC-81 |
 | Embed-token verify | reject any embed token not signature-valid, not naming this surface in audience, or past `exp` (`exp ≤ 120 s`); no OCU upstream secret crosses to the browser | NFR-SEC-82 |
 | Frame-ancestors allowlist | every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (header-only, default `'none'`) | NFR-SEC-83 |
 | First-party session + CSRF | a state-mutating request requires a server-validated CSRF token; a missing/invalid session is 401 with no anonymous fallback | NFR-SEC-84 |
-| File-activity audit (north) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline, gateway-authored, fail-closed | NFR-SEC-79 |
-| Three-axis authz | resolve scope (`filesystem_id`) + intent (`read`/`write`/`preview`) + `downloadable` broker-side from the host-attested session, never a client-supplied claim; `intent=preview` is read-only and non-downloadable | NFR-SEC-49 |
-| Downloadable axis at read | the broker resolves `downloadable` at read on both faces; a non-downloadable object yields no egress-eligible artifact (preview ≠ remove-from-sandbox) | NFR-SEC-73 |
+| File-activity audit (artifact-plane) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline, gateway-authored, fail-closed | NFR-SEC-79 |
+| Three-axis authz | scope (`filesystem_id`) + intent (`read`/`write`/`preview`) + `downloadable`, carried in the Storage-JWT and resolved at the backend origin from the host-attested session, never a client-supplied claim; `intent=preview` is read-only and non-downloadable | NFR-SEC-49 |
+| Downloadable axis at read | the backend origin resolves `downloadable` at read for both the mount-plane and the artifact-plane; a non-downloadable object yields no egress-eligible artifact (preview ≠ remove-from-sandbox) | NFR-SEC-73 |
 
 The MCP edge carries the same five through a two-tier error model: a protocol error (`JSON-RPC error{code,message}`) never reaches the model and carries a reason code only; a tool-execution error (`result.isError: true` + content) reaches the model with sanitized output. Both are bounded by NFR-SEC-51.
 
@@ -81,14 +81,14 @@ The control-plane RPC rule (breaking = major version + deprecation header) is ca
 
 ## 5. Schema artifacts
 
-This overview is the map; the schema files under `contracts/` own the field-level types. Six schema files are drafted (the storage surface carries three — mount config, south-face file-op RPC, north-face file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
+This overview is the map; the schema files under `contracts/` own the field-level types. Six schema files are drafted (the storage surface carries three — mount config, the mount-plane file-op RPC, the artifact-plane file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
 
 Drafted (not merged):
 
 - `contracts/mcp/2025-06-18/ocu-constraints.schema.json` — the MCP conform profile.
 - `contracts/exec/exec-channel.schema.json` — the exec/PTY WebSocket envelope.
-- `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the south-face mount config and file-op RPC (the file-op message bodies are tbd).
-- `contracts/storage/file-artifact-api.schema.json` — the north-face file/artifact data plane (upload/list/download/getManifest/preview-render + the embed-token/CSP/CSRF envelope). Per-operation bodies are tbd, like the south face; the embed-token binding claim ([#217](https://github.com/Wide-Moat/open-computer-use/issues/217)) and preview-render parser isolation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) are tracked open items.
+- `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount-plane mount config and file-op RPC (the file-op message bodies are tbd).
+- `contracts/storage/file-artifact-api.schema.json` — the artifact-plane file/artifact data plane (upload/list/download/getManifest/preview-render + the embed-token/CSP/CSRF envelope). Per-operation bodies are tbd, like the mount-plane RPC; the embed-token binding claim ([#217](https://github.com/Wide-Moat/open-computer-use/issues/217)) and preview-render parser isolation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) are tracked open items.
 - `contracts/audit/audit-fanin.asyncapi.yaml` — the OCSF fan-in (the compute-metering and saturation payloads are tbd, [#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).
 
 Not built:

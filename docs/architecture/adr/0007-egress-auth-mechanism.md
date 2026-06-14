@@ -3,11 +3,12 @@
 
 ---
 status: proposed
-last-reviewed: 2026-06-01
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
 superseded-by: null
+amended-by: [0013, 0016]
 compliance-impact: [SOC2-CC6.1, SOC2-CC6.6, NYDFS-500.15, DORA-Art.28, EU-AI-Act-Art.15]
 license-impact: TLS-termination substrate is the same Envoy already bundled by ADR-0006; a per-SNI cert-minting sidecar is the added build surface
 threat-mitigation-link: ../components/06-egress-trust-edge.md
@@ -36,7 +37,7 @@ The selection axis:
 | Client is a fixed binary that hardcodes the endpoint; credential is one bearer token; protocol is HTTP + `Authorization`; no per-operation authorization needed | **edge-inject (egress-wide bump)** |
 | Credential is high-value and scoped by rights (repo / object / tenant); protocol is multi-operation (git-smart-http, S3/SigV4, REST with per-object authz); the credential holder must authorize each operation | **protocol-broker** |
 
-v1 implements edge-inject. Protocol-broker is named, abstraction-ready, and deferred: the pattern is already canonical as the Storage broker zone ([02-trust-boundaries.md](../02-trust-boundaries.md) §2), which holds the object-store backend credential and exposes a session-scoped handle. A future scoped-credential upstream reuses that zone; v1 builds no new broker.
+v1 implements edge-inject. Protocol-broker is named, abstraction-ready, and deferred: no in-deployment component holds an upstream signing key, so the broker is an unbuilt v1 mechanism, not an existing zone. The Storage zone ([02-trust-boundaries.md](../02-trust-boundaries.md) §2) is not that broker — its credential is an off-box-issued scoped bearer the guest forwards unmodified, with scope enforced at the backend origin ([ADR-0013](0013-storage-credential-custody.md), which amends this ADR). A future scoped-credential upstream that needs per-operation authorization is the case that adds the broker; v1 builds none.
 
 **edge-inject mechanism (v1).** The edge runs egress-wide bump: it terminates every outbound TLS connection by presenting a leaf certificate minted on demand for the requested SNI, signed by a per-deployment CA whose public certificate is in the sandbox trust store and whose private key never enters the guest. It injects the upstream credential on the re-originated leg and re-establishes TLS to the genuine upstream, validating the upstream's real certificate against the public CA set. Injection is gated on a presented, scoped credential carried by the request — never on the request's network origin (a guest process that presents no credential receives none, which is why a bare `curl` from the sandbox reaches an allowed host but is unauthenticated). The substrate is the Envoy already bundled by ADR-0006 as the data plane, plus a self-hosted SDS minting service (a gRPC `SecretDiscoveryService` that stamps a leaf for the requested SNI from the CA key); Envoy alone does not mint leaves on the fly.
 

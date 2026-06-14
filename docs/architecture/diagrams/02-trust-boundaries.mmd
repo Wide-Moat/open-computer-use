@@ -17,6 +17,7 @@ flowchart LR
     SIEM[Customer SIEM]:::extOpt
     KMS[Customer KMS / HSM]:::extOpt
     SDS[SDS source<br/>static file solo · customer store enterprise]:::extOpt
+    ISS[Off-box credential issuer<br/>holds the storage signing key · out of request path]:::extOpt
     SOAR[SOAR<br/>signed webhook + admin API]:::extOpt
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
     TLOG[Transparency log]:::extOpt
@@ -31,8 +32,8 @@ flowchart LR
         ORCH[orchestrator + session lifecycle<br/>MCP interface · agent-facing<br/>operator interface · lifecycle + kill-switch<br/>kill-switch not reachable over MCP]
     end
 
-    subgraph STORE[Storage broker]
-        SB[host-side storage broker<br/>guest speaks file ops, not the object-store protocol<br/>broker is the object-store client · signs its own requests<br/>holds the backend credential · guest holds no backend key<br/>content inspection here on plaintext, before signing]
+    subgraph STORE[Storage]
+        SB[narrow object-store client + artifact-plane<br/>guest mount client = object-store client + transport, one binary<br/>dials the backend service_url guest-out · forwards a static Bearer<br/>holds no signing key · backend origin verifies + enforces scope<br/>artifact-plane fronts the external data-plane client]
     end
 
     subgraph COMPUTE[Compute plane]
@@ -59,18 +60,20 @@ flowchart LR
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
     ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤60min · rotated"| VM
-    ORCH -->|"session resource handle<br/>scopes the mount · NFR-SEC-25"| SB
+    ISS -.->|"pre-signed scoped JWT<br/>out of request path"| ORCH
+    ORCH -->|"provisioning push · scoped Storage-JWT + ca_cert<br/>before the mount client starts · NFR-SEC-25"| VM
     SDS -->|"upstream credential over SDS<br/>source owns mint · rotate · revoke<br/>NFR-SEC-23 · ADR-0005 · ADR-0007"| PROXY
 
-    %% ─── storage-mount path (second guest-data boundary: in vs out) ───
-    %% Distinct from egress. The guest reads/writes mutable user-data through a
-    %% mount the broker serves; the guest holds only a session-scoped resource
-    %% handle (e.g. filesystem_id), never the storage backend credential. The
-    %% broker's own backend traffic leaves on a storage-dedicated lane at the
-    %% Egress trust-edge, distinct from the guest egress lane (NFR-SEC-85).
-    %% Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
-    SB -->|"mount · session resource handle only<br/>no backend credential in guest<br/>NFR-SEC-25"| VM
-    SB -->|"backend traffic · broker-signed · storage lane (NFR-SEC-85)<br/>allow-list-only, no TLS termination<br/>signature stays intact"| PROXY
+    %% ─── storage data leg (second guest-data boundary, guest-out) ───
+    %% Distinct from the provisioning push. The in-guest mount client (object-store
+    %% client + transport, one binary) dials the backend service_url guest-out over
+    %% the single egress hop and forwards the scoped Storage-JWT as a static Bearer;
+    %% the hop terminates TLS and forwards the bearer unmodified (no per-request
+    %% signature to preserve), and the backend origin enforces the filesystem_id
+    %% scope (NFR-SEC-25 · NFR-SEC-31 · NFR-SEC-85). No host-side object-store-client
+    %% hop carries the guest's request. Mount substrate (FUSE / virtio-fs / 9p) is
+    %% component-spec.
+    VM -->|"storage data leg · static Bearer (scoped JWT)<br/>scope verified at backend origin · NFR-SEC-85"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -82,7 +85,7 @@ flowchart LR
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>no long-lived upstream secret in request<br/>credential attached at edge on a presented scoped credential<br/>NFR-SEC-27 · ADR-0007"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected (SDS-delivered)<br/>fail-closed"| LLM
-    PROXY -->|"object-store leg is the broker's, not the guest's<br/>broker-signed · allow-list-only, no TLS termination<br/>signature intact · fail-closed"| OBJ
+    PROXY -->|"storage data leg to the backend origin<br/>TLS-terminated · static Bearer forwarded unmodified<br/>scope enforced at origin · fail-closed"| OBJ
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
@@ -97,7 +100,8 @@ flowchart LR
     BUS -.->|"daily Merkle head<br/>submission envelope"| TLOG
 
     %% ─── KMS path (optional, full-capability shelf only) ───
-    SB -.->|"PKCS#11 / KMIP"| KMS
+    %% The storage signing key is off-box at the credential issuer (ISS), not in a
+    %% zone here; CMEK envelope (workspace_cmek_enabled) is a backend-origin concern.
     BUS -.->|"PKCS#11 / KMIP<br/>signing on full shelf"| KMS
 
     %% ─── styling (project palette: red untrusted / amber semi-trusted / green trusted / blue isolated) ───

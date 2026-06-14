@@ -12,7 +12,7 @@ When a feature limitation is an acceptable minimal-shelf trade-off versus a sile
 
 ## Shelf split
 
-Both tiers ship the same six containers ([05-c4-container.md](../05-c4-container.md) §5); only the substrate and credential management differ.
+Both tiers ship the same seven containers ([05-c4-container.md](../05-c4-container.md) §5); only the substrate and credential management differ.
 
 - **Minimal shelf** — single operator, self-signed per-deployment CA, file-system audit, host-rooted operator credential. The one-click `docker-compose up` path: no external IdP, no cloud credential, no pre-staged key.
 - **Full shelf** — customer IdP-asserted operator identity, customer-PKI-rooted signers, external SIEM sink, dynamic SDS credential minting.
@@ -39,7 +39,7 @@ Gate to full shelf, or label it a security gap, if:
 
 | Verdict | Example |
 |---|---|
-| Acceptable | The Storage broker on the minimal shelf holds a host-rooted backend key instead of per-session scoped credentials ([NFR-SEC-25](02-nfrs.md)); the full shelf brings scoped credentials, the trade is documented, and the sole path to it is the full shelf. |
+| Acceptable | On the minimal shelf, under single-tenant `trusted_operator`, the storage signing key MAY be a control-plane-local key file instead of the off-box credential issuer ([NFR-SEC-25](02-nfrs.md), [NFR-SEC-60](02-nfrs.md)); the full shelf brings the off-box issuer, the trade is documented, and the sole path to it is the full shelf. |
 | Acceptable | The Egress trust-edge on the minimal shelf auto-generates a per-deployment CA instead of integrating a customer KMS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)); a full-shelf deployer brings their PKI. |
 | Not acceptable | Audit not written on the minimal shelf because no external SIEM is configured. Audit is not optional; with the sink off, events still write to a local hash-chained store (NFR-SEC-03). |
 | Not acceptable | Session idle timeout hard-coded with no adjustable window, breaking the workflow. A knob defaulting conservatively is fine; no knob is not (NFR-SEC-40). |

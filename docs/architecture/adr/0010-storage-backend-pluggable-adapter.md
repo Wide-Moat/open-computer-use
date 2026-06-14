@@ -3,11 +3,12 @@
 
 ---
 status: proposed
-last-reviewed: 2026-06-07
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
 superseded-by: null
+amended-by: [0013, 0015, 0016]
 compliance-impact: [SOC2-CC6.1, ISO27001-A.8.10]
 license-impact: none
 threat-mitigation-link: ../06-threat-model.md
@@ -19,7 +20,7 @@ The Storage broker owns the guest file-operation contract and drives the backend
 
 ## Status
 
-`proposed`
+`proposed` — amended by [ADR-0015](0015-storage-decomposition-by-trust-plane.md), [ADR-0013](0013-storage-credential-custody.md), and [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md). The pluggable-adapter decision stands; only the component identity and the signing premise are superseded. ADR-0015 retires the "broker" identity this ADR's title and Context name and renames it the narrow object-store client — read "the broker" here as that client. ADR-0013/0016 retire the premise that this client "signs every backend request": the storage credential is an off-box-issued static bearer the client forwards unmodified, the signing key lives off-box at the credential issuer, and scope is enforced at the backend origin. Read "signs every backend request" / "that signer" (Context, Decision, Consequences) as "forwards the off-box-issued bearer unmodified to the backend"; only the pluggable-engine-adapter and two-contracts-stay-distinct decisions survive.
 
 ## Context
 
@@ -57,4 +58,4 @@ No production engine is bundled. The local-volume reference engine is OCU code o
 
 ## Threat mitigation
 
-Addresses Information Disclosure on the backend leg: the backend protocol terminates inside the broker's object-store client, the request is broker-signed, and a network engine's leg traverses the storage-dedicated lane on the egress edge allow-list-only without TLS termination ([NFR-SEC-25](../manifesto/02-nfrs.md), [ADR-0011](0011-storage-egress-lane.md)), so the signed request is byte-intact and no backend credential or endpoint reaches the guest. A local-volume engine opens no network leg, so the in-transit obligation is vacuous for it.
+Addresses Information Disclosure on the backend leg: the backend protocol terminates inside the narrow object-store client, which carries the guest-held, off-box-issued Storage-JWT as a static bearer over the single TLS-terminating egress hop, with scope enforced at the backend origin ([ADR-0013](0013-storage-credential-custody.md), [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)). There is no per-request signature to preserve and no storage-dedicated no-termination lane — that retired model is amended by ADR-0016. A local-volume engine opens no network leg, so the in-transit obligation is vacuous for it.

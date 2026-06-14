@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-30
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -22,35 +22,65 @@ The session sandbox zone — one sandbox per session, lifecycle bound to the ses
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md).
 
-## Storage broker
+## Filestore
 
-Host-side broker for the guest's mutable user-data mount. The guest speaks a file-operation interface (open / read / write / list) to the broker, not the object-store protocol; the broker is the object-store client and signs its own backend requests, so no middlebox rewrites a request signature. Holds the backend credential; the guest holds only a session-scoped resource handle (a `filesystem_id`), never the backend key. The broker's backend traffic traverses a storage-dedicated lane on the Egress trust-edge, distinct from the guest egress lane (NFR-SEC-85), in allow-list-only mode (no TLS termination) so the signature stays intact; content inspection, when required, runs at the broker on plaintext, before signing. It has a guest-facing interface (the mount) and governs an inbound data path, where the Egress trust-edge governs only outbound. Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice. The broker has two faces on one object-store client: a [south face](#south-face--north-face) (the guest mount) and a [north face](#south-face--north-face) (the file-artifact data plane for a [Data-plane client](#data-plane-client)).
+The storage concern as a whole: a session's mutable user-data, the backend that holds it, and the planes that reach it. The backend is a first-party file-operation service (`listDirectory` / `upload` / `download` over an HTTP/RPC surface), generalized to a pluggable engine (local-volume or S3) by [ADR-0010](./adr/0010-storage-backend-pluggable-adapter.md). It decomposes by counterparty into the [Mount-plane](#mount-plane), the [Artifact-plane](#artifact-plane), the [Parser-sandbox](#parser-sandbox), and a narrow object-store client; none of these holds a signing key ([ADR-0013](./adr/0013-storage-credential-custody.md), [ADR-0015](./adr/0015-storage-decomposition-by-trust-plane.md)). Drawn as the **Storage** zone in [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2.
 
-Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2 / §7.1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-25.
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`04-bounded-contexts.md`](./04-bounded-contexts.md) §2-§4, [`05-c4-container.md`](./05-c4-container.md) §3, [`08-contracts.md`](./08-contracts.md) §1.
+
+## Mount-plane
+
+The `filesystem_id`-scoped file-operation surface the running session reaches: open / read / write / list plus the whole-filesystem control verbs import / migrate / remove. Its aggregate root is the session, so it sits inside Agent Execution, not as its own context ([`04-bounded-contexts.md`](./04-bounded-contexts.md) §3). The guest reaches the backend over the [Data-leg](#data-leg) and authorizes with a [Storage-JWT](#storage-jwt) — the guest holds that scoped bearer in memory, never a signing key and never a raw backend key ([ADR-0013](./adr/0013-storage-credential-custody.md)). Authorization carries three axes: scope (`filesystem_id`), intent (`read` / `write` / `preview`), and [downloadable](#downloadable); scope is enforced at the backend origin ([ADR-0016](./adr/0016-egress-baseline-inspection-hop-backend-scope.md)). Mount substrate (FUSE / virtio-fs / 9p) is a component-spec choice.
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`04-bounded-contexts.md`](./04-bounded-contexts.md) §2-§4, [`05-c4-container.md`](./05-c4-container.md) §3, [`08-contracts.md`](./08-contracts.md) §1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-25.
+
+## Artifact-plane
+
+OCU's own client file/artifact API, embeddable SPA, and preview-render — a design addition, not a reproduction. It fronts an external [Data-plane client](#data-plane-client) over the [embed-token](#embed-token) flow; its aggregate root is the artifact plus the embed-asserted principal, distinct from the session, so it is a core sub-context and its own component/deployable ([`04-bounded-contexts.md`](./04-bounded-contexts.md) §3, [ADR-0015](./adr/0015-storage-decomposition-by-trust-plane.md)). Bytes flow client↔OCU directly, never to the object store; it holds no signing key. Untrusted bodies render through the [Parser-sandbox](#parser-sandbox). Served on a file/UI ingress distinct from the MCP listener.
+
+Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md) §2-§4, [`05-c4-container.md`](./05-c4-container.md) §3-§4, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §1 / §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-82.
+
+## Parser-sandbox
+
+A capability-free render boundary for untrusted bodies: it parses an uploaded or preview-requested file to produce a rendered view and holds no signer, no key, and no backend reach. Used by the [Artifact-plane](#artifact-plane) for preview-render and by archive ingest validation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)). Isolating the parse keeps a hostile body from reaching anything credential-adjacent.
+
+Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-81.
+
+## Credential-issuer
+
+The off-box service that holds the sole [Storage-JWT](#storage-jwt) signing key (ES256). It mints a scoped token before sandbox boot; the Control plane delivers the pre-signed token in the provisioning push and never signs ([ADR-0013](./adr/0013-storage-credential-custody.md)). On the minimal shelf the signer is a bundled OpenBao Transit engine; on the full shelf the customer provides it (OpenBao / Keycloak / KMS) over a documented mint contract. No plane below it — guest, object-store client, [Artifact-plane](#artifact-plane), [Parser-sandbox](#parser-sandbox) — holds the signing key.
+
+Used in: [`04-bounded-contexts.md`](./04-bounded-contexts.md) §3, [`05-c4-container.md`](./05-c4-container.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-60, [`manifesto/05-licensing-posture.md`](./manifesto/05-licensing-posture.md) §"Bundled vs not-bundled".
+
+## Storage-JWT
+
+The scoped ES256 bearer the [Mount-plane](#mount-plane) presents to the [Filestore](#filestore) backend. Minted by the [Credential-issuer](#credential-issuer), scoped to `{filesystem_id, workspace, org}` with a three-axis authorization (scope, intent, downloadable), fixed ~6 h TTL, no in-session refresh. Delivered into the guest mount config at provisioning, loaded into the mount client's memory and scrubbed from disk, then forwarded unmodified as a static `Authorization: Bearer`. Scope is validated at the backend origin — a foreign `filesystem_id` under the same token returns 401 ([ADR-0016](./adr/0016-egress-baseline-inspection-hop-backend-scope.md)). A leaked token reaches at most this filesystem for the remaining TTL; it is not a whole-backend key.
+
+Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-60.
+
+## Data-leg
+
+The session's storage data path: the in-guest mount client dials out to a network `service_url` (Connect-RPC / HTTP-2) over the single [Egress trust-edge](#egress-trust-edge) hop, which terminates TLS and forwards the [Storage-JWT](#storage-jwt) unmodified. Guest-out, not host-dialled, and tier-universal — every runtime (runc / gVisor / microVM) has a guest network stack. Distinct from the host→guest provisioning push that delivers the mount config and the Storage-JWT before boot ([ADR-0014](./adr/0014-storage-transport-tier-universal-network-leg.md)). A local-volume backend ([ADR-0010](./adr/0010-storage-backend-pluggable-adapter.md)) makes the origin local and opens no network leg; the leg, when present, always transits the inspection hop.
+
+Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`05-c4-container.md`](./05-c4-container.md) §4, [`08-contracts.md`](./08-contracts.md) §1.
 
 ## Data-plane client
 
-An external caller that reaches OCU's file-artifact data plane — the [Storage broker](#storage-broker) [north face](#south-face--north-face) — to upload, list, download, or preview-render files. It is either OCU's own authenticated SPA (embeddable cross-origin) or a headless caller of the file-artifact API; bytes flow client↔OCU directly, never through a calling peer and never to the object store. Distinct from the MCP caller (which drives the control plane) and the Operator (CLI / PAM-JIT). Absent in headless deployments.
+An external caller that reaches the [Artifact-plane](#artifact-plane) to upload, list, download, or preview-render files. It is either OCU's own authenticated SPA (embeddable cross-origin via an [embed token](#embed-token)) or a headless caller of the file/artifact API; bytes flow client↔OCU directly, never through a calling peer and never to the object store. Distinct from the MCP caller (which drives the Control plane) and the Operator (CLI / PAM-JIT). Absent in headless deployments.
 
 Used in: [`03-c4-context.md`](./03-c4-context.md) §4, [`05-c4-container.md`](./05-c4-container.md) §3-§4, [`06-threat-model.md`](./06-threat-model.md) §2, [`08-contracts.md`](./08-contracts.md) §1.
 
-## South face / north face
+## Embed token
 
-The two faces of the one [Storage broker](#storage-broker) object-store client. The **south face** is the guest mount — a file-operation interface (open / read / write / list) the sandbox speaks, scoped by `filesystem_id`. The **north face** is the file-artifact data plane — OCU's HTTP file/artifact API and embeddable SPA, served on a dedicated file/UI ingress for a [Data-plane client](#data-plane-client), not the MCP listener. Both faces share the one backend credential and the one storage-lane backend leg (NFR-SEC-85); neither the guest nor the data-plane client holds a backend credential.
+A signed short-TTL token (OIDC-asserted, `exp ≤ 120 s`) the calling peer's backend mints so its already-authenticated user opens OCU's embeddable SPA cross-origin without re-entering credentials. The [Artifact-plane](#artifact-plane) verifies the token signature and expiry, then sets a first-party session; OCU mints nothing and no OCU upstream secret enters the browser.
 
-Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`04-bounded-contexts.md`](./04-bounded-contexts.md) §3, [`05-c4-container.md`](./05-c4-container.md) §3-§4, [`08-contracts.md`](./08-contracts.md) §1.
+Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-82.
 
 ## Downloadable
 
-The third storage-authorization axis (beyond scope and intent): a per-object disposition the broker resolves at read, separating "may read" from "may remove from the sandbox." A non-downloadable object is readable or previewable in-session but yields no egress-eligible artifact; the disposition reaches the Egress trust-edge as a deny signal. The preview-not-download exfiltration control.
+The third storage-authorization axis (beyond scope and intent): a per-object disposition resolved at read by the [Mount-plane](#mount-plane) and the [Artifact-plane](#artifact-plane), separating "may read" from "may remove from the sandbox." A non-downloadable object is readable or previewable in-session but yields no egress-eligible artifact; the disposition reaches the Egress trust-edge as a deny signal. The preview-not-download exfiltration control.
 
 Used in: [`02-trust-boundaries.md`](./02-trust-boundaries.md) §2, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-73.
-
-## Embed token
-
-A signed short-TTL token (OIDC-asserted, `exp ≤ 120 s`) the calling peer's backend mints so its already-authenticated user opens OCU's embeddable SPA cross-origin without re-entering credentials. The [north face](#south-face--north-face) verifies the token signature and expiry, then sets a first-party session; OCU mints nothing and no OCU upstream secret enters the browser.
-
-Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §3, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-82.
 
 ## Egress trust-edge
 

@@ -11,7 +11,8 @@ flowchart LR
     subgraph OCU["Open Computer Use — STRIDE overlay"]
         MCPG["MCP gateway"]
         CTRL["Control / operator API"]
-        STORE["Storage broker"]
+        OSC["Narrow object-store client<br/>+ mount-plane (P4-mount)"]
+        ART["Artifact-plane (P4-artifact)<br/>API · SPA · parser-sandbox"]
         VM["Session sandbox [1..N]"]
         EDGE["Egress trust-edge proxy"]
         AUD["Audit pipeline"]
@@ -19,22 +20,27 @@ flowchart LR
     PEER --> MCPG
     OPER --> CTRL
     MCPG --> CTRL
-    CTRL --> VM
-    STORE --> VM
-    DPC -->|"north face (F11)"| STORE
-    VM --> EDGE
-    SDS -->|"credential over SDS"| EDGE
-    STORE --> EDGE
+    CTRL -->|"F6 exec/control + F7 provisioning push"| VM
+    DPC -->|"F11"| ART
+    ART -->|"F9 file-op behind credential seam"| OSC
+    VM -->|"F7a guest mount data leg"| EDGE
+    VM -->|"F8 egress"| EDGE
+    SDS -.->|"upstream credential over SDS (hardening rung)"| EDGE
     VM -.OCSF.-> AUD
     EDGE -.OCSF.-> AUD
+    OSC -.OCSF.-> AUD
+    ART -.OCSF.-> AUD
+    MCPG -.OCSF.-> AUD
+    CTRL -.OCSF.-> AUD
 
-    PEND["NFR specified, impl tracked<br/>#148 #149 #150 #176 #181 #182<br/>#183 #184 #185 #186 #187 #188<br/>#197 #217 #218"]:::pend
+    PEND["NFR specified, impl tracked<br/>#148 #149 #150 #176 #181 #182 #183<br/>#184 #185 #186 #187 #188 #197 #198<br/>#217 #218"]:::pend
     MCPG -. P1-I1 P1-E2 .-> PEND
-    CTRL -. P2-R1 .-> PEND
-    STORE -. "P4-D1 (south) · P4-S3 P4-T3 P4-I3 P4-D3 P4-R2 P4-E3 (north)" .-> PEND
-    VM -. P5-T1 P5-I1 P5-I2 P5-I3 P5-R1 .-> PEND
-    EDGE -. P6-I1 P6-I2 P6-D1 P6-D3 P6-E2 P6-E3 .-> PEND
-    AUD -. P7-S1 P7-R2 P7-T2 P7-R3 P7-T3 .-> PEND
+    CTRL -. P2-R1 P7-R3 .-> PEND
+    OSC -. "P4-mount-D1 P4-mount-D2 P4-mount-E1 P4-mount-E2 P4-mount-S2 P4-mount-I1" .-> PEND
+    ART -. "P4-artifact-S3 P4-artifact-T3 P4-artifact-I3 P4-artifact-D3 P4-artifact-R2 P4-artifact-E3" .-> PEND
+    VM -. P5-T1 P5-I1 P5-I2 P5-I3 P5-I4 P5-R1 .-> PEND
+    EDGE -. P6-I1 P6-D1 P6-D3 P6-E1 P6-T1 P6-I3 .-> PEND
+    AUD -. P7-T2 P7-T3 .-> PEND
 
     classDef ext fill:#fdecea,stroke:#c0392b,stroke-width:1px;
     classDef pend fill:#fff8e1,stroke:#f39c12,stroke-width:2px,color:#7a5c00;

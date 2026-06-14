@@ -1,7 +1,7 @@
 %% SPDX-License-Identifier: FSL-1.1-Apache-2.0
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Layer 8 (Contracts) overlay. Referenced from docs/architecture/08-contracts.md.
-%% Same six containers as diagrams/c4-container.mmd; edge labels carry the CONTRACT FORMAT
+%% Same seven containers as diagrams/c4-container.mmd; edge labels carry the CONTRACT FORMAT
 %% on each crossing, not the token/protocol. Zone shading is not redrawn — see Layer 3/6.
 %% Solid = OCU-defined or conform-inbound; dashed = external party owns the wire format.
 
@@ -18,7 +18,8 @@ flowchart LR
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway"]
         CTRL["Control / operator API"]
-        STORE["Storage broker"]
+        OSC["Narrow object-store client"]
+        AP["Artifact-plane"]
         VM["Session sandbox [1..N]"]
         EDGE["Egress trust-edge"]
         AUD["Audit pipeline"]
@@ -28,16 +29,17 @@ flowchart LR
     OPER -->|"OpenAPI 3.1"| CTRL
     MCPG -->|"Protobuf / gRPC"| CTRL
     CTRL -->|"WebSocket (PTY+CDP)"| VM
-    STORE -->|"file-op mount (HTTP+JSON)"| VM
-    DPC -->|"OpenAPI 3.1 (file/artifact API)"| STORE
-    VM -->|"network policy"| EDGE
+    CTRL -->|"mount provisioning push (HTTP+JSON)"| VM
+    DPC -->|"OpenAPI 3.1 (file/artifact API)"| AP
+    AP -->|"file-op intent behind credential seam"| OSC
+    VM -->|"storage data leg + egress (network policy)"| EDGE
     SDS -.->|"Envoy SDS (gRPC xDS)"| EDGE
-    STORE -->|"network policy"| EDGE
-    EDGE -.->|"external backend protocol"| UPSTREAM
+    EDGE -.->|"first-party filestore protocol (to backend origin)"| UPSTREAM
 
     MCPG -->|"AsyncAPI 3.0 / OCSF"| AUD
     CTRL -->|"AsyncAPI 3.0 / OCSF"| AUD
-    STORE -->|"AsyncAPI 3.0 / OCSF"| AUD
+    OSC -->|"AsyncAPI 3.0 / OCSF"| AUD
+    AP -->|"AsyncAPI 3.0 / OCSF"| AUD
     VM -->|"AsyncAPI 3.0 / OCSF"| AUD
     EDGE -->|"AsyncAPI 3.0 / OCSF"| AUD
     AUD -.->|"AsyncAPI 3.0 / OCSF"| SINK

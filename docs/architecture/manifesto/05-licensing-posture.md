@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-01
+last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -44,6 +44,8 @@ The Bill of Materials is the table of accepted dependencies with this flag. It i
 | runc | Apache-2.0 | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
 | gVisor (`runsc`) | Apache-2.0 (per-file MIT/BSD) | bundled | [ADR-0003](../adr/0003-sandbox-runtime-tier-ladder.md) |
 | Envoy | Apache-2.0 | bundled | [ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md), [ADR-0006](../adr/0006-egress-forward-proxy-substrate.md) |
+| `rclone` (in-guest mount client, `ocu-rclone-filestore`) | base MIT; binding chain go-fuse (BSD-3-Clause) / cgofuse (MIT) | bundled | [ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md) |
+| OpenBao Transit (storage-credential ES256 signer: `ecdsa-p256`, `marshaling_algorithm=jws`) | MPL-2.0 (signer engine); the ~100-line OCU JWS assembler is FSL-1.1-Apache-2.0 library code | bundled (signer engine); not-bundled (issuer) | [ADR-0013](../adr/0013-storage-credential-custody.md) |
 
 ## Rejected dependencies
 
@@ -59,3 +61,8 @@ A rejection is first-class: recorded so it is not re-proposed. Each row names th
 | Zitadel (as primary IdP) | AGPL-3.0 | Keycloak (Apache-2.0) as the reference IdP relying-party target |
 | Redpanda | BSL | NATS JetStream (Apache-2.0) for the event bus |
 | mitmproxy / Squid ssl-bump (as the bump engine) | BSD / GPL-2.0+ — licence is not the blocker; adopting either as the egress bump engine drops the Envoy data plane (allow-list, OCSF audit, `ext_authz`) ADR-0006 placed there | Envoy data plane + a self-hosted SDS minting service for per-SNI leaves ([ADR-0007](../adr/0007-egress-auth-mechanism.md)); mitmproxy (BSD) recorded only as the fallback engine where the Envoy data plane is not needed |
+| SPIRE (as the Storage-JWT issuer) | Cannot reproduce the scoped ES256 envelope OCU mints — SVID shape, not a `{filesystem_id + workspace + org}` claim set with the 3-axis `AuthorizationMetadata` and fixed no-refresh TTL ([ADR-0013](../adr/0013-storage-credential-custody.md)) | OpenBao Transit signer + OCU JWS assembler; customer OpenBao / Keycloak / KMS over the documented mint contract |
+| GCP `signJwt` (IAM Credentials) | RS256-only and forces a Google `iss` + JWKS the backend origin must trust — wrong key type and trust anchor for the off-box issuer envelope | OpenBao Transit (`ecdsa-p256` / `jws`) as the reference signer; customer KMS as a drop-in over the mint contract |
+| AWS STS as the storage-credential issuer | The killed SigV4 / `F8` lease-pull shape ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205), [ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md)) — a per-operation request signer, not a pre-issued scoped bearer; reintroduces an OCU minting/STS-delegator surface ADR-0013 removes | Pre-issued ES256 `Authorization: Bearer`, scope enforced at the backend origin; no OCU STS leg on the data path |
+| cert-manager (as the JWT issuer) | An X.509 certificate authority, not a JWT signer — emits no `{filesystem_id + workspace + org}` bearer; mismatched primitive | OpenBao Transit signer; customer IdP / KMS over the mint contract |
+| Third-party Vault / OpenBao JWT plugins (community auth-method and signing plugins) | Sole-maintainer, no provenance — fails the supply-chain gate regardless of licence | First-party OpenBao Transit `jws` marshaling on the bundled engine; no out-of-tree plugin on the signing path |
