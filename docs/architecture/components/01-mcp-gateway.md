@@ -12,29 +12,31 @@ contract: contracts/mcp/2025-06-18/ocu-constraints.schema.json
 adr: []
 ---
 
-The agent-facing inbound terminator: it authenticates the MCP caller, validates the tool-call, and hands a session request to the Control/operator API. Audience: engineers and security reviewers implementing or auditing the inbound MCP edge.
+The agent tool-call ingress: it authenticates the MCP caller, validates the tool-call, and routes a session request to the control plane. Audience: engineers and security reviewers implementing or auditing the inbound MCP edge.
 
 # Component-01: MCP gateway
 
 ## Purpose
 
-Terminates inbound MCP tool-calls and authenticates the caller, then forwards a metadata-only session request to the Control/operator API ([`05-c4-container.md`](../05-c4-container.md) §3). It conforms to the public MCP revision and runs no agent loop; the calling client owns the loop and the model. The gateway holds no caller token past the request, no upstream credential, and no lifecycle or kill-switch route.
+The MCP gateway is the agent tool-call ingress for MCP callers; it authenticates the caller, validates the tool-call against the OCU profile, and routes a session request to the Control/operator API ([`05-c4-container.md`](../05-c4-container.md) §3). It runs no agent loop — the calling client owns the loop and the model. It holds no session lifecycle, no kill-switch route, and never reaches the sandbox directly.
 
 ## Boundaries
 
-Intra-container, the gateway is one process with three internal stages on each request:
+The gateway has three edges:
 
-| Internal stage | What it does |
-|---|---|
-| transport listener | terminates the MCP connection and validates the bearer audience |
-| schema validation | applies the MCP base schema, then the OCU constraint profile |
-| forwarding | issues a service-identity request to the Control/operator API |
+| Edge | Direction | Defined in |
+|---|---|---|
+| MCP caller → gateway | inbound tool-call | [`05-c4-container.md`](../05-c4-container.md) §4 (`F1`) |
+| gateway → Control/operator API | session request forward | [`05-c4-container.md`](../05-c4-container.md) §4 (`F5`) |
+| gateway → Audit pipeline | OCSF fan-in | [`05-c4-container.md`](../05-c4-container.md) §4 (`F10`) |
 
-The inbound caller edge, the gateway→Control/operator API edge, and the gateway→Audit pipeline fan-in are the boundaries `05-c4-container.md` §4 names (their `F1`/`F5`/`F10` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4); this spec adds only which internal stage terminates each.
+There is no gateway→sandbox edge and no gateway→operator-ingress edge. The control plane is the only door to create or manage a session; the gateway routes the request there and goes no further.
 
-Owned state: none that outlives a request. The gateway holds the in-flight request, the negotiated protocol revision for the connection, and its own service-identity signing material; it persists no session registry (that is the Control/operator API), no caller token after the response, and no customer payload. It holds no upstream credential, no storage credential, no session denylist, and no route that resolves to a lifecycle or kill-switch operation — the operator surface sits in a separate container reachable only on operator-only ingress ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8).
+Intra-container, the gateway is one process.
 
-Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy): the gateway validates the inbound external bearer as a relying party and presents a Generic internal token on the forward to the Control/operator API. It mints and holds no Session JWT and no storage credential. The wire contract is the OCU constraint profile over MCP revision 2025-06-18 ([`ocu-constraints.schema.json`](../../../contracts/mcp/2025-06-18/ocu-constraints.schema.json)); it is a conform-not-define overlay, so field types, the error envelope, and the numeric caps live in the schema. The caller token is carried on the transport, never in the JSON-RPC body or URI query, and is never forwarded onto the Control/operator API leg or into the sandbox.
+Owned state: none that outlives a request. The gateway holds the in-flight request, the connection's negotiated protocol revision, and its own service-identity signing material. It persists no session registry (the Control/operator API owns that), no caller token after the response, and no customer payload. It holds no upstream credential, no storage credential, no session denylist, and no route that resolves to a lifecycle or kill-switch operation — the operator surface sits in a separate container on operator-only ingress ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8).
+
+Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy): the gateway validates the inbound external bearer as a relying party and presents a Generic internal token on the forward to the Control/operator API. It mints and holds no Session JWT and no storage credential. The wire contract is the OCU constraint profile over MCP revision 2025-06-18 ([`ocu-constraints.schema.json`](../../../contracts/mcp/2025-06-18/ocu-constraints.schema.json)); it overlays rather than redefines, so field types, the error envelope, and the numeric caps live in the schema. The caller token rides the transport, never the JSON-RPC body or URI query, and is never forwarded onto the Control/operator API leg or into the sandbox.
 
 ## Invariants
 
@@ -51,7 +53,7 @@ Each holds independent of the caller and is falsifiable by the named check.
 
 ## Failure modes
 
-Each row traces to one P1 STRIDE row in [`06-threat-model.md`](../06-threat-model.md) §3.2 and repeats that row's controlling NFR; fail-closed is the default on every authentication and forward boundary. A1 is the in-sandbox guest; A2 is the external caller (the reaching actor on the gateway's P1 element).
+Each row traces to one P1 STRIDE row in [`06-threat-model.md`](../06-threat-model.md) §3.2 and names that row's controlling NFR set; fail-closed is the default on every authentication and forward boundary. Every row in the table below is reached by A2, the external caller on the gateway's P1 element.
 
 | Trace | Reaching actor | What goes wrong | Recovery behaviour | Controlling NFR |
 |---|---|---|---|---|
@@ -59,12 +61,12 @@ Each row traces to one P1 STRIDE row in [`06-threat-model.md`](../06-threat-mode
 | P1-S2 | A2 | Gateway service identity escalated on the forward so the Control/operator API treats the request as more privileged | The forward carries the gateway service principal only, which holds no operator scopes | NFR-SEC-26 |
 | P1-T1 | A2 | On-path rewrite of tool-call parameters in flight | Validate audience and schema before acting; downstream authority is the host-derived identity, not the body | NFR-SEC-33 |
 | P1-T2 | A2 | Forwarded body claims another tenant's `session_id`/`container_name` to bind or read a session it does not own | The body id is a hint cross-checked host-side; the Control/operator API derives the binding, so a forged id grants no reach | NFR-SEC-43 |
-| P1-R1 | A2 | Caller denies issuing a tool-call/session-create; no independent record attributes the action | Emit an OCSF event on fan-in per terminated request with the validated caller identity | NFR-SEC-03 |
-| P1-I1 | A2 | Verbose MCP errors or discovery leak session ids, `container_name`, tenant ids, or the operator surface | Emit a stable reason class + correlation id only, size-bounded; discovery exposes only the declared tool surface | NFR-SEC-51 |
+| P1-R1 (E1 caller via F1) | A2 | Caller denies issuing a tool-call/session-create; no independent record attributes the action | Emit an OCSF event on fan-in per terminated request with the validated caller identity | NFR-SEC-03 |
+| P1-I1 | A2 | Verbose MCP errors or discovery leak session ids, `container_name`, tenant ids, or the operator surface | Emit a stable reason class + correlation id only, size-bounded; discovery exposes only the declared tool surface | NFR-SEC-33, NFR-SEC-51 |
 | P1-D1 | A2 | Flood of the MCP surface exhausts gateway connections/CPU and pressures the lifecycle plane via the forward | Per-caller connection/fd ceiling refuses excess; the separate runnable unit means saturation cannot reach operator ingress or the kill-switch | NFR-COST-06, NFR-SEC-01, NFR-SEC-53 |
 | P1-E2 | A2 | Caller invokes a tool or action beyond its authorization; the gateway authenticates but does not yet decide per-action authz | Audience-validated authN bounds who reaches the surface; host-attested identity blocks cross-session addressing downstream; per-action authz is the residual | NFR-SEC-49 |
 
-Residual, by [`06-threat-model.md`](../06-threat-model.md) §5 register: per-action authorization (P1-E2) is specified by NFR-SEC-49 but not yet enforced at the gateway — tracked at [#187](https://github.com/Wide-Moat/open-computer-use/issues/187). The identifier-minimization measurement behind P1-I1/P1-R1 is tracked at [#149](https://github.com/Wide-Moat/open-computer-use/issues/149). The gateway↛operator network separation that bounds P1-S2 and P1-D1 is verified by the NFR-SEC-52 IaC-policy assertion; the gateway is the agent-path side of the two-container split whose escalation row (P2-E1) is owned with the Control/operator API.
+Residual: per-action authorization (P1-E2) is specified by NFR-SEC-49 but not yet enforced at the gateway — the gateway authenticates the caller without deciding per-action authz. P2-E1 is specified in the Control/operator API spec; this spec carries only the gateway-side property (no MCP-surface route to a lifecycle/kill-switch op).
 
 ## Operational concerns
 

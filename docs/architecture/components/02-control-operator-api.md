@@ -12,66 +12,75 @@ contract: null
 adr: [0004, 0013, 0017]
 ---
 
-The operator-facing lifecycle terminator: it owns session lifecycle, quota, the session denylist, and the kill-switch, reachable only on operator/lifecycle ingress and never from the agent-facing MCP surface. Audience: engineers wiring the operator plane or auditing the kill-switch path.
+The only door to create or manage a session. Audience: engineers wiring the operator plane or auditing the kill-switch path.
 
 # Component-02: Control / operator API
 
 ## Purpose
 
-Owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It is the operator side of the Control plane split into two runnable units so the kill-switch is unreachable from the agent path by network policy rather than an in-process guard; it is the sole author of the session denylist that the Egress trust-edge reads and that the Control plane checks host-side on every Compute-plane control RPC (`F6`) ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §7).
+The Control / operator API is the only door to create or manage a session. It owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It delivers the storage credential to the guest but holds no signing key. It dials into the guest; the guest never dials it.
 
 ## Boundaries
 
-Intra-container, this is one process with three internal components behind a single operator/lifecycle ingress that is a distinct deployable from the MCP gateway:
+Inbound edges:
 
-| Internal component | What it does |
-|---|---|
-| lifecycle controller | terminates session create/status/destroy (gateway service identity) and operator session ops; host-dials the Session sandbox to set up and tear down |
-| denylist + kill-switch authority | terminates operator force-kill, denylist edits, and signed SOAR revoke; authors the denylist and signals a host-initiated stop |
-| quota accountant | checks per-caller create-rate and per-tenant counters on create; refuses excess |
+- **MCP gateway → Control** (session set-up). The gateway carries a service identity, not operator scope.
+- **Operator console / CLI → Control.** A human never calls the API directly; the console or CLI is the door.
+- **Credential issuer → Control** (the pre-signed storage JWT, out of the request path).
 
-The operator/lifecycle ingress, the SOAR-revoke ingress, the gateway→Control session set-up edge, the Control→Session sandbox host-dial, and the Control→Audit fan-in are the boundaries `05-c4-container.md` §4 names (their `F2`/`F4`/`F5`/`F6`/`F10` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4); this spec adds only which internal component terminates each.
+Outbound edges:
 
-Owned state: the session registry (live sessions, their `container_name` binding, tenant, quota counters) and the denylist (kill-switch state). This container is sole custodian of both — no other component can mutate either, and the guest holds no handle that reaches them. On the storage path it delivers the credential but does not sign it: it relays a pre-signed, `filesystem_id`-scoped ES256 JWT into the mount config over the host-only control channel before the in-guest mount client starts, then scrubs the on-disk source after handoff ([ADR-0013](../adr/0013-storage-credential-custody.md)). The signing key sits off-box at the credential issuer; this container holds no signing path. The upstream LLM credential never reaches it either — that credential reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)). The table below states each credential once.
+- **Control → Session sandbox.** The host dials the guest to create, drive, and tear down a session, and to deliver the storage JWT. The guest never dials Control.
+- **Control → Audit pipeline** (host-side fan-in).
 
-Storage-credential custody at this container (one holder per credential, [ADR-0013](../adr/0013-storage-credential-custody.md)):
+There is no edge from the MCP gateway to the sandbox; Control is the only door to create or manage a session. Control has no edge to the storage path.
 
-| Credential | This container | Provably does NOT hold |
+Two listeners back this container: an operator/lifecycle ingress and a gateway service-identity ingress, on distinct network endpoints. The kill-switch and force-kill routes exist only on the operator ingress. The issuer edge is not a listener: the pre-signed storage JWT arrives out-of-band over a config/secret mount, not on a network endpoint.
+
+Owned state: the session registry (live sessions, their `container_name` binding, tenant, quota counters) and the denylist (kill-switch state). This container is the sole custodian of both. No other component mutates either, and the guest holds no handle that reaches them.
+
+Control delivers the storage credential but never signs it; relay, scrub, and scope custody are in the table below ([ADR-0013](../adr/0013-storage-credential-custody.md)). The upstream LLM credential never reaches Control; it reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)).
+
+Custody of each credential ([ADR-0013](../adr/0013-storage-credential-custody.md)):
+
+| Credential | Control holds | Held elsewhere |
 |---|---|---|
-| ES256 signing key (private) | does not hold — held off-box at the credential issuer | this container, the per-session executor, the guest mount client |
-| Pre-signed scoped JWT (bearer) | relays it once into the mount config; retains no copy after handoff | — (the guest mount config holds it, root-readable, for its window; the storage engine verifies the scope claim) |
-| Ed25519 control-WS client-auth key (public) | installs it into the guest over the host-only control channel so the executor can authenticate control-WebSocket clients | — (this is the control-channel auth layer, not a storage-JWT verify key; the storage JWT is verified at the storage engine) |
+| ES256 signing key (private) | no — off-box at the credential issuer | the credential issuer |
+| Pre-signed scoped JWT (bearer) | relays once into the mount config; keeps no copy | the guest mount config, for its window; verified at the storage engine |
+| Ed25519 control-WS client-auth key (public) | installs into the guest over the control channel | the guest executor uses it to authenticate the host-dialled control-WebSocket client (host dials in; guest verifies the caller) |
 
-Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): this container mints the Session JWT (per-session, bound to `container_name`) toward the Session sandbox on the host-dialled control channel, accepts a Generic internal token authenticating the inbound gateway service identity on session set-up, and accepts an operator credential on ingress (the operator-auth substrate is fixed by [ADR-0004](../adr/0004-operator-authentication-substrate.md)). The wire surface is unfrozen: the operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1, but their schema files are not yet built ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)), so `contract: null`. Two listeners back this container — operator/lifecycle ingress and gateway service-identity ingress; the kill-switch route exists only on the former. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
+Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): Control mints the Session JWT, bound to `container_name`, toward the Session sandbox on the host-dialled control channel; accepts a Generic internal token from the gateway service identity on session set-up; and accepts an operator credential on the operator ingress ([ADR-0004](../adr/0004-operator-authentication-substrate.md) fixes the substrate). The operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1; their schema files are not yet built ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)), so `contract: null`. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
 
 ## Invariants
 
-Each holds independent of the caller and is falsifiable by the named check. Cross-cutting properties (zone membership, in-transit encryption, retention floor, isolation tier) are Layer 3 and not restated.
+Cross-cutting properties (zone membership, in-transit encryption, retention floor, isolation tier) are Layer 3 and not restated.
 
-- No MCP-surface route resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress on either shelf (IaC-policy assertion, NFR-SEC-52).
-- The kill-switch and revoke path holds its SLA while the control plane is saturated, including a flood on the operator/SOAR ingress itself; the lifecycle/revoke route carries reserved capacity or admission priority distinct from the create path (chaos test with an adversarial concurrent-load dimension, NFR-SEC-55, with the ≤30 s p99 value owned by NFR-SEC-01).
-- A body-supplied session/tenant/`container_name` id is a hint, never the authority; the binding the host acts on (the host-dial, the registry write) is host-derived, so a gateway or guest naming another session's id cannot bind or address it (integration-test: forge-another-session attempt fails, NFR-SEC-43).
-- The gateway service identity reaching this container carries no operator scope; force-kill, denylist edit, and quota override are unreachable with that audience (unit + integration-test on the audience-to-route map, NFR-SEC-26).
-- Every privileged operator/SOAR action in the NFR-SEC-45 enumerated set emits a chain-linked OCSF event before acknowledgement, and the action is denied if the audit write fails (fail-closed); the enumerated set is the versioned fixture owned by NFR-SEC-45, with system-initiated lifecycle transitions owned by NFR-SEC-72 (per-release integration-test driving every action + a negative test asserting deny on audit-sink failure, NFR-SEC-45).
-- Per-caller create-rate and per-tenant quota are enforced before a session is created; excess is refused, not queued, and agent-side create flooding cannot starve the operator/revoke route because the two ingresses are distinct (quota integration + connection-flood chaos test, NFR-COST-06, NFR-SEC-53).
-- All TTL and revocation windows (Session JWT, denylist propagation) are computed against a monotonic clock immune to wall-clock setback; a setback ≥ a window neither extends a token nor defers a revoke (red-team clock-rollback harness, NFR-SEC-48).
+- Control is the only door to create or manage a session. No MCP-surface route resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress (IaC-policy assertion, NFR-SEC-52).
+- The host dials the guest. The kill-switch is a host-initiated stop, not a cooperative guest action; an unreachable control channel grants the guest no new authority (NFR-SEC-01).
+- Control holds no signing key. It relays the off-box-issued JWT unchanged and verifies no storage scope; the storage engine verifies the scope (NFR-SEC-43, [ADR-0013](../adr/0013-storage-credential-custody.md)).
+- A body-supplied session/tenant/`container_name` id is a hint, never the authority. The binding the host acts on is host-derived from the runtime-attested caller identity (hypervisor context id / kernel peer creds / per-session socket path; [`02-trust-boundaries.md`](../02-trust-boundaries.md) host-attested invariant), not from request fields, so a gateway or guest naming another session's id cannot bind or address it (forge-another-session test, NFR-SEC-43).
+- The gateway service identity carries no operator scope. Force-kill, denylist edit, and quota override are unreachable with that audience (audience-to-route map test, NFR-SEC-26).
+- Every privileged operator/SOAR action in the NFR-SEC-45 set emits a chain-linked OCSF event before acknowledgement, and the action is denied if the audit write fails (NFR-SEC-45; system-initiated lifecycle transitions owned by NFR-SEC-72).
+- Per-caller create-rate and per-tenant quota are enforced before a session is created; excess is refused, not queued. The create flood cannot starve the operator/revoke route, which sits on a distinct ingress (NFR-COST-06, NFR-SEC-53).
+- The kill-switch and revoke path holds its ≤30 s p99 SLA while the control plane is saturated, including a flood on the operator ingress; the route carries reserved capacity distinct from the create path (NFR-SEC-55, SLA owned by NFR-SEC-01).
+- TTL and revocation windows (Session JWT, denylist propagation) run against a monotonic clock; a wall-clock setback neither extends a token nor defers a revoke (clock-rollback harness, NFR-SEC-48).
 
 ## Failure modes
 
-Each row traces to one P2 STRIDE row in [`06-threat-model.md`](../06-threat-model.md) §3 and repeats that row's controlling NFR; fail-closed is the default on the denylist, revoke, and audit-write boundaries. A1 is the in-sandbox guest; A2 is the external caller / gateway service identity; A3 is the operator/SOAR principal.
+Each row traces to one P2 STRIDE row in [`06-threat-model.md`](../06-threat-model.md) §3 and names that row's controlling NFR set. A1 is the in-sandbox guest; A2 is the external caller / gateway service identity; A3 is the operator/SOAR principal.
 
 | Trace | Reaching actor | What goes wrong | Recovery behaviour | Controlling NFR |
 |---|---|---|---|---|
-| P2-E1 | A2, A1 | Agent-path principal probes for an operator or kill-switch route | No lifecycle/kill-switch route resolves; gateway→operator-ingress reachability is denied at deploy time and a missed route fails CI, not runtime | NFR-SEC-52 |
+| P2-E1 | A2, A1 | Agent-path principal probes for an operator or kill-switch route | No lifecycle/kill-switch route resolves; gateway→operator-ingress reachability is denied at deploy time and a missed route fails CI, not runtime | NFR-SEC-52, NFR-SEC-01 |
 | P2-T2 | A1 | Guest stalls or drops the host-dialled control RPC to defeat the stop | The denylist is read host-side and the kill-switch is a host-initiated stop, not a cooperative guest action; an unreachable channel grants no new authority (fail-closed) | NFR-SEC-01 |
 | P2-D1 | A2, A1 | Concurrent flood of session-create and operator/SOAR calls aims to starve revoke | The create path sheds at the per-caller/per-tenant quota and fails-closed; the revoke route holds reserved capacity so the kill-switch stays within SLA, with RTO/RPO the post-failure backstop | NFR-SEC-55, NFR-REL-01 |
 | P2-R1 | A3, A2 | Operator force-kill / denylist edit / quota override leaves no independent record | The action is denied if its audit event fails to write; it does not take effect un-recorded | NFR-SEC-45 |
-| P2-R2 | A2 | SOAR revoke disputed or replayed | The call is verified by signature against the SOAR principal before acting and emits an OCSF event bound to that principal; an unverifiable call is rejected | NFR-COMP-27, NFR-SEC-45 |
+| P2-R2 | A2 | SOAR revoke disputed or replayed | The call is verified by signature against the SOAR principal before acting and emits an OCSF event bound to that principal; an unverifiable call is rejected | NFR-SEC-01 |
 | P2-I1 | A2, A3 | Registry/quota enumeration across tenants | Audience-scoping returns only the caller's own sessions and host-attested binding blocks cross-session reads; the control plane carries no customer payload | NFR-IC-04 |
 
 Residual, by [`06-threat-model.md`](../06-threat-model.md) §5 register: the stop-SLA accounting behind P2-T2 assumes a trustworthy host clock — trusted-time theme, [#185](https://github.com/Wide-Moat/open-computer-use/issues/185). Saturation/spill behaviour and a measurable containment target for P2-D1 fold into the resource-exhaustion theme, [#188](https://github.com/Wide-Moat/open-computer-use/issues/188). The mandatorily-audited action set behind P2-R1/P2-R2 is the privileged-operator-audit theme tracked at [#186](https://github.com/Wide-Moat/open-computer-use/issues/186). The no-customer-payload gate behind P2-I1 is not yet a measurable target, [#149](https://github.com/Wide-Moat/open-computer-use/issues/149).
 
-The denylist this container authors also gates the Egress trust-edge: a revoked session is refused at the edge (the deny-signal half of [`02-trust-boundaries.md`](../02-trust-boundaries.md) §7). That enforcement behaviour lives in the Egress trust-edge spec; here the invariant is only sole authorship of the denylist the edge reads.
+Control authors the denylist; the Egress trust-edge reads it and refuses a revoked session. That enforcement lives in the [Egress trust-edge spec](06-egress-trust-edge.md).
 
 ## Operational concerns
 
@@ -83,7 +92,7 @@ Scaling axis: this is a one-per-deployment deployable, distinct from the per-ses
 
 Upgrade/rotation: the RPC surface (session create/destroy/exec/fs) is versioned — a breaking change requires a major version plus deprecation header, CI-enforced by `buf breaking` / `oasdiff` (NFR-IC-04, [`08-contracts.md`](../08-contracts.md) §4). Session JWT rotation is mint-fresh-before-expiry, not extension, on the JWT TTL window in [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8.
 
-Shelf delta ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf co-locates this container with a host-rooted local operator credential and a host-local Session-JWT signing key; the full shelf schedules it with a customer-IdP-asserted operator identity (NFR-COMP-29) and a customer-PKI-rooted signer. The invariants above are boundary properties and hold on both shelves; only the operator-auth substrate and the JWT signer change, never the gateway↛operator separation, the host-attested binding, or the fail-closed audit-write. Retention of the audit events this container emits is the platform floor owned by the Audit pipeline (NFR-COMP-01). The operator-auth substrate is fixed by [ADR-0004](../adr/0004-operator-authentication-substrate.md).
+Shelf delta ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf co-locates this container with a host-rooted local operator credential and a host-local Session-JWT signing key; the full shelf schedules it with a customer-IdP-asserted operator identity (NFR-COMP-29) and a customer-PKI-rooted signer. The operator-auth substrate and the JWT signer change between shelves; the invariants above hold on both. Retention of the audit events this container emits is the platform floor owned by the Audit pipeline (NFR-COMP-01).
 
 ## Open questions
 
