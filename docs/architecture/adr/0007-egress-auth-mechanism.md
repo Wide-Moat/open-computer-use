@@ -30,7 +30,7 @@ The guest holds no long-lived upstream secret ([NFR-SEC-23](../manifesto/02-nfrs
 
 ## Decision
 
-We will select the egress auth mechanism by the upstream's properties — edge-inject for a fixed-client, low-granularity bearer credential; protocol-broker for a high-value credential scoped by per-operation rights — and ship only edge-inject in v1, because the v1 upstream is an LLM API and a broker is unneeded surface until a scoped-credential upstream exists.
+The egress auth mechanism is selected by the upstream's properties: edge-inject for a fixed-client, low-granularity bearer credential; protocol-broker for a high-value credential scoped by per-operation rights. v1 ships only edge-inject. The v1 upstream is an LLM API, so a broker is unneeded surface until a scoped-credential upstream exists.
 
 The selection axis:
 

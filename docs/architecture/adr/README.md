@@ -30,7 +30,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0010](0010-storage-backend-pluggable-adapter.md) | Storage engine is a pluggable adapter behind the object-store service | proposed (amended by 0013, 0015, 0016) | — | 2026-06-14 |
 | [0011](0011-storage-egress-lane.md) | Storage engine reached over the single egress hop | proposed (amended by 0013, 0016) | — | 2026-06-14 |
 | [0012](0012-implementation-language.md) | Implementation language — Go host-side, Rust guest agent | proposed | legacy 0001/0002 | 2026-06-08 |
-| [0013](0013-storage-credential-custody.md) | Storage credential custody — provisioning-time host-issued JWT | proposed | — | 2026-06-14 |
+| [0013](0013-storage-credential-custody.md) | Storage credential custody — provisioning-time off-box-issued JWT | proposed | — | 2026-06-14 |
 | [0014](0014-storage-transport-tier-universal-network-leg.md) | Storage data leg is a tier-universal network endpoint | proposed | — | 2026-06-14 |
 | [0015](0015-storage-decomposition-by-trust-plane.md) | Storage decomposition by trust plane | proposed | — | 2026-06-14 |
 | [0016](0016-egress-baseline-inspection-hop-backend-scope.md) | Egress baseline — one inspection hop, backend-enforced scope | proposed | — | 2026-06-14 |

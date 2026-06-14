@@ -16,7 +16,7 @@ threat-mitigation-link: ../06-threat-model.md
 
 The storage-backend credential is a pre-issued ES256 JWT minted by an off-box host-side credential issuer, scoped to one `filesystem_id`, delivered by the control plane and forwarded unmodified by the guest as a static bearer; the off-box issuer is the sole signing-key holder, the guest verifies only, and the storage engine enforces the scope. Audience: anyone wiring or auditing how a sandbox session reaches its storage backend.
 
-# ADR-0013: Storage credential custody — provisioning-time host-issued JWT
+# ADR-0013: Storage credential custody — provisioning-time off-box-issued JWT
 
 ## Status
 
@@ -32,7 +32,7 @@ Two auth layers run on this path and stay distinct. The storage credential is an
 
 We will custody the storage-backend credential as a pre-issued, asymmetric-signed, scope-bound JWT bearer minted host-side by a separate off-box credential issuer at provisioning time — scoped to one `filesystem_id` plus its workspace and org, with a short fixed window and no refresh — delivered by the control plane into the mount config over the host-only control channel before the mount client starts; the guest forwards it unmodified as a static `Authorization: Bearer` on every request and never signs, the guest verifies only, and the storage engine enforces the `filesystem_id` scope and rejects a foreign-scope token, because the off-box issuer is the one place that holds the signing key, the control plane only relays the pre-signed token, and the guest holds a token useless outside its own scope and window.
 
-The reference token shape illustrates the choice without binding it: an ES256 JWT, `kid` naming the signing key, no `iss`/`aud` claim, fixed ~6 h TTL. The binding decision is the asymmetric-signed, scope-bound, host-issued, forward-only bearer; the algorithm and TTL are properties the implementation pins.
+The reference token shape illustrates the choice without binding it: an ES256 JWT, `kid` naming the signing key, no `iss`/`aud` claim, fixed ~6 h TTL. The binding decision is the asymmetric-signed, scope-bound, off-box-issued, forward-only bearer; the algorithm and TTL are properties the implementation pins.
 
 ### Custody table — storage-backend JWT
 
@@ -47,7 +47,7 @@ The control plane is the **delivery / provisioning vehicle**, not a holder of th
 
 ## Consequences
 
-- Component [04](../components/04-object-store-service.md) and [05](../components/05-session-sandbox.md): the in-guest mount client forwards a host-issued token unmodified. It runs no signer and reaches no signing key, so a fully-compromised guest yields at most this token, valid only for its own `filesystem_id` for the remaining window.
+- Component [04](../components/04-object-store-service.md) and [05](../components/05-session-sandbox.md): the in-guest mount client forwards a off-box-issued token unmodified. It runs no signer and reaches no signing key, so a fully-compromised guest yields at most this token, valid only for its own `filesystem_id` for the remaining window.
 - The signing-key holder is a distinct off-box credential issuer service, not folded into any modelled container ([ADR-0017](0017-control-plane-repo-boundary.md) sets its delivery boundary). Component [02-control-operator-api.md](../components/02-control-operator-api.md) gains a DELIVERY / provisioning role: it relays the pre-signed token into the mount config, scrubs the on-disk source after handoff, and installs the guest's control-channel verify-key; it does not mint the storage JWT and holds no signing key. The custody disclaimer re-points to the off-box issuer, not to the control plane.
 - Positive: low blast radius on token leak. A root read of the mount config yields one session's own filesystem for the remaining TTL — not a backend key. The storage engine rejects the same token presented for a foreign `filesystem_id` (HTTP 401), so it cannot be replayed across filesystems. This adds a storage-engine claim check as a new property and re-anchors [NFR-SEC-31](../manifesto/02-nfrs.md): the host-attested prefix isolation at the storage component stays, and the engine's foreign-scope rejection layers on top — the two checks are layered, not substituted.
 - Positive: scope enforcement is at the storage engine, not a middlebox. The egress hop inspects but does not re-credential; the credential's authority is the signed claim the engine validates ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)). This removes the per-request-signing coupling and the requirement that no middlebox rewrite a signature; [NFR-SEC-25](../manifesto/02-nfrs.md) re-anchors off the self-signs / STS-per-session premise.

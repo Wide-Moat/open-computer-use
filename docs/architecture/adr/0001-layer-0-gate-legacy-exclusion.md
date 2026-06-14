@@ -66,10 +66,10 @@ Each amendment names the discovery commit and the affected exclusion entries.
 
 ### 2026-05-24 — initial exclusion-list completion
 
-The first version of `.semgrepignore` shipped in commit `709db53` missed three legacy areas that the SAST gate scans:
+Commit `709db53` adds three legacy areas the SAST gate scans to `.semgrepignore`:
 
 - `.github/workflows/release-chart.yml` — `main`-line Helm release workflow with a pre-existing `run-shell-injection` finding on the `gh release create` step. Replaced when the supply-chain.yml pattern is extended to chart artifacts in Layer 6+.
 - `skills/examples/` — bundled skill examples carrying the same `defusedxml` gaps as `skills/public/`. v1 GA ships zero skills per `manifesto/04-non-goals.md`; both directories die together.
 - `tests/` — top-level PoC test tree using stdlib `xml.etree`. New components ship their own tests under each component's directory; this tree dies with the code it tests.
 
-Discovered by the third verifier pass on commit `709db53`. The amendment adds them under the same policy with no change to the decision or alternatives.
+These enter under the same policy; the decision and alternatives are unchanged.
