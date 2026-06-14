@@ -64,7 +64,7 @@
     },
 
     "FileEntry": {
-      "description": "List/metadata entry. Field names are sourced from the PoC list/outputs route shape; the union of the upload-list and output-list shapes. Object handle is the {filesystem_id, path} pair (the PoC addresses by chat-scope + relative path; it carries NO opaque object id, so none is modelled — inventing one is a P4-E3 traversal risk).",
+      "description": "List/metadata entry. Field names are sourced from the PoC list/outputs route shape; the union of the upload-list and output-list shapes. Object handle is the {filesystem_id, path} pair (the PoC addresses by chat-scope + relative path; it carries NO opaque object id, so none is modelled — inventing one is a P4-artifact-E3 traversal risk).",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "path", "size", "modified"],
@@ -196,7 +196,7 @@
     },
 
     "InboundBound": {
-      "description": "Artifact-plane inbound byte-path bound (NFR-SEC-78). The gateway rejects an over-ceiling body before staging, never partially buffered; per-validated-caller rate limits apply distinctly from the per-sandbox quota (NFR-SEC-46) and the per-caller connection ceiling (NFR-SEC-53). Values are NFR-derived defaults, not frozen.",
+      "description": "Web UI inbound byte-path bound (NFR-SEC-78). The gateway rejects an over-ceiling body before staging, never partially buffered; per-validated-caller rate limits apply distinctly from the per-sandbox quota (NFR-SEC-46) and the per-caller connection ceiling (NFR-SEC-53). Values are NFR-derived defaults, not frozen.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -253,7 +253,7 @@
       "required": ["resolved_type", "declared_mismatch"],
       "properties": {
         "resolved_type": {
-          "description": "Artifact-plane-resolved content type (magic-byte + declared). Authoritative on metadata before any mount visibility.",
+          "description": "Web-UI-resolved content type (magic-byte + declared). Authoritative on metadata before any mount visibility.",
           "type": "string"
         },
         "declared_mismatch": {
@@ -265,7 +265,7 @@
     },
 
     "FileActivityEvent": {
-      "description": "Artifact-plane file-activity audit event (NFR-SEC-79), gateway-authored, hash-chained into the NFR-SEC-03 pipeline, fail-closed (operation denied if the audit write fails), under host-attested identity (NFR-SEC-09). OCSF File System Activity (class_uid 1001, category_uid 1). Mandatory fields enumerated verbatim by NFR-SEC-79. The activity_id assignment is OCU-DESIGN (OCSF has no native upload/download id; Create/Read/Delete/Open are the mapped ids). This is direct-fetch via embed-token + cookie, NOT share-by-link; no capability_id / two-event chain belongs here.",
+      "description": "Web UI file-activity audit event (NFR-SEC-79), gateway-authored, hash-chained into the NFR-SEC-03 pipeline, fail-closed (operation denied if the audit write fails), under host-attested identity (NFR-SEC-09). OCSF File System Activity (class_uid 1001, category_uid 1). Mandatory fields enumerated verbatim by NFR-SEC-79. The activity_id assignment is OCU-DESIGN (OCSF has no native upload/download id; Create/Read/Delete/Open are the mapped ids). This is direct-fetch via embed-token + cookie, NOT share-by-link; no capability_id / two-event chain belongs here.",
       "type": "object",
       "additionalProperties": false,
       "required": [

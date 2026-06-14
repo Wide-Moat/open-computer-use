@@ -111,7 +111,7 @@
       "properties": {
         "schema_version": { "$ref": "#/$defs/SchemaVersion" },
         "service_url": {
-          "description": "Single allow-listed backend service_url the mount agent dials guest-out over the egress hop.",
+          "description": "Single allow-listed object-store service_url the mount agent dials guest-out over the egress hop.",
           "type": "string",
           "format": "uri",
           "pattern": "^https://",

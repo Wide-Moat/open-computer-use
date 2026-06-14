@@ -30,7 +30,7 @@ The gateway has three edges:
 | gateway → Control/operator API | session request forward | [`05-c4-container.md`](../05-c4-container.md) §4 (`F5`) |
 | gateway → Audit pipeline | OCSF fan-in | [`05-c4-container.md`](../05-c4-container.md) §4 (`F10`) |
 
-There is no gateway→sandbox edge and no gateway→operator-ingress edge. The control plane is the only door to create or manage a session; the gateway routes the request there and goes no further.
+There is no gateway→sandbox edge and no gateway→operator-ingress edge. Every request to create or manage a session enters through the control plane; the gateway routes the request there and goes no further.
 
 Intra-container, the gateway is one process.
 

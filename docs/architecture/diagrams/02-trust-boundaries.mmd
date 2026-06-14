@@ -72,7 +72,7 @@ flowchart LR
     %% object-store service guest-out over the single egress hop and forwards the
     %% scoped Storage-JWT as a static Bearer; the hop terminates TLS and forwards the
     %% bearer unmodified (no per-request signature to preserve). The object-store
-    %% service is the only door — only it speaks to the storage engine, which
+    %% service is the sole entry point — only it speaks to the storage engine, which
     %% verifies the JWT and enforces the filesystem_id scope (NFR-SEC-25 ·
     %% NFR-SEC-31 · NFR-SEC-85). The guest never reaches the storage engine
     %% directly. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.

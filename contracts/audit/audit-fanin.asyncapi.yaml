@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-# Audit fan-in contract: five host-attested source channels publish OCSF events
-# to the Audit pipeline (control plane, storage, session sandbox, egress edge,
-# and the pipeline's own self-emitted metering). AsyncAPI 3.0.0 names the
-# channel/operation; the OCSF event class is the payload (Published Language),
-# referenced by $ref to the public OCSF schema, never inlined. There is no
-# credential-custody producer: OCU mints nothing and the storage signing key is
-# off-box at a separate issuer.
+# Audit fan-in contract: five host-side components emit OCSF events to the Audit
+# pipeline — MCP gateway, Control / operator API, Egress trust-edge, Object-store
+# service, Web UI. The Session sandbox does NOT emit; the sessionSandboxAudit
+# channel carries events host-authored on the guest's behalf, never published by
+# the guest (NFR-SEC-47). The pipeline also self-emits metering and saturation.
+# AsyncAPI 3.0.0 names the channel/operation; the OCSF event class is the payload
+# (Published Language), referenced by $ref to the public OCSF schema, never
+# inlined. There is no credential-custody producer: OCU mints nothing and the
+# storage signing key is off-box at a separate issuer.
 
 asyncapi: 3.0.0
 
@@ -14,11 +16,15 @@ info:
   title: OCU Audit Fan-in
   version: 1.0.0
   description: >-
-    One-directional fan-in from five host-attested source channels into the
-    Audit pipeline. Payload is an OCSF v1.x event class (Published Language).
-    Delivery is durable and ordered into a per-source hash-chained append-only
-    log (NFR-SEC-03). The SIEM fan-out and the SOAR webhook are separate
-    surfaces, not modelled here.
+    One-directional fan-in from the five emitting host-side components — MCP
+    gateway, Control / operator API, Egress trust-edge, Object-store service,
+    Web UI — into the Audit pipeline, each on its own host-attested source
+    channel. A sixth channel carries Session-sandbox events authored host-side
+    on the guest's behalf (the guest does not publish), and the pipeline
+    self-emits metering and saturation. Payload is an OCSF v1.x event class
+    (Published Language). Delivery is durable and ordered into a per-source
+    hash-chained append-only log (NFR-SEC-03). The SIEM fan-out and the SOAR
+    webhook are separate surfaces, not modelled here.
   license:
     name: FSL-1.1-Apache-2.0
     url: https://fsl.software/
@@ -37,20 +43,32 @@ servers:
       decision (#150) and the channels carry no protocol-specific binding here.
 
 channels:
-  controlPlaneAudit:
-    address: audit.ingest.control-plane
-    description: ORCH — API Activity, Authentication, Account/Entity management.
+  mcpGatewayAudit:
+    address: audit.ingest.mcp-gateway
+    description: GATEWAY — API Activity for MCP tool-call ingress at the gateway.
     messages:
       apiActivity:
         $ref: '#/components/messages/ApiActivity'
+
+  controlPlaneAudit:
+    address: audit.ingest.control-plane
+    description: ORCH — Authentication and Account/Entity management at the Control / operator API.
+    messages:
       authentication:
         $ref: '#/components/messages/Authentication'
       entityManagement:
         $ref: '#/components/messages/EntityManagement'
 
-  storageAudit:
-    address: audit.ingest.storage
-    description: STORAGE — File System Activity on both storage surfaces — the mount-plane (list/read/write/create/stat, host-authored per NFR-SEC-47) and the Web UI data plane (upload/list/download/delete, gateway-authored), per NFR-SEC-79. The object-store client and the Web UI share this one source channel; there is no credential-custody producer — OCU mints nothing and the signing key is off-box.
+  objectStoreAudit:
+    address: audit.ingest.object-store
+    description: STORAGE (mount-plane) — File System Activity at the Object-store service for the guest mount-plane (list/read/write/create/stat), host-authored per NFR-SEC-47, per NFR-SEC-79. No credential-custody producer — OCU mints nothing and the signing key is off-box.
+    messages:
+      fileSystemActivity:
+        $ref: '#/components/messages/FileSystemActivity'
+
+  webUiAudit:
+    address: audit.ingest.web-ui
+    description: STORAGE (Web UI data plane) — File System Activity at the Web UI (upload/list/download/delete), gateway-authored, per NFR-SEC-79.
     messages:
       fileSystemActivity:
         $ref: '#/components/messages/FileSystemActivity'
@@ -89,6 +107,15 @@ channels:
 # host-attested at the fan-in boundary, never read from the payload
 # (NFR-SEC-47, NFR-SEC-56). The SIEM fan-out (send) is a separate surface.
 operations:
+  receiveMcpGateway:
+    action: receive
+    channel:
+      $ref: '#/channels/mcpGatewayAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/mcpGatewayAudit/messages/apiActivity'
+
   receiveControlPlane:
     action: receive
     channel:
@@ -96,18 +123,26 @@ operations:
     security:
       - $ref: '#/components/securitySchemes/sourceMtls'
     messages:
-      - $ref: '#/channels/controlPlaneAudit/messages/apiActivity'
       - $ref: '#/channels/controlPlaneAudit/messages/authentication'
       - $ref: '#/channels/controlPlaneAudit/messages/entityManagement'
 
-  receiveStorage:
+  receiveObjectStore:
     action: receive
     channel:
-      $ref: '#/channels/storageAudit'
+      $ref: '#/channels/objectStoreAudit'
     security:
       - $ref: '#/components/securitySchemes/sourceMtls'
     messages:
-      - $ref: '#/channels/storageAudit/messages/fileSystemActivity'
+      - $ref: '#/channels/objectStoreAudit/messages/fileSystemActivity'
+
+  receiveWebUi:
+    action: receive
+    channel:
+      $ref: '#/channels/webUiAudit'
+    security:
+      - $ref: '#/components/securitySchemes/sourceMtls'
+    messages:
+      - $ref: '#/channels/webUiAudit/messages/fileSystemActivity'
 
   receiveSessionSandbox:
     action: receive
@@ -220,7 +255,7 @@ components:
     ApiActivity:
       name: ApiActivity
       title: API Activity (OCSF 6003)
-      summary: MCP tool-call ingress at the control plane.
+      summary: MCP tool-call ingress at the MCP gateway.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'

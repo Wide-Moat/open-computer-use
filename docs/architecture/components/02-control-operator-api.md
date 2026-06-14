@@ -18,7 +18,7 @@ The only door to create or manage a session. Audience: engineers wiring the oper
 
 ## Purpose
 
-The Control / operator API is the only door to create or manage a session. It owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It delivers the storage credential to the guest but holds no signing key. It dials into the guest; the guest never dials it.
+Every request to create or manage a session enters through the Control / operator API. It owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It delivers the storage credential to the guest but holds no signing key. It dials into the guest; the guest never dials it.
 
 ## Boundaries
 
@@ -33,7 +33,7 @@ Outbound edges:
 - **Control → Session sandbox.** The host dials the guest to create, drive, and tear down a session, and to deliver the storage JWT. The guest never dials Control.
 - **Control → Audit pipeline** (host-side fan-in).
 
-There is no edge from the MCP gateway to the sandbox; Control is the only door to create or manage a session. Control has no edge to the storage path.
+There is no edge from the MCP gateway to the sandbox; every request to create or manage a session enters through Control. Control has no edge to the storage path.
 
 Two listeners back this container: an operator/lifecycle ingress and a gateway service-identity ingress, on distinct network endpoints. The kill-switch and force-kill routes exist only on the operator ingress. The issuer edge is not a listener: the pre-signed storage JWT arrives out-of-band over a config/secret mount, not on a network endpoint.
 
@@ -55,7 +55,7 @@ Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns th
 
 Cross-cutting properties (zone membership, in-transit encryption, retention floor, isolation tier) are Layer 3 and not restated.
 
-- Control is the only door to create or manage a session. No MCP-surface route resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress (IaC-policy assertion, NFR-SEC-52).
+- Every route to create or manage a session enters through Control. No MCP-surface route resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress (IaC-policy assertion, NFR-SEC-52).
 - The host dials the guest. The kill-switch is a host-initiated stop, not a cooperative guest action; an unreachable control channel grants the guest no new authority (NFR-SEC-01).
 - Control holds no signing key. It relays the off-box-issued JWT unchanged and verifies no storage scope; the storage engine verifies the scope (NFR-SEC-43, [ADR-0013](../adr/0013-storage-credential-custody.md)).
 - A body-supplied session/tenant/`container_name` id is a hint, never the authority. The binding the host acts on is host-derived from the runtime-attested caller identity (hypervisor context id / kernel peer creds / per-session socket path; [`02-trust-boundaries.md`](../02-trust-boundaries.md) host-attested invariant), not from request fields, so a gateway or guest naming another session's id cannot bind or address it (forge-another-session test, NFR-SEC-43).

@@ -28,7 +28,7 @@ The container is one process tree rooted at the guest agent (PID 1). The Control
 |---|---|---|---|
 | Control → guest | exec/PTY+CDP control union + stdin frames | exec supervisor (host-dialled; non-host peer dropped at accept) | one WebSocket per session; envelope frozen in [`exec/exec-channel`](../../../contracts/exec/exec-channel.schema.json) |
 | Control → guest | Session JWT (selects session identity) | guest agent | TTL per [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 |
-| Control → guest | mount config: `filesystem_id`, `service_url`, the off-box-issued scoped JWT, CA cert, mount paths (F7) | guest agent (mount client) | written before the in-guest mount client starts; the scoped JWT is the only storage credential the guest holds |
+| Control → guest | mount config: `filesystem_id`, `service_url`, the off-box-issued scoped JWT, CA cert, mount paths (F7) | guest agent (mount client) | written before the in-guest mount client starts; the guest holds no storage credential beyond this scoped JWT |
 | guest → Control | stdout/stderr binary frames + result/EOF | exec supervisor | length-prefixed, bounded per call (Invariants) |
 | guest → Egress | the sole outbound network leg (F8) | guest agent | carries the in-guest mount client's storage leg (F7a) and guest-internet alike; the guest holds no long-lived upstream secret on this leg; the edge attaches upstream authorization ([ADR-0005](../adr/0005-egress-credential-delivery-envoy-sds.md), [ADR-0007](../adr/0007-egress-auth-mechanism.md)); this is the container's only egress (invariant 4) |
 

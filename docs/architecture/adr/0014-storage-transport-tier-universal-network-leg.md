@@ -58,7 +58,7 @@ None. The leg reuses the bundled Egress trust-edge ([ADR-0006](0006-egress-forwa
 
 ## Threat mitigation
 
-Re-anchors the storage-leg direction in [06-threat-model.md](../06-threat-model.md) §3 (P4-T1/I2/S1) onto a guest-out network dial, off the prior host-dialled drawing. The exec/control channel's no-guest-reachable-network invariant ([NFR-SEC-43](../manifesto/02-nfrs.md)) and host-peer accept ([NFR-SEC-76](../manifesto/02-nfrs.md)) stay scoped to F6; the storage leg's deny rests at the Egress trust-edge hop and at the storage engine's `filesystem_id` binding, not on the exec channel's attribution. This ADR's leg deny cites the storage-engine `filesystem_id`-claim scope ([ADR-0013](0013-storage-credential-custody.md)) and the single-governed-hop reading of NFR-SEC-16 ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)).
+Re-anchors the storage-leg direction in [06-threat-model.md](../06-threat-model.md) (P4-mount-T1 / P4-mount-I2 in §3.1, P4-mount-S1 in §4) onto a guest-out network dial, off the prior host-dialled drawing. The exec/control channel's no-guest-reachable-network invariant ([NFR-SEC-43](../manifesto/02-nfrs.md)) and host-peer accept ([NFR-SEC-76](../manifesto/02-nfrs.md)) stay scoped to F6; the storage leg's deny rests at the Egress trust-edge hop and at the storage engine's `filesystem_id` binding, not on the exec channel's attribution. This ADR's leg deny cites the storage-engine `filesystem_id`-claim scope ([ADR-0013](0013-storage-credential-custody.md)) and the single-governed-hop reading of NFR-SEC-16 ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)).
 
 ## Open questions
 

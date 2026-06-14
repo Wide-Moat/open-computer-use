@@ -63,11 +63,18 @@ ALLOWED=(
   "compliance/*-mapping.md"
   "compliance/sub-processors.md"
 
-  # Diagrams — sources only. PNG / SVG / JPG forbidden (CLAUDE.md §Diagrams).
+  # Diagrams — Mermaid / D2 / PlantUML sources. PNG / JPG forbidden (CLAUDE.md §Diagrams).
   "diagrams/README.md"
   "diagrams/*.mmd"
   "diagrams/*.d2"
   "diagrams/*.puml"
+  # Exception (recorded in diagrams/README.md): the component-map overview is a
+  # draw.io source — the single source of truth a Mermaid container diagram
+  # cannot reproduce — committed with its rendered SVG so the README can embed
+  # it. CLAUDE.md §Diagrams otherwise forbids SVG for our own diagrams; this is
+  # the one allowed pair, kept pretty-printed so the SVG diffs line-by-line.
+  "diagrams/architecture-overview.drawio"
+  "diagrams/architecture-overview.svg"
 
   # Threat models — Threagile / pytm YAML.
   "threat-model/README.md"

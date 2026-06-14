@@ -14,6 +14,8 @@ adr: [0009]
 
 Internal design of the Audit pipeline: how the five host-side components fan into one hash-linked, append-only store and reach a customer-owned sink. Audience: engineers and security reviewers on the audit path.
 
+# Component-07: Audit pipeline
+
 ## Purpose
 
 The Audit pipeline is the hash-chained chain-of-custody: it turns each host-side component's event into a durable, ordered, tamper-evident record and forwards it to a customer sink. The OCSF `source` is the host-attested identity of the connecting channel ([NFR-SEC-09](../manifesto/02-nfrs.md)), never a value from the payload.
