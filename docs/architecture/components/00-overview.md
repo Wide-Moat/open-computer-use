@@ -41,7 +41,7 @@ The specs above are the source of truth; the code lives in separate public repos
 | [`ocu-control`](https://github.com/Wide-Moat/ocu-control) | Control / operator API (02) | scaffold |
 | [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) | Session sandbox (05) | tracer slice |
 | [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) | Object-store service (04), host-side | scaffold |
-| [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) | In-guest mount client (04), guest-side | scaffold |
+| [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) | In-guest mount client — guest-side caller of 04, runs in the sandbox (05) | scaffold |
 | [`ocu-webui`](https://github.com/Wide-Moat/ocu-webui) | Web UI (08) | planned |
 | [`ocu-admin`](https://github.com/Wide-Moat/ocu-admin) | Operator console — read-only live view | planned |
 | (none) | MCP gateway (01), Egress trust-edge (06), Audit pipeline (07) | planned |

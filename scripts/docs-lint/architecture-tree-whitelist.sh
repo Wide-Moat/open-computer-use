@@ -68,11 +68,12 @@ ALLOWED=(
   "diagrams/*.mmd"
   "diagrams/*.d2"
   "diagrams/*.puml"
-  # Exception (recorded in diagrams/README.md): the component-map overview is a
-  # draw.io source — the single source of truth a Mermaid container diagram
-  # cannot reproduce — committed with its rendered SVG so the README can embed
-  # it. CLAUDE.md §Diagrams otherwise forbids SVG for our own diagrams; this is
-  # the one allowed pair, kept pretty-printed so the SVG diffs line-by-line.
+  # Exception (recorded in docs/architecture/README.md, "At a glance"): the
+  # component-map overview is a draw.io source — the single source of truth a
+  # Mermaid container diagram cannot reproduce — committed with its rendered SVG
+  # so the README can embed it. CLAUDE.md §Diagrams otherwise forbids SVG for
+  # our own diagrams; this is the one allowed pair, kept pretty-printed so the
+  # SVG diffs line-by-line.
   "diagrams/architecture-overview.drawio"
   "diagrams/architecture-overview.svg"
 

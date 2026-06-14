@@ -40,7 +40,7 @@ flowchart LR
 
     %% ─── control + provisioning reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
     CTRL -->|"F6: Session JWT bound to container_name<br/>host-attested caller · host dials guest"| VM
-    CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>host-issued scoped JWT + ca_cert · host dials guest"| VM
+    CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>off-box-issued scoped JWT + ca_cert · host dials guest"| VM
     ISSUER -.->|"pre-signed scoped JWT (out of band)"| CTRL
 
     %% ─── ONE door to storage: both legs reach the Object-store service, and only it speaks to the
