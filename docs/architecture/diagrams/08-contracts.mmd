@@ -1,7 +1,7 @@
 %% SPDX-License-Identifier: FSL-1.1-Apache-2.0
 %% Copyright (c) 2025 Open Computer Use Contributors
 %% Layer 8 (Contracts) overlay. Referenced from docs/architecture/08-contracts.md.
-%% Same seven containers as diagrams/c4-container.mmd; edge labels carry the CONTRACT FORMAT
+%% Same containers as diagrams/c4-container.mmd; edge labels carry the CONTRACT FORMAT
 %% on each crossing, not the token/protocol. Zone shading is not redrawn — see Layer 3/6.
 %% Solid = OCU-defined or conform-inbound; dashed = external party owns the wire format.
 
@@ -10,7 +10,8 @@ flowchart LR
 
     PEER["MCP-speaking caller"]:::ext
     OPER["Operator (PAM-JIT)"]:::ext
-    UPSTREAM["Outbound endpoints"]:::ext
+    UPSTREAM["Upstream LLM / API"]:::ext
+    ENGINE["Storage engine<br/>(S3 / local volume)"]:::ext
     SDS["SDS source<br/>(static file / customer store)"]:::extOpt
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
     DPC["Data-plane client<br/>(SPA / headless)"]:::ext
@@ -18,8 +19,8 @@ flowchart LR
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway"]
         CTRL["Control / operator API"]
-        OSC["Narrow object-store client"]
-        AP["Artifact-plane"]
+        OSS["Object-store service"]
+        WEBUI["Web UI"]
         VM["Session sandbox [1..N]"]
         EDGE["Egress trust-edge"]
         AUD["Audit pipeline"]
@@ -30,17 +31,18 @@ flowchart LR
     MCPG -->|"Protobuf / gRPC"| CTRL
     CTRL -->|"WebSocket (PTY+CDP)"| VM
     CTRL -->|"mount provisioning push (HTTP+JSON)"| VM
-    DPC -->|"OpenAPI 3.1 (file/artifact API)"| AP
-    AP -->|"file-op intent behind credential seam"| OSC
+    DPC -->|"OpenAPI 3.1 (file/artifact API)"| WEBUI
+    WEBUI -->|"file-op intent (host leg)"| OSS
     VM -->|"storage data leg + egress (network policy)"| EDGE
+    EDGE -->|"first-party filestore protocol (guest leg)"| OSS
+    OSS -->|"engine adapter"| ENGINE
+    EDGE -.->|"upstream API (forwarded bearer)"| UPSTREAM
     SDS -.->|"Envoy SDS (gRPC xDS)"| EDGE
-    EDGE -.->|"first-party filestore protocol (to backend origin)"| UPSTREAM
 
     MCPG -->|"AsyncAPI 3.0 / OCSF"| AUD
     CTRL -->|"AsyncAPI 3.0 / OCSF"| AUD
-    OSC -->|"AsyncAPI 3.0 / OCSF"| AUD
-    AP -->|"AsyncAPI 3.0 / OCSF"| AUD
-    VM -->|"AsyncAPI 3.0 / OCSF"| AUD
+    OSS -->|"AsyncAPI 3.0 / OCSF"| AUD
+    WEBUI -->|"AsyncAPI 3.0 / OCSF"| AUD
     EDGE -->|"AsyncAPI 3.0 / OCSF"| AUD
     AUD -.->|"AsyncAPI 3.0 / OCSF"| SINK
 

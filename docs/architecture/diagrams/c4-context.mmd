@@ -10,7 +10,7 @@ flowchart LR
     %% ─── inbound peers (any MCP-speaking caller; REST is a fallback) ───
     PEER[MCP-speaking peer<br/>n8n · Open WebUI · custom MCP client]:::ext
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
-    FILE[Data-plane client<br/>OCU SPA · file/artifact API]:::extOpt
+    FILE[Data-plane client<br/>OCU SPA · Web UI file API]:::extOpt
 
     %% ─── the system under design ───
     subgraph OCU[Open Computer Use]
@@ -31,7 +31,7 @@ flowchart LR
     %% ─── edges ───
     PEER -->|"MCP authz spec<br/>audience-validated"| OCU
     OPER -->|"PAM-JIT credential<br/>NFR-COMP-29"| OCU
-    FILE -.->|"embed UI · file/artifact API<br/>identity-bound · bytes direct"| OCU
+    FILE -.->|"Web UI · file API (upload/preview/download)<br/>identity-bound · bytes direct"| OCU
     SOAR <-.->|signed webhook + admin API| OCU
     IDP -.->|SAML / OIDC| OCU
     OCU -.->|"OCSF v1.x bridge<br/>optional"| SIEM

@@ -23,7 +23,7 @@ Fixes how a human operator and an automated SOAR caller authenticate to the Cont
 
 ## Context
 
-The Control / operator API ([component 02](../components/02-control-operator-api.md)) is the privileged plane: it reaches the kill switch, the denylist authority, and tier admission. Two principals call it — a human operator and an automated SOAR responder — and the component marks operator-auth as `needs ADR` in its Boundaries, Operational concerns, and Open question #5 (tracked [#225](https://github.com/Wide-Moat/open-computer-use/issues/225)). This ADR closes that question.
+The Control / operator API ([component 02](../components/02-control-operator-api.md)) is the privileged plane: it reaches the kill switch, the denylist authority, and tier admission. Two principals authenticate to it: a human operator and an automated SOAR responder. The human never calls the API directly — the operator console or CLI is the door, and it authenticates the operator before relaying the action. The SOAR responder is a machine caller. The component marks operator-auth as `needs ADR` in its Boundaries, Operational concerns, and Open question #5 (tracked [#225](https://github.com/Wide-Moat/open-computer-use/issues/225)). This ADR closes that question.
 
 The one-click solo install is an NFR-shaping invariant: the default deployment runs single-operator, no IdP, no KVM, and must not pay for a regulated enterprise's identity machinery to start. The substrate has to scale from that floor up to a customer with a federated identity provider and a PAM tool, without forking the contract.
 
@@ -31,7 +31,7 @@ Dual-control and break-glass stay out of scope. The kill switch is itself the si
 
 ## Decision
 
-The Control / operator API authenticates a human operator and an automated SOAR caller against a two-shelf substrate — minimal shelf is a host-rooted local operator credential plus a signature-verified signed-webhook, full shelf makes OCU a relying-party to the customer IdP (OIDC + SCIM, PAM-JIT via OIDC-asserted claims) and a SPIFFE SVID workload identity for SOAR — with multi-party approval left as a post-v1 policy seam over the same audit set, and no break-glass or dual-control fixture added.
+The Control / operator API authenticates a human operator (reaching it through the operator console or CLI) and an automated SOAR caller against a two-shelf substrate. The minimal shelf is a host-rooted local operator credential plus a signature-verified signed-webhook. The full shelf makes OCU a relying-party to the customer IdP (OIDC + SCIM, PAM-JIT via OIDC-asserted claims) and a SPIFFE SVID workload identity for SOAR. Multi-party approval is left as a post-v1 policy seam over the same audit set; no break-glass or dual-control fixture is added.
 
 ## Consequences
 

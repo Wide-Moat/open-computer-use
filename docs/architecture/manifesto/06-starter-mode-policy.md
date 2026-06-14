@@ -12,7 +12,7 @@ When a feature limitation is an acceptable minimal-shelf trade-off versus a sile
 
 ## Shelf split
 
-Both tiers ship the same seven containers ([05-c4-container.md](../05-c4-container.md) §5); only the substrate and credential management differ.
+Both tiers ship the same set of containers ([05-c4-container.md](../05-c4-container.md) §5); only the substrate and credential management differ.
 
 - **Minimal shelf** — single operator, self-signed per-deployment CA, file-system audit, host-rooted operator credential. The one-click `docker-compose up` path: no external IdP, no cloud credential, no pre-staged key.
 - **Full shelf** — customer IdP-asserted operator identity, customer-PKI-rooted signers, external SIEM sink, dynamic SDS credential minting.

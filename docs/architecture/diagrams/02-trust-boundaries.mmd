@@ -11,7 +11,8 @@ flowchart LR
     MCPC[MCP client<br/>external actor]:::ext
     IDP[Customer IdP<br/>OIDC]:::extOpt
     LLM[LLM upstream]:::endpoint
-    OBJ[Customer object store]:::endpoint
+    ENGINE[Storage engine<br/>S3 or local volume · off-box<br/>verifies the JWT · enforces scope]:::endpoint
+    DPC[Data-plane client<br/>browser / headless]:::extOpt
     CPROXY[Customer outbound proxy]:::extOpt
     ICAP[Customer DLP-ICAP service]:::extOpt
     SIEM[Customer SIEM]:::extOpt
@@ -33,16 +34,18 @@ flowchart LR
     end
 
     subgraph STORE[Storage]
-        SB[narrow object-store client + artifact-plane<br/>guest mount client = object-store client + transport, one binary<br/>dials the backend service_url guest-out · forwards a static Bearer<br/>holds no signing key · backend origin verifies + enforces scope<br/>artifact-plane fronts the external data-plane client]
+        OSS[Object-store service<br/>the only door to storage<br/>forwards the static Bearer unmodified · holds no signing key<br/>only component that speaks to the storage engine]
+        WEBUI[Web UI<br/>file upload / preview / download<br/>fronts the external data-plane client]
     end
 
     subgraph COMPUTE[Compute plane]
         VM[session sandbox<br/>guest agent PID 1<br/>runc minimal · gVisor full · microVM post-v1<br/>one per session · ephemeral<br/>rootfs + tooling = read-only, host-attached at boot/restore]
+        MOUNT[In-guest mount client<br/>presents storage files as a filesystem<br/>dials the object-store service guest-out]
     end
 
     %% Posture is the §7 ladder, not two modes; injection at the egress-wide-bump rung. See ADR-0007.
     subgraph EDGE[Egress trust-edge]
-        PROXY[egress proxy<br/>posture ladder: deny-all · transparent · egress-wide bump · external SDS<br/>bump default when an upstream credential is configured<br/>per-SNI leaf from per-deployment CA · Envoy data plane + SDS minter<br/>DLP-ICAP is a bump-rung config · egress allow-list · deny-by-default]
+        PROXY[egress proxy<br/>posture ladder: deny-all · transparent · egress-wide bump · external SDS<br/>bump default when an upstream credential is configured<br/>per-SNI leaf from per-deployment CA · data plane + SDS minter<br/>DLP-ICAP is a bump-rung config · egress allow-list · deny-by-default]
     end
 
     subgraph AUDIT[Audit pipeline]
@@ -64,16 +67,16 @@ flowchart LR
     ORCH -->|"provisioning push · scoped Storage-JWT + ca_cert<br/>before the mount client starts · NFR-SEC-25"| VM
     SDS -->|"upstream credential over SDS<br/>source owns mint · rotate · revoke<br/>NFR-SEC-23 · ADR-0005 · ADR-0007"| PROXY
 
-    %% ─── storage data leg (second guest-data boundary, guest-out) ───
-    %% Distinct from the provisioning push. The in-guest mount client (object-store
-    %% client + transport, one binary) dials the backend service_url guest-out over
-    %% the single egress hop and forwards the scoped Storage-JWT as a static Bearer;
-    %% the hop terminates TLS and forwards the bearer unmodified (no per-request
-    %% signature to preserve), and the backend origin enforces the filesystem_id
-    %% scope (NFR-SEC-25 · NFR-SEC-31 · NFR-SEC-85). No host-side object-store-client
-    %% hop carries the guest's request. Mount substrate (FUSE / virtio-fs / 9p) is
-    %% component-spec.
-    VM -->|"storage data leg · static Bearer (scoped JWT)<br/>scope verified at backend origin · NFR-SEC-85"| PROXY
+    %% ─── storage data leg (guest-out; one door to storage) ───
+    %% Distinct from the provisioning push. The in-guest mount client dials the
+    %% object-store service guest-out over the single egress hop and forwards the
+    %% scoped Storage-JWT as a static Bearer; the hop terminates TLS and forwards the
+    %% bearer unmodified (no per-request signature to preserve). The object-store
+    %% service is the only door — only it speaks to the storage engine, which
+    %% verifies the JWT and enforces the filesystem_id scope (NFR-SEC-25 ·
+    %% NFR-SEC-31 · NFR-SEC-85). The guest never reaches the storage engine
+    %% directly. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
+    MOUNT -->|"storage data leg · static Bearer (scoped JWT)<br/>guest-out over the single egress hop · NFR-SEC-85"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -85,14 +88,24 @@ flowchart LR
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>no long-lived upstream secret in request<br/>credential attached at edge on a presented scoped credential<br/>NFR-SEC-27 · ADR-0007"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected (SDS-delivered)<br/>fail-closed"| LLM
-    PROXY -->|"storage data leg to the backend origin<br/>TLS-terminated · static Bearer forwarded unmodified<br/>scope enforced at origin · fail-closed"| OBJ
+    PROXY -->|"storage data leg (guest)<br/>TLS-terminated · static Bearer forwarded unmodified<br/>fail-closed"| OSS
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
-    %% ─── audit edges (every named zone emits OCSF events) ───
+    %% ─── storage host leg (Web UI; does NOT cross the egress hop) ───
+    DPC -.->|"file upload / preview / download<br/>embed token → first-party session"| WEBUI
+    WEBUI -->|"file-op intent (host leg)<br/>does not cross egress"| OSS
+
+    %% ─── the one door to storage: only the object-store service reaches the engine ───
+    OSS -->|"forwards the static Bearer unmodified<br/>engine verifies + enforces scope"| ENGINE
+
+    %% ─── audit fan-in (host-side components only; the guest does NOT emit) ───
+    %% The Session sandbox is not a fan-in source: a compromised guest can neither
+    %% reach nor silence the audit pipeline. Host-side components author the guest's
+    %% audit events.
     ORCH -->|OCSF events| BUS
-    SB -->|OCSF events| BUS
-    VM -->|OCSF events| BUS
+    OSS -->|OCSF events| BUS
+    WEBUI -->|OCSF events| BUS
     PROXY -->|OCSF events| BUS
 
     %% ─── audit egress ───
@@ -101,7 +114,7 @@ flowchart LR
 
     %% ─── KMS path (optional, full-capability shelf only) ───
     %% The storage signing key is off-box at the credential issuer (ISS), not in a
-    %% zone here; CMEK envelope (workspace_cmek_enabled) is a backend-origin concern.
+    %% zone here; the CMEK envelope (workspace_cmek_enabled) is a storage-engine concern.
     BUS -.->|"PKCS#11 / KMIP<br/>signing on full shelf"| KMS
 
     %% ─── styling (project palette: red untrusted / amber semi-trusted / green trusted / blue isolated) ───

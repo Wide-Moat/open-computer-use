@@ -3,8 +3,8 @@
 %% Canonical Layer 6 (C4 Container) diagram. Referenced from docs/architecture/05-c4-container.md.
 %% Role names only — no technology names (per CLAUDE.md Diagrams). Tech choice lands in component specs under components/.
 %% Containers across the Layer-3 trust zones: the Control plane splits into an agent-facing MCP gateway
-%% and an operator/lifecycle API (the kill-switch lives only on the latter); the storage concern splits
-%% into a narrow object-store client and an artifact-plane (different counterparties, ADR-0015).
+%% and an operator/lifecycle API (the kill-switch lives only on the latter); storage is one door — the
+%% Object-store service — fronted by the Web UI (host leg) and the in-guest mount client (guest leg), ADR-0015.
 %% The count is a then-true observation, not an invariant (05-c4-container.md §1). Substrate differs by shelf (§5).
 %% Palette (project convention): red untrusted / green trusted. Amber/blue trust-zone shading is Layer 3 only.
 
@@ -14,8 +14,9 @@ flowchart LR
     %% ─── external (drawn for orientation; contracts in 03-c4-context.md §4) ───
     PEER["MCP-speaking caller<br/>(runs the loop)"]:::ext
     OPER["Operator<br/>(PAM-JIT human)"]:::ext
-    FILE["Data-plane client<br/>(OCU SPA · file/artifact API)"]:::extOpt
-    UPSTREAM["Outbound endpoints<br/>(LLM · filestore backend · internal API)"]:::ext
+    FILE["Data-plane client<br/>(OCU SPA · Web UI file API)"]:::extOpt
+    UPSTREAM["Outbound endpoints<br/>(LLM · internal API)"]:::ext
+    ENGINE["Storage engine<br/>(S3 or local volume · off-box<br/>verifies the JWT · enforces scope)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
     SDS["SDS source<br/>(static file solo · customer store enterprise)"]:::extOpt
     ISSUER["Off-box credential issuer<br/>(storage JWT signing key · out of request path)"]:::extOpt
@@ -24,39 +25,42 @@ flowchart LR
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
         CTRL["Control / operator API<br/>lifecycle · quota · kill-switch · credential DELIVERY"]
-        OSC["Narrow object-store client<br/>capability-free · speaks backend protocol · no signing key"]
-        AP["Artifact-plane<br/>file/artifact API · SPA · preview (parser-sandbox)<br/>OUR design · no signing key"]
-        VM["Session sandbox [1..N]<br/>guest agent = PID 1 · in-guest mount client (client + transport, one binary)"]
-        EDGE["Egress trust-edge proxy<br/>single TLS-inspected hop · forwards, no re-credential<br/>(Envoy data plane + SDS leaf-minter)"]
+        OSS["Object-store service<br/>the only door to storage · speaks the engine protocol<br/>forwards the static Bearer unmodified · no signing key"]
+        WEBUI["Web UI<br/>file upload / preview / download · SPA · parser-sandbox<br/>OUR design · no signing key"]
+        VM["Session sandbox [1..N]<br/>guest agent = PID 1 · in-guest mount client (dials the object-store service guest-out)"]
+        EDGE["Egress trust-edge proxy<br/>single TLS-inspected hop · forwards, no re-credential<br/>(data plane + SDS leaf-minter)"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
-    %% ─── inbound (two distinct surfaces of the Control plane; the artifact-plane fronts E5) ───
+    %% ─── inbound (two distinct surfaces of the Control plane; the Web UI fronts E5) ───
     PEER -->|"F1: MCP authz spec"| MCPG
     OPER -->|"F2: PAM-JIT credential · operator-only ingress"| CTRL
     MCPG -->|"F5: session create / status<br/>service identity"| CTRL
-    FILE -.->|"F11: SPA · file/artifact API<br/>embed token → first-party session · bytes direct"| AP
+    FILE -.->|"F11: SPA · file API (upload/preview/download)<br/>embed token → first-party session · bytes direct"| WEBUI
 
     %% ─── control + provisioning reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
     CTRL -->|"F6: Session JWT bound to container_name<br/>host-attested caller · host dials guest"| VM
     CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>host-issued scoped JWT + ca_cert · host dials guest"| VM
     ISSUER -.->|"pre-signed scoped JWT (out of band)"| CTRL
 
-    %% ─── ONE backend network leg: the in-guest mount client (= the object-store client + transport,
-    %%     one binary) dials out through the single egress hop. The artifact-plane reaches the backend
-    %%     by calling that same client behind the credential seam (F9), NOT a second egress leg. ───
+    %% ─── ONE door to storage: both legs reach the Object-store service, and only it speaks to the
+    %%     storage engine. Guest leg: in-guest mount client → egress → object-store service → engine.
+    %%     Host leg: Web UI → object-store service → engine (F9; does NOT cross the egress hop). ───
     VM -->|"F8: single outbound · guest dials out"| EDGE
     VM -.->|"F7a: storage data leg over F8<br/>service_url · static Bearer (scoped JWT forwarded)"| EDGE
     SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (hardening rung)"| EDGE
-    AP -->|"F9: file-op intent · credential seam<br/>(intra-deployment, no network hop)"| OSC
-    EDGE -->|"forwards to origin · backend validates filesystem_id claim · scope at origin (ADR-0013)"| UPSTREAM
+    WEBUI -->|"F9: file-op intent (host leg)<br/>intra-deployment · does not cross egress"| OSS
+    EDGE -->|"agent egress · forwards to origin"| UPSTREAM
+    EDGE -->|"storage data leg (guest) · forwards the scoped Bearer unmodified"| OSS
+    OSS -->|"the only door · engine verifies the JWT · enforces filesystem_id scope (ADR-0013)"| ENGINE
 
-    %% ─── audit fan-in (every source container emits OCSF; the pipeline is the sink) ───
+    %% ─── audit fan-in (host-side containers only; the Session sandbox does NOT emit) ───
+    %% A compromised guest can neither reach nor silence the pipeline; host-side
+    %% containers author the guest's audit events.
     MCPG -->|OCSF| AUD
     CTRL -->|OCSF| AUD
-    OSC -->|OCSF| AUD
-    AP -->|OCSF| AUD
-    VM -->|OCSF| AUD
+    OSS -->|OCSF| AUD
+    WEBUI -->|OCSF| AUD
     EDGE -->|OCSF| AUD
     AUD -.->|"OCSF bridge<br/>full shelf"| SINK
 

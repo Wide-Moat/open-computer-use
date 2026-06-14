@@ -13,7 +13,7 @@ license-impact: none
 threat-mitigation-link: ../02-trust-boundaries.md
 ---
 
-Egress credential delivery uses off-the-shelf Envoy SDS; OCU stores, mints, and rotates no secrets.
+Egress credential delivery uses off-the-shelf Envoy SDS; OCU stores, mints, and rotates no upstream credential.
 
 # ADR-0005: Egress credential delivery is off-the-shelf Envoy SDS
 
@@ -23,13 +23,13 @@ Egress credential delivery uses off-the-shelf Envoy SDS; OCU stores, mints, and 
 
 ## Context
 
-The Egress trust-edge (zone 4, [02-trust-boundaries.md](../02-trust-boundaries.md)) attaches upstream authorization on the outbound leg so the guest never holds the real credential (NFR-SEC-23 invariant). Behind that injection sits a source question: where the credential rests, what API the edge calls to fetch it, and who owns the unseal, rotation, lease, and key-escrow lifecycle of that source.
+The Egress trust-edge (zone 4, [02-trust-boundaries.md](../02-trust-boundaries.md)) attaches upstream authorization on the outbound leg so the guest never holds the real credential (NFR-SEC-23 invariant). Behind that injection sits a source question: where the credential rests, what API the edge calls to fetch it, and who owns its lifecycle.
 
 Envoy's Secret Discovery Service (SDS, gRPC xDS) is a standard protocol for runtime secret delivery to a proxy, with hot-swap on push. Envoy's native `credential_injector` filter attaches an Authorization header on the outbound leg. Both are off-the-shelf and require no OCU code for credential delivery, minting, or rotation. A solo operator points SDS at a static file; a regulated enterprise points it at a customer-provided SDS-compatible store over the same protocol.
 
 ## Decision
 
-The Egress trust-edge receives the upstream credential over Envoy SDS; the SDS source is a static file (solo deployments) or a customer-provided SDS-compatible store (enterprise deployments). Envoy's `credential_injector` filter attaches the Authorization header on the outbound leg. OCU stores, mints, and rotates nothing. Credential minting, rotation, revocation, and per-issuance audit are the SDS source's responsibility: the customer's store on the enterprise shelf, an operator-managed artifact on the solo shelf.
+The Egress trust-edge receives the upstream credential over Envoy SDS; the SDS source is a static file (solo deployments) or a customer-provided SDS-compatible store (enterprise deployments). Envoy's `credential_injector` filter attaches the Authorization header on the outbound leg. OCU stores, mints, and rotates no upstream credential. Credential minting, rotation, revocation, and per-issuance audit are the SDS source's responsibility: the customer's store on the enterprise shelf, an operator-managed artifact on the solo shelf.
 
 ## Consequences
 

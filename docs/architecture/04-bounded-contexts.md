@@ -21,8 +21,9 @@ The classification drives the next layer: a context marked `generic` becomes an 
 ```mermaid
 flowchart TB
     subgraph CORE["Core — built in-house"]
-        AEX["Agent Execution &amp; Sandbox Lifecycle<br/>(incl. storage mount-plane)"]
-        ART["Artifact-plane<br/>(core sub-context, OUR design)"]
+        AEX["Agent Execution &amp; Sandbox Lifecycle<br/>(incl. in-guest mount client)"]
+        WEBUI["Web UI<br/>(core sub-context, OUR design)"]
+        OSS["Object-store service<br/>(the only door to storage)"]
         CEV["Compliance Evidence &amp; Audit Lineage"]
     end
     subgraph SUP["Supporting — built, not differentiating"]
@@ -33,16 +34,18 @@ flowchart TB
         IDF["Identity federation"]
         SEC["Secrets custody"]
         POL["Policy evaluation"]
-        ENG["Object-store engine<br/>(pluggable adapter)"]
+        ENG["Storage engine<br/>(pluggable adapter)"]
     end
     AEX -->|"OCSF event"| CEV
-    AEX -->|"narrow object-store client"| ENG
+    AEX -->|"in-guest mount client (guest leg)"| OSS
+    WEBUI -->|"file-op intent (host leg)"| OSS
+    OSS -->|"only door to the engine"| ENG
     style CORE fill:#e8f5e9,stroke:#1e7e34,stroke-width:3px
     style SUP fill:#fff8e1,stroke:#b8860b
     style GEN fill:#f5f5f5,stroke:#9e9e9e,stroke-dasharray:5 5
 ```
 
-The diagram shows the core-to-core domain edge and the storage split: the mount-plane sits inside Agent Execution, the artifact-plane is a core sub-context, and the object-store engine is a generic integration. The full set of context relationships (inbound, generic integrations) is the context map in §4.
+The storage split: the in-guest mount client sits inside Agent Execution, the Web UI is a core sub-context, the Object-store service is the one door both legs reach, and the storage engine behind it is a generic integration.
 
 | Subdomain | Class | Value axis | Build-vs-buy |
 |---|---|---|---|
@@ -50,34 +53,34 @@ The diagram shows the core-to-core domain edge and the storage split: the mount-
 | **Compliance Evidence & Audit Lineage** | core | domain complexity — binding every agent action into a replayable, hash-linked lineage that survives an adversarial workload (the lineage, not the OCSF schema or the SIEM sink, is the defensible part) | build |
 | **Tenancy & Isolation** | supporting | owns the T0–T3 isolation-tier selection logic | build |
 | **Operator Access** | supporting | owns the PAM-JIT human-to-platform contract ([NFR-COMP-29](manifesto/02-nfrs.md)); bespoke to us, sits outside the value axis | build |
-| **Storage mount-plane** | core (within Agent Execution) | the `filesystem_id`-scoped file-operation surface the session reaches; its invariants exist to serve the running session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
-| **Artifact-plane** | core sub-context (own component) | the client file/artifact API, embeddable SPA, and preview-render; an OCU design addition, not a reproduction; aggregate root is the artifact plus the embed-asserted principal, distinct from the session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
-| **Storage backend protocol** (narrow object-store client) | supporting → generic engine | the object-store wire protocol is a solved problem; the engine is a pluggable adapter (local-volume / S3) | build the client, integrate the engine ([ADR-0010](adr/0010-storage-backend-pluggable-adapter.md)) |
+| **In-guest mount client** | core (within Agent Execution) | the `filesystem_id`-scoped file-operation surface the session reaches; its invariants exist to serve the running session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
+| **Web UI** | core sub-context (own component) | the client file API, embeddable SPA, and preview-render; an OCU design addition, not a reproduction; aggregate root is the artifact plus the embed-asserted principal, distinct from the session ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)) | build |
+| **Object-store service** | core (the only door to storage) | the one door to the storage engine; the object-store wire protocol is a solved problem, so the engine is a pluggable adapter (local-volume / S3) behind it | build the service, integrate the engine ([ADR-0010](adr/0010-storage-backend-pluggable-adapter.md)) |
 | **Identity federation** | generic | relying-party to customer IdP | integrate |
 | **Secrets custody** | generic | key custody behind PKCS#11 / KMIP | integrate |
 | **Policy evaluation** | generic | externalised authorization decisions | integrate |
 
-Source availability is a go-to-market property, not a classification axis. The security primitives ship in the open artifact ([`01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) §"Audience"); that does not demote Agent Execution to generic. Applying an open runtime correctly to adversarial in-perimeter agent-issued code is where the domain complexity sits, so it stays core.
+Source availability is a go-to-market property, not a classification axis. The security primitives ship in the open artifact ([`01-audience-and-buyer.md`](manifesto/01-audience-and-buyer.md) §"Audience"); that does not demote Agent Execution to generic. Applying an open runtime correctly to adversarial in-perimeter agent-issued code is where the domain complexity sits.
 
-Compliance Evidence is core for the same reason — domain depth, not deal-decisiveness. It clears the TPRM veto (the buyer chain in `01-audience-and-buyer.md`), but that proves it is commercially important, not that it is core. What makes it core is the *lineage*: the OCSF schema, the pluggable SIEM sinks, and the customer-chosen transparency log are generic substrate we integrate; reconstructing a tamper-evident, replayable chain of agent actions across an adversarial workload is the part no competitor hands over and the part we build.
+Compliance Evidence is core for the lineage, not the schema. The OCSF schema, the pluggable SIEM sinks, and the customer-chosen transparency log are generic substrate we integrate; reconstructing a tamper-evident, replayable chain of agent actions across an adversarial workload is the part we build.
 
-Storage classifies on the same axis once split by counterparty. The mount-plane is core because its language is the running session's; the artifact-plane is a core sub-context because it fronts an external data-plane client with its own aggregate root and is an OCU design, not a reproduction; the object-store wire protocol is a solved problem, so the client stays narrow and capability-free and the engine integrates as a pluggable adapter. The earlier single welded storage component carried all three counterparties under one identity; the cut places each on its build-vs-buy class without moving a key — the storage signing key is held off-box by a separate issuer and no plane below it holds one ([ADR-0013](adr/0013-storage-credential-custody.md)).
+Storage classifies once split by counterparty. The in-guest mount client is core because its language is the running session's; the Web UI is a core sub-context because it fronts an external data-plane client with its own aggregate root; the Object-store service is the one door to the storage engine, which integrates as a pluggable adapter behind it. The storage signing key is held off-box by a separate issuer; no storage component holds one ([ADR-0013](adr/0013-storage-credential-custody.md)).
 
 ## 3. Trust zones to contexts
 
-The five zones group into two core contexts. The mismatch is deliberate: four zones collapse into one context, one zone is a context of its own.
+The five zones group into two core contexts.
 
 | Trust zone (Layer 3 §2) | Bounded context | Why this grouping |
 |---|---|---|
 | Control plane | Agent Execution | session lifecycle is execution machinery |
 | Compute plane (sandbox) | Agent Execution | the sandbox is where the tool-calls execute |
-| Storage | Agent Execution | the session's mount-plane and its narrow object-store client serve the running session's user data |
+| Storage | Agent Execution | the session's in-guest mount client serves the running session's user data through the Object-store service |
 | Egress trust-edge | Agent Execution | the single outbound path is part of running safely |
 | Audit pipeline | Compliance Evidence | different reason to exist: prove, not run |
 
 The Audit pipeline is its own zone in Layer 3 for retention/RPO/tamper-evidence reasons; it is its own context here for a domain reason — its value is regulatory proof, a separate axis from execution.
 
-Merging five zones into one context passes the linguistic test only because they share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane unambiguously speak that one execution language. The session mount-plane (file-operation terms: `filesystem_id`, scoped bearer, open / read / write / list, the whole-filesystem control verbs import / migrate / remove) and the narrow object-store client behind it (engine, `filesystem_id`→prefix, multipart) speak a narrower sub-language; the Egress trust-edge speaks another (`SNI`, per-host inspection leaf, the single governed hop). They sit *inside* Agent Execution, not as separate contexts, because their invariants exist only to serve the running session and they share its aggregate root (the session). The artifact-plane does not — it fronts an external data-plane client over an embed-token flow, with the artifact plus the embed-asserted principal as its aggregate root, so it is a sub-context of its own (§2), not part of the session's language ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)).
+The four zones share one ubiquitous language: "execute the tool-calls a client sends, safely, in-perimeter." The Control plane and Compute plane speak that execution language directly. The in-guest mount client (file-operation terms: `filesystem_id`, scoped bearer, open / read / write / list, the whole-filesystem control verbs import / migrate / remove) and the Object-store service behind it (engine, `filesystem_id`→prefix, multipart) speak a narrower sub-language; the Egress trust-edge speaks another (`SNI`, per-host inspection leaf, the single governed hop). They sit *inside* Agent Execution because their invariants serve the running session and share its aggregate root (the session). The Web UI does not — it fronts an external data-plane client over an embed-token flow, with the artifact plus the embed-asserted principal as its aggregate root, so it is a sub-context of its own (§2), not part of the session's language ([ADR-0015](adr/0015-storage-decomposition-by-trust-plane.md)).
 
 The supporting and generic contexts are not Layer 3 zones we own. Of the three generic contexts, two are Layer 3 §3 external actors — Identity federation (Customer IdP) and Secrets custody (Customer KMS / HSM). Policy evaluation is not yet drawn in Layer 3; it is consumed at the Egress trust-edge within Agent Execution, by the optional deny-by-default allow-list hardening on the baseline inspection hop ([ADR-0016](adr/0016-egress-baseline-inspection-hop-backend-scope.md)). The remaining Layer 3 §3 actors are not new contexts: Customer SIEM, SOAR, and the transparency log are downstream consumers of the Compliance Evidence context (§4); the customer outbound proxy and DLP-ICAP are configurations of the Egress trust-edge already inside Agent Execution. An LLM, if a sandbox tool reaches one, is just another allow-listed egress endpoint behind that edge — not a context we model.
 
@@ -118,7 +121,7 @@ flowchart LR
 | Generic integrations | {Identity, Secrets, Policy} → Agent Execution | Anti-corruption layer | each vendor's interface is translated at the boundary so a vendor swap does not reach the core |
 | Evidence to sinks | Compliance Evidence → SIEM / SOAR / transparency log | Open Host Service | OCSF bridges and the submission envelope; the consumer adapts, not us |
 
-The anti-corruption layer is what lets Identity, Secrets, and Policy stay `integrate`: the vendor (Keycloak, OpenBao, OPA) can change without the core's domain changing. An LLM is not among them — it is reached, if at all, as one allow-listed egress endpoint, and the agent loop that would call it runs in the MCP caller. The two core contexts share the OCSF event and nothing else — no shared identifier type, no shared library — so the Published Language does not degrade into a shared kernel that would bind their release cadences.
+The anti-corruption layer is what lets Identity, Secrets, and Policy stay `integrate`: the vendor (Keycloak, OpenBao, OPA) can change without the core's domain changing. An LLM is not among them — it is reached, if at all, as one allow-listed egress endpoint, and the agent loop that would call it runs in the MCP caller. The two core contexts share the OCSF event and nothing else — no shared identifier type, no shared library — so the Published Language is not a shared kernel.
 
 ## 5. Open questions
 

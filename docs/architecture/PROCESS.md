@@ -49,7 +49,7 @@ Heavier and vendor-backed beats lighter and unknown. The platform targets regula
 
 When a research, advisor, or verifier cycle surfaces an architectural primitive that OCU will need (e.g. evidence-as-code bundle, egress allow-list, DORA RoI field-level traceability, kill-switch SLA, replay-bundle schema), append it to `primitives-backlog.md` immediately. Do not stash primitives in research-buffer files only — they get lost on the next research cycle.
 
-Each entry is one line: `- **<primitive name>** — <one-line purpose> — surfaced in <research-file>; lands in <target-section-or-component>`. Target may be `§02` (NFRs), `§03` (non-negotiables), a component spec, or `TBD` if not yet placed.
+Each entry is one line: `- **<primitive name>** — <one-line purpose> — lands in <target-section-or-component>`. State the primitive and where it lands; do not record where the fact came from. Target may be `§02` (NFRs), `§03` (non-negotiables), a component spec, or `TBD` if not yet placed.
 
 The backlog drains in two directions: each entry either resolves into a concrete NFR / principle / spec section (delete from backlog when it lands), or becomes a tracked GitHub issue when scope grows beyond a single line.
 

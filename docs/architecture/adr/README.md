@@ -27,8 +27,8 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0007](0007-egress-auth-mechanism.md) | Egress auth mechanism — edge-inject vs protocol-broker | proposed (amended by 0013, 0016) | — | 2026-06-14 |
 | [0008](0008-session-egress-attribution.md) | Session-to-egress attribution by presented token | proposed | — | 2026-06-02 |
 | [0009](0009-audit-pipeline-pluggable-by-contract.md) | Audit pipeline is pluggable-by-contract | proposed | — | 2026-06-06 |
-| [0010](0010-storage-backend-pluggable-adapter.md) | Storage backend is a pluggable adapter behind the broker | proposed (amended by 0013, 0015, 0016) | — | 2026-06-14 |
-| [0011](0011-storage-egress-lane.md) | Storage backend reached over a storage-dedicated egress lane | proposed (amended by 0013, 0016) | — | 2026-06-14 |
+| [0010](0010-storage-backend-pluggable-adapter.md) | Storage engine is a pluggable adapter behind the object-store service | proposed (amended by 0013, 0015, 0016) | — | 2026-06-14 |
+| [0011](0011-storage-egress-lane.md) | Storage engine reached over the single egress hop | proposed (amended by 0013, 0016) | — | 2026-06-14 |
 | [0012](0012-implementation-language.md) | Implementation language — Go host-side, Rust guest agent | proposed | legacy 0001/0002 | 2026-06-08 |
 | [0013](0013-storage-credential-custody.md) | Storage credential custody — provisioning-time host-issued JWT | proposed | — | 2026-06-14 |
 | [0014](0014-storage-transport-tier-universal-network-leg.md) | Storage data leg is a tier-universal network endpoint | proposed | — | 2026-06-14 |
