@@ -309,6 +309,43 @@ do
 done
 ok "tree-whitelist accepts files that match allowed patterns"
 
+# -------- identity-email-detector --------
+echo "Testing identity-email-detector.sh:"
+
+# Run the detector end-to-end against a throwaway git repo, so the test covers
+# the script's real behaviour (tracked-file scan, path excludes, git invocation,
+# exit code) rather than re-implementing its grep. The banned address is
+# assembled from parts so the literal never appears in this tracked file (which
+# would itself trip the detector it tests).
+banned="i@yambr$(printf '%s' .com)"
+canonical="developer@widemoat.ai"
+detector="$ROOT/scripts/docs-lint/identity-email-detector.sh"
+
+# Fixture repo with one tracked file carrying the banned address.
+fixture="$TMP/identity-fixture"
+git init -q "$fixture"
+git -C "$fixture" config user.email test@example.com
+git -C "$fixture" config user.name test
+printf 'contact %s for help\n' "$banned" > "$fixture/notes.md"
+git -C "$fixture" add notes.md
+git -C "$fixture" commit -q -m fixture
+
+if ( cd "$fixture" && bash "$detector" ) >/dev/null 2>&1; then
+  err "identity-email-detector did not flag the banned personal address"
+else
+  ok "identity-email-detector flags the banned personal address"
+fi
+
+# Replace the tracked content with the canonical address and a product URL;
+# neither must trip the detector.
+printf 'contact %s — see https://chat.yambr.com\n' "$canonical" > "$fixture/notes.md"
+git -C "$fixture" commit -q -am clean
+if ( cd "$fixture" && bash "$detector" ) >/dev/null 2>&1; then
+  ok "identity-email-detector accepts the canonical address and yambr.com URLs"
+else
+  err "identity-email-detector false-positives on the canonical address or a product URL"
+fi
+
 # -------- Summary --------
 echo
 echo "Linter self-test: $pass passed, $fail failed."

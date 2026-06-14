@@ -8,6 +8,19 @@ Thank you for your interest! PRs and issues welcome.
 2. Clone: `git clone https://github.com/your-username/open-computer-use.git`
 3. Branch: `git checkout -b feature/your-feature`
 
+## Git hooks
+
+Install the versioned pre-push hook once per clone. It blocks pushes that
+carry `.planning/` artefacts to the public remote, and pushes where a personal
+email address (defined in the identity-email detector) appears in tracked file
+content — rewrite it to `developer@widemoat.ai`:
+
+```bash
+ln -sf ../../scripts/githooks/pre-push .git/hooks/pre-push
+```
+
+The same content check runs in CI (`identity-lint` workflow) as a backstop.
+
 ## Development
 
 ```bash

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Identity gate. Runs on every PR and every push to the long-lived branches.
+# The project commits and authors under developer@widemoat.ai; a personal
+# address must not appear in tracked file content. The exact banned address is
+# defined in scripts/docs-lint/identity-email-detector.sh. Commit *metadata* is
+# enforced locally by the pre-push hook (scripts/githooks/pre-push); this is
+# the CI backstop for file content.
+
+name: identity-lint
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - next/v1
+
+permissions:
+  contents: read
+
+jobs:
+  identity-email:
+    name: identity-email detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tracked content for the banned personal address
+        run: bash scripts/docs-lint/identity-email-detector.sh
