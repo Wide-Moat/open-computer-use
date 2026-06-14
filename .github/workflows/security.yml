@@ -164,7 +164,11 @@ jobs:
           # default `--results=verified` dials AWS/GitHub/Slack/… from the
           # runner to validate detected patterns. For a bank-targeting CI
           # we accept the higher false-positive rate over outbound calls.
-          extra_args: --no-verification
+          #
+          # `--exclude-paths` drops generated render artifacts that cannot hold
+          # a credential but trip detectors on embedded-font entropy (see
+          # .github/trufflehog-exclude.txt). The .drawio source stays in scope.
+          extra_args: --no-verification --exclude-paths=.github/trufflehog-exclude.txt
 
   sast-semgrep:
     name: SAST — semgrep

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# trufflehog path-exclude regexes (one per line), passed via --exclude-paths.
+# Only generated render artifacts that cannot carry a credential belong here.
+#
+# architecture-overview.svg is a draw.io export of the component-map source
+# (architecture-overview.drawio). It embeds font glyph data as long base64/hex
+# runs, which the Box / generic high-entropy detectors match as unverified
+# secrets — a structural false positive on a generated diagram render that
+# holds no credential. The .drawio source and every other file stay in scope.
+docs/architecture/diagrams/architecture-overview\.svg$
