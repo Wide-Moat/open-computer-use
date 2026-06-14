@@ -8,6 +8,8 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
+Defines the trust zones, the data classification, and the protocol/auth/encryption that crosses each boundary in the OCU sandbox. Audience: anyone auditing the control/data-plane split or wiring a component against a zone boundary.
+
 ## 1. Purpose and scope
 
 Our scope: `MCP interface / control-plane RPC → guest agent → sandbox runtime → Egress trust-edge + Storage`. Everything else is either an external actor (§3) or an outbound endpoint subject to the egress policy enforced by the Egress trust-edge.

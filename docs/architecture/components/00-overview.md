@@ -39,10 +39,10 @@ The specs above are the source of truth; the code lives in separate public repos
 | Repository | Implements | Side |
 |---|---|---|
 | [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) | Session sandbox (05); transiently the Control / operator API (02) until the carve-out lands | Sandbox executor + host control plane |
-| `ocu-control` (planned) | Control / operator API (02) | Host control plane — own deployable, carved out of `ocu-sandbox` ([ADR-0017](../adr/0017-control-plane-repo-boundary.md)) |
+| [`ocu-control`](https://github.com/Wide-Moat/ocu-control) | Control / operator API (02) | Host control plane — own deployable, carved out of `ocu-sandbox` ([ADR-0017](../adr/0017-control-plane-repo-boundary.md)) |
 | [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) | Narrow object-store client (04) | Host-side backend-protocol client |
 | [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) | In-guest mount client — the object-store client and transport in one binary (04) | Guest-side mount binary |
-| `ocu-webui` (planned) | Artifact-plane (08) | Client file/artifact API + embeddable SPA + preview-render |
+| [`ocu-webui`](https://github.com/Wide-Moat/ocu-webui) | Artifact-plane (08) | Client file/artifact API + embeddable SPA + preview-render |
 
 Containers 01 (MCP gateway), 06 (Egress trust-edge), and 07 (Audit pipeline) have no implementation repository yet.
 

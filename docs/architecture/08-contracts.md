@@ -24,9 +24,9 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | SOAR revoke (inbound) | SOAR → Control / operator API | OpenAPI 3.1 | define | NFR-SEC-01 |
 | Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
-| Mount provisioning push | Control / operator API → Session sandbox | HTTP+JSON mount config (`filesystem_id`, `service_url`, host-issued scoped JWT, `ca_cert_pem`, mount set) pushed host-to-guest before the mount client starts | define | NFR-SEC-25 |
+| Mount provisioning push | Control / operator API → Session sandbox | HTTP+JSON mount config (`filesystem_id`, `service_url`, off-box-issued scoped JWT (control-plane-relayed), `ca_cert_pem`, mount set) pushed host-to-guest before the mount client starts | define | NFR-SEC-25 |
 | Storage [data leg](glossary.md#data-leg) | Session sandbox → backend origin (over the Egress trust-edge) | the in-guest mount client (object-store client + transport, one binary) dials `service_url` guest-out, static `Authorization: Bearer`; scope verified at the backend origin | define | NFR-SEC-25, NFR-SEC-46, NFR-SEC-85 |
-| File / artifact data plane | Data-plane client → [Artifact-plane](components/08-artifact-plane.md) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/getManifest/preview-render + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
+| File / artifact data plane | Data-plane client → [Artifact-plane](components/08-artifact-plane.md) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/downloadArchive/getManifest/preview-render/delete + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
 | Secret delivery | SDS source → Egress trust-edge | Envoy SDS (gRPC xDS) | wire off-the-shelf; the v1 inspection leaf is pre-minted out of band and served over Envoy-native file SDS (zero OCU minter on the data path), a dynamic per-SNI minter is specified for a non-enumerable destination set but unbuilt at GA ([ADR-0007](adr/0007-egress-auth-mechanism.md)) | NFR-SEC-29 |
 | Outbound | Session sandbox → Egress trust-edge | network policy (no wire schema) | network property | NFR-SEC-27, NFR-SEC-85 |
 | Audit fan-in / SIEM | five source channels → Audit pipeline → SIEM | AsyncAPI 3.0 / OCSF | publish | NFR-SEC-03 |
@@ -67,7 +67,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Embed-token verify | reject any embed token not signature-valid, not naming this surface in audience, or past `exp` (`exp ≤ 120 s`); no OCU upstream secret crosses to the browser | NFR-SEC-82 |
 | Frame-ancestors allowlist | every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (header-only, default `'none'`) | NFR-SEC-83 |
 | First-party session + CSRF | a state-mutating request requires a server-validated CSRF token; a missing/invalid session is 401 with no anonymous fallback | NFR-SEC-84 |
-| File-activity audit (artifact-plane) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline, gateway-authored, fail-closed | NFR-SEC-79 |
+| File-activity audit (artifact-plane) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline under host-attested identity, fail-closed | NFR-SEC-79 |
 | Three-axis authz | scope (`filesystem_id`) + intent (`read`/`write`/`preview`) + `downloadable`, carried in the Storage-JWT and resolved at the backend origin from the host-attested session, never a client-supplied claim; `intent=preview` is read-only and non-downloadable | NFR-SEC-49 |
 | Downloadable axis at read | the backend origin resolves `downloadable` at read for both the mount-plane and the artifact-plane; a non-downloadable object yields no egress-eligible artifact (preview ≠ remove-from-sandbox) | NFR-SEC-73 |
 

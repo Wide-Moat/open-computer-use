@@ -8,6 +8,8 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
 
+Places the OCU sandbox in its outside world — the external actors it integrates with and the system boundary. Audience: anyone mapping OCU against a customer's IdP, KMS, SIEM, object store, or model provider.
+
 ## 1. Purpose
 
 Names every external boundary OCU speaks across, for architects and security engineers integrating it with the customer's IdP, KMS, SIEM, and outbound proxy. OCU is the in-perimeter tool-execution boundary — a uniform sandbox with a skill library, exposed over MCP; the calling client runs the agent loop and owns the model choice, and OCU executes the tool-calls it receives.
