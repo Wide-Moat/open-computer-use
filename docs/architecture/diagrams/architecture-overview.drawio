@@ -19,46 +19,46 @@
                 <mxCell id="x-dpc" value="Data-plane client&#xa;browser / headless" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="552" width="170" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-issuer" value="Credential issuer&#xa;sole ES256 signer · off-box&#xa;mints scoped JWT pre-boot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="o-issuer" value="Credential issuer&#xa;signs the scoped JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="540" y="90" width="210" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="c01" value="MCP gateway&#xa;tool-call ingress&#xa;planned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="c01" value="MCP gateway&#xa;tool-call ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="426" width="180" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="cadmin" value="Operator console (admin)&#xa;read-only live view&#xa;&lt;b&gt;ocu-admin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="cadmin" value="Operator console&#xa;read-only live view&#xa;&lt;b&gt;ocu-admin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="349" width="180" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="c02" value="Control / operator API&#xa;lifecycle · quota · denylist · cred DELIVERY · kill-switch&#xa;the only door to create or manage anything&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="540" y="360" width="210" height="130" as="geometry"/>
+                <mxCell id="c02" value="Control / operator API&#xa;the only door to create or manage a session&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="360" width="210" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="guestframe" value="UNTRUSTED GUEST SANDBOX · [1..N] · holds only a scoped JWT (no signing key, no backend key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#c0392b;strokeWidth=3;dashed=1;dashPattern=8 6;fontSize=11;fontStyle=1;fontColor=#c0392b;verticalAlign=top;align=center;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="guestframe" value="UNTRUSTED GUEST SANDBOX · [1..N] · holds only a scoped JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#c0392b;strokeWidth=3;dashed=1;dashPattern=8 6;fontSize=11;fontStyle=1;fontColor=#c0392b;verticalAlign=top;align=center;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="830" y="179" width="230" height="320" as="geometry"/>
                 </mxCell>
                 <mxCell id="g-agent" value="Session sandbox&#xa;guest agent · PID 1 · executor&#xa;&lt;b&gt;ocu-sandbox&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;verticalAlign=top;spacingTop=6;" parent="guestframe" vertex="1">
                     <mxGeometry x="20" y="190" width="190" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="g-mount" value="In-guest mount client&#xa;files as a filesystem · dials OUT&#xa;forwards JWT unmodified&#xa;&lt;b&gt;ocu-rclone-filestore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;verticalAlign=top;spacingTop=6;" parent="guestframe" vertex="1">
+                <mxCell id="g-mount" value="In-guest mount client&#xa;files as a filesystem&#xa;&lt;b&gt;ocu-rclone-filestore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;verticalAlign=top;spacingTop=6;" parent="guestframe" vertex="1">
                     <mxGeometry x="20" y="60" width="190" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="c06" value="Egress trust-edge&#xa;Envoy · single MITM hop&#xa;TLS-terminates, inspection-CA leaf via file SDS&#xa;forwards Bearer UNMODIFIED — no swap, no scope&#xa;Envoy + OCU config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="1180" y="235" width="240" height="240" as="geometry"/>
+                <mxCell id="c06" value="Egress trust-edge&#xa;single outbound hop · forwards the Bearer unchanged&#xa;Envoy + OCU config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="1180" y="300" width="240" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="c08" value="Web UI&#xa;file UI · upload · preview · download&#xa;calls the object-store service&#xa;&lt;b&gt;ocu-webui&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="c08" value="Web UI&#xa;upload · preview · download&#xa;&lt;b&gt;ocu-webui&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="370" y="532" width="220" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="c04" value="Object-store service&#xa;file API for consumers (up)&#xa;storage client to the engine (down)&#xa;the only door to storage&#xa;&lt;b&gt;ocu-filestore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="1500" y="389" width="220" height="100" as="geometry"/>
+                <mxCell id="c04" value="Object-store service&#xa;the only door to storage&#xa;&lt;b&gt;ocu-filestore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="1500" y="399" width="220" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-up" value="Upstream LLM / API&#xa;off-box endpoints" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="o-up" value="Upstream LLM / API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1760" y="250" width="200" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-sds" value="Upstream-cred SDS source&#xa;file (solo) / customer store&#xa;ADR-0005 · off-box" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="o-sds" value="Upstream-cred source&#xa;customer-provided" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1185" y="90" width="230" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-backend" value="Storage engine (pluggable)&#xa;S3 — off-box, customer-provided&#xa;local volume — on-box, solo&#xa;verifies JWT · enforces scope (foreign → 401)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="1760" y="389" width="200" height="100" as="geometry"/>
+                <mxCell id="o-backend" value="Storage engine&#xa;S3 or local volume&#xa;verifies JWT · enforces scope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="1760" y="399" width="200" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="c07" value="Audit pipeline · hash-chained chain-of-custody · all source containers emit OCSF (fan-in, fail-closed) · planned" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;fontSize=12;verticalAlign=middle;align=center;" parent="1" vertex="1">
+                <mxCell id="c07" value="Audit pipeline · hash-chained · host-side components emit (fan-in)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;fontSize=12;verticalAlign=middle;align=center;" parent="1" vertex="1">
                     <mxGeometry x="270" y="710" width="1420" height="56" as="geometry"/>
                 </mxCell>
                 <mxCell id="e-peer" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" parent="1" source="x-peer" target="c01" edge="1">
@@ -128,14 +128,6 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="e-sbx-audit" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;strokeColor=#999;exitX=0.5;exitY=1;entryX=0.4;entryY=0;" parent="1" source="g-agent" target="c07" edge="1">
-                    <mxGeometry relative="1" as="geometry">
-                        <Array as="points">
-                            <mxPoint x="945" y="670"/>
-                            <mxPoint x="838" y="670"/>
-                        </Array>
-                    </mxGeometry>
-                </mxCell>
                 <mxCell id="e-egr-audit" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;strokeColor=#999;exitX=0.25;exitY=1;entryX=0.599;entryY=-0.005;exitDx=0;exitDy=0;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="c06" target="c07" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
@@ -157,9 +149,9 @@
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="legendbox" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cccccc;" parent="1" vertex="1">
-                    <mxGeometry x="270" y="790" width="1420" height="120" as="geometry"/>
+                    <mxGeometry x="270" y="790" width="1420" height="106" as="geometry"/>
                 </mxCell>
-                <mxCell id="legendtitle" value="Box colour = which subsystem the component belongs to. We build the green, blue, orange, purple and grey ones; yellow and red are off-box / customer-provided." style="text;html=1;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;align=left;" parent="legendbox" vertex="1">
+                <mxCell id="legendtitle" value="Box colour = subsystem. We build green, blue, orange, purple, grey; yellow and red are off-box / customer-provided." style="text;html=1;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;align=left;" parent="legendbox" vertex="1">
                     <mxGeometry x="14" y="8" width="1390" height="18" as="geometry"/>
                 </mxCell>
                 <mxCell id="sw-green" value="Control plane" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" parent="legendbox" vertex="1">
@@ -183,8 +175,8 @@
                 <mxCell id="sw-red" value="External caller" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" parent="legendbox" vertex="1">
                     <mxGeometry x="864" y="34" width="130" height="26" as="geometry"/>
                 </mxCell>
-                <mxCell id="legendtext" value="Bold name = repo exists today; plain = planned.   Dashed-red frame = untrusted guest boundary (holds only a scoped JWT — no signing key, no backend key).&#xa;Bold orange = storage data path. ocu-filestore is the only door to storage: a file API to its consumers, a storage client to the pluggable engine (S3 off-box, or local volume on-box). Two consumers reach that API — the guest mount leg (the only leg through the egress MITM) and the host-side Web UI — never the engine directly.&#xa;Dashed lines = control / provisioning / trust-material / audit fan-in. There is no egress↔issuer edge: the egress passes the Bearer through untouched; the engine verifies the JWT and enforces scope." style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;align=left;" parent="legendbox" vertex="1">
-                    <mxGeometry x="14" y="66" width="1390" height="48" as="geometry"/>
+                <mxCell id="legendtext" value="Bold name = repo exists; plain = planned.   Bold orange = storage data path.   Solid = data, dashed = control / provisioning / trust / audit.&#xa;The guest sandbox reaches only the egress hop; its actions are recorded host-side, so it cannot reach — or silence — the audit pipeline." style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;align=left;" parent="legendbox" vertex="1">
+                    <mxGeometry x="14" y="66" width="1390" height="32" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>
