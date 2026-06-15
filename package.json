@@ -26,7 +26,7 @@
     "react-icons": "^5.5.0",
 "remark-cli": "^12.0.1",
     "remark-preset-lint-recommended": "^7.0.1",
-    "sharp": "^0.34.4",
+    "sharp": "^0.35.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
