@@ -154,7 +154,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Run trufflehog
-        uses: trufflesecurity/trufflehog@0ec3634f6cf66a61912a923fee9d20cc45633a67  # main as of 2026-05-24
+        uses: trufflesecurity/trufflehog@84a2b33c9f891494db6ebe02f2a55b19cdf38f25  # main as of 2026-05-24
         with:
           path: ./
           # `--fail` is appended by the action's entrypoint — passing it
