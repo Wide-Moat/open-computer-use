@@ -19,8 +19,11 @@
                 <mxCell id="x-dpc" value="Data-plane client&#xa;browser / headless" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="552" width="170" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-issuer" value="RFC 8693 exchange counterparty&#xa;weak Storage-JWT → real filestore credential&#xa;may be external / customer-provided" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="1460" y="50" width="210" height="120" as="geometry"/>
+                <mxCell id="o-issuer" value="RFC 8693 exchange counterparty" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=middle;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="1460" y="50" width="210" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-issuer-note" value="Exchanges the validated weak Storage-JWT for the real filestore credential. Bundled OpenBao on the solo shelf; the customer's own authority (Vault / Keycloak / KMS) on the enterprise shelf." style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#666;align=left;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="1460" y="106" width="210" height="64" as="geometry"/>
                 </mxCell>
                 <mxCell id="c01" value="MCP gateway&#xa;tool-call ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="426" width="180" height="64" as="geometry"/>
@@ -28,8 +31,11 @@
                 <mxCell id="cadmin" value="Operator console&#xa;read-only live view&#xa;&lt;b&gt;ocu-admin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="349" width="180" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="c02" value="Control / operator API&#xa;the only door to create or manage a session&#xa;mints the Session JWT and the weak Storage-JWT; holds both keys, publishes JWKS&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="540" y="360" width="210" height="90" as="geometry"/>
+                <mxCell id="c02" value="Control / operator API&#xa;the only door to create or manage a session&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="360" width="210" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="c02-note" value="Mints the Session JWT (control channel) and the weak Storage-JWT (storage leg) — two distinct keys it holds — and publishes the JWKS the egress edge validates the Storage-JWT against." style="text;html=1;strokeColor=none;fillColor=none;fontSize=10;fontColor=#666;align=left;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="434" width="210" height="56" as="geometry"/>
                 </mxCell>
                 <mxCell id="guestframe" value="UNTRUSTED GUEST SANDBOX · [1..N] · holds the Session JWT (control channel) and the weak Storage-JWT (storage leg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#c0392b;strokeWidth=3;dashed=1;dashPattern=8 6;fontSize=11;fontStyle=1;fontColor=#c0392b;verticalAlign=top;align=center;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="830" y="179" width="230" height="320" as="geometry"/>
