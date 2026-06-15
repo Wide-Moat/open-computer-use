@@ -75,7 +75,7 @@ jaxlib==0.7.2
 # tensorflow-lite==2.13.0 - does NOT exist on PyPI, removed
 onnxruntime==1.23.1
 ml_dtypes==0.5.3
-mediapipe==0.10.14
+mediapipe==0.10.35
 magika==0.6.2
 
 # Web automation
