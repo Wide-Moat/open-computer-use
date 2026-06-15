@@ -22,7 +22,7 @@ The platform is one product, not a set of SKUs; these are the parts OCU develops
 
 | Component | Repo | What it does |
 |---|---|---|
-| Control / operator API | [`ocu-control`](https://github.com/Wide-Moat/ocu-control) | The only door to create or manage a session: lifecycle, quota, denylist, kill-switch, and delivery of the pre-signed storage JWT into the guest. Holds no signing key. |
+| Control / operator API | [`ocu-control`](https://github.com/Wide-Moat/ocu-control) | The only door to create or manage a session: lifecycle, quota, denylist, kill-switch, and minting and delivery of the weak Storage-JWT into the guest; holds the Storage-JWT signing key and publishes its JWKS. |
 | Session sandbox | [`ocu-sandbox`](https://github.com/Wide-Moat/ocu-sandbox) | The per-session guest executor (PID 1). Untrusted; holds only a scoped JWT. |
 | In-guest mount client | [`ocu-rclone-filestore`](https://github.com/Wide-Moat/ocu-rclone-filestore) | Presents the backend files as a filesystem inside the guest; dials out and presents its weak session JWT on the guest→edge leg; the Egress trust-edge validates and exchanges it for the real filestore credential. Object-store client and transport in one binary. |
 | Object-store service | [`ocu-filestore`](https://github.com/Wide-Moat/ocu-filestore) | The only door to storage: a file API to its consumers, a storage client to the pluggable engine (S3 or local volume). |

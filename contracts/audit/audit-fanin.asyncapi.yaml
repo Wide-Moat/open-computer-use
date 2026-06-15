@@ -7,10 +7,10 @@
 # the guest (NFR-SEC-47). The pipeline also self-emits metering and saturation.
 # AsyncAPI 3.0.0 names the channel/operation; the OCSF event class is the payload
 # (Published Language), referenced by $ref to the public OCSF schema, never
-# inlined. There is no credential-custody producer: OCU holds no signing key and
-# mints no token. The egress edge exchanges the guest's weak session JWT at the
-# off-box issuer for the real filestore credential; the signing key stays at that
-# issuer.
+# inlined. There is no credential-custody producer on the audit plane. The egress
+# edge exchanges the guest's weak session JWT for the real filestore credential;
+# the exchange counterparty issuing the real credential MAY be an external/customer
+# credential authority, and the egress edge mints no credential of its own.
 
 asyncapi: 3.0.0
 
@@ -63,7 +63,7 @@ channels:
 
   objectStoreAudit:
     address: audit.ingest.object-store
-    description: STORAGE (mount-plane) — File System Activity at the Object-store service for the guest mount-plane (list/read/write/create/stat), host-authored per NFR-SEC-47, per NFR-SEC-79. No credential-custody producer — OCU holds no signing key and mints no token; the egress edge exchanges the weak session JWT at the off-box issuer for the real filestore credential.
+    description: STORAGE (mount-plane) — File System Activity at the Object-store service for the guest mount-plane (list/read/write/create/stat), host-authored per NFR-SEC-47, per NFR-SEC-79. No credential-custody producer on this plane; the egress edge exchanges the weak session JWT for the real filestore credential, whose issuing counterparty MAY be an external/customer credential authority, and the edge mints no credential of its own.
     messages:
       fileSystemActivity:
         $ref: '#/components/messages/FileSystemActivity'
@@ -325,7 +325,7 @@ components:
                   description: Operation intent axis (NFR-SEC-49).
                 downloadable:
                   type: boolean
-                  description: Downloadable disposition resolved at the storage engine at read (NFR-SEC-73).
+                  description: Downloadable disposition resolved at read (NFR-SEC-73) — per face, the storage engine on the mount plane / the Web UI service on the Web UI plane.
 
     ProcessActivity:
       name: ProcessActivity

@@ -81,7 +81,7 @@
           "examples": ["/workspace/out"]
         },
         "auth_token": {
-          "description": "Pre-issued ES256 WEAK session JWT, opaque to the holder. Scoped {filesystem_id + intent + downloadable} with a short fixed TTL and no refresh; signed off-box by the credential issuer (the sole signing-key holder) and delivered (never signed) by the control plane in the provisioning push. It is an edge-only assertion: the egress edge validates it, strips it, and exchanges it at the issuer for the real filestore credential keyed on filesystem_id; the mount client forwards this weak JWT as a static Authorization: Bearer, but ocu-filestore never receives it — it receives only the edge-injected real credential, on which the storage engine enforces scope.",
+          "description": "Pre-issued WEAK session JWT (an OCU-chosen signing algorithm, e.g. ES256), opaque to the holder. Scoped {filesystem_id + intent + downloadable}, short-lived, fixed-window, no refresh (TTL is an OCU deployment parameter, not a sourced value); minted and signed by the Control plane (the Storage-JWT signing-key holder, which publishes a JWKS the egress edge validates against) and delivered in the provisioning push. It is an edge-only assertion: the egress edge validates it, strips it, and exchanges it for the real filestore credential keyed on filesystem_id (the exchange counterparty issuing the real credential MAY be an external/customer credential authority); the mount client forwards this weak JWT as a static Authorization: Bearer, but ocu-filestore never receives it — it receives only the edge-injected real credential, on which the storage engine enforces scope.",
           "type": "string",
           "minLength": 1
         },

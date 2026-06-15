@@ -64,7 +64,7 @@ Source availability is a go-to-market property, not a classification axis. The s
 
 Compliance Evidence is core for the lineage, not the schema. The OCSF schema, the pluggable SIEM sinks, and the customer-chosen transparency log are generic substrate we integrate; reconstructing a tamper-evident, replayable chain of agent actions across an adversarial workload is the part we build.
 
-Storage classifies once split by counterparty. The in-guest mount client is core because its language is the running session's; the Web UI is a core sub-context because it fronts an external data-plane client with its own aggregate root; the Object-store service is the one door to the storage engine, which integrates as a pluggable adapter behind it. The storage signing key is held off-box by a separate issuer; no storage component holds one ([ADR-0013](adr/0013-storage-credential-custody.md)).
+Storage classifies once split by counterparty. The in-guest mount client is core because its language is the running session's; the Web UI is a core sub-context because it fronts an external data-plane client with its own aggregate root; the Object-store service is the one door to the storage engine, which integrates as a pluggable adapter behind it. The Control plane mints the weak Storage-JWT and holds its signing key; the real filestore credential is issued by a separate credential authority over RFC 8693 exchange. No in-guest, edge, or storage component holds a signing key ([ADR-0013](adr/0013-storage-credential-custody.md)).
 
 ## 3. Trust zones to contexts
 

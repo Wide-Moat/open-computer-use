@@ -18,7 +18,7 @@ The only door to create or manage a session. Audience: engineers wiring the oper
 
 ## Purpose
 
-Every request to create or manage a session enters through the Control / operator API. It owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It delivers the storage credential to the guest but holds no signing key. It dials into the guest; the guest never dials it.
+Every request to create or manage a session enters through the Control / operator API. It owns session lifecycle, quota, the session denylist, and the kill-switch ([`05-c4-container.md`](../05-c4-container.md) §3). It mints the weak session JWT and delivers it to the guest; it holds the Storage-JWT signing key and publishes a JWKS the Egress trust-edge validates against. It dials into the guest; the guest never dials it.
 
 ## Boundaries
 
@@ -26,7 +26,8 @@ Inbound edges:
 
 - **MCP gateway → Control** (session set-up). The gateway carries a service identity, not operator scope.
 - **Operator console / CLI → Control.** A human never calls the API directly; the console or CLI is the door.
-- **Credential issuer → Control** (the pre-signed storage JWT, out of the request path).
+
+Control mints the weak Storage-JWT itself and holds its signing key, so there is no inbound storage-credential edge here; the real filestore credential the Egress trust-edge exchanges for lives at the #3 counterparty, off Control's request path.
 
 Outbound edges:
 
@@ -35,21 +36,21 @@ Outbound edges:
 
 There is no edge from the MCP gateway to the sandbox; every request to create or manage a session enters through Control. Control has no edge to the storage path.
 
-Two listeners back this container: an operator/lifecycle ingress and a gateway service-identity ingress, on distinct network endpoints. The kill-switch and force-kill routes exist only on the operator ingress. The issuer edge is not a listener: the pre-signed storage JWT arrives out-of-band over a config/secret mount, not on a network endpoint.
+Two listeners back this container: an operator/lifecycle ingress and a gateway service-identity ingress, on distinct network endpoints. The kill-switch and force-kill routes exist only on the operator ingress. There is no storage-issuer listener: Control mints the weak Storage-JWT itself and holds its signing key as a config/secret mount, so no storage credential arrives on a network endpoint.
 
 Owned state: the session registry (live sessions, their `container_name` binding, tenant, quota counters) and the denylist (kill-switch state). This container is the sole custodian of both. No other component mutates either, and the guest holds no handle that reaches them.
 
-Control delivers the storage credential but never signs it; relay, scrub, and scope custody are in the table below ([ADR-0013](../adr/0013-storage-credential-custody.md)). The upstream LLM credential never reaches Control; it reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)).
+Control mints and delivers the weak session JWT; relay and scope custody are in the table below ([ADR-0013](../adr/0013-storage-credential-custody.md)). Scrub-on-load is a requirement of the in-guest mount client ([`05-session-sandbox.md`](../05-session-sandbox.md)), not Control behaviour. The upstream LLM credential never reaches Control; it reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)).
 
 Custody of each credential ([ADR-0013](../adr/0013-storage-credential-custody.md)):
 
 | Credential | Control holds | Held elsewhere |
 |---|---|---|
-| ES256 signing key (private) | no — off-box at the credential issuer | the credential issuer |
-| Pre-signed scoped JWT (bearer) | relays once into the mount config; keeps no copy | the guest mount config, for its window; verified at the storage engine |
+| Storage-JWT signing key (private) | yes — the Control plane holds it, mints the weak session JWT at provisioning, and publishes a JWKS the Egress trust-edge validates against | no guest, edge, or object-store component holds it |
+| Weak session JWT (bearer) | relays once into the mount config; keeps no copy | the guest mount config, for its window; presented to the Egress trust-edge, which validates and exchanges it — it does not reach the storage engine ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md)) |
 | Ed25519 control-WS client-auth key (public) | installs into the guest over the control channel | the guest executor uses it to authenticate the host-dialled control-WebSocket client (host dials in; guest verifies the caller) |
 
-Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): Control mints the Session JWT, bound to `container_name`, toward the Session sandbox on the host-dialled control channel; accepts a Generic internal token from the gateway service identity on session set-up; and accepts an operator credential on the operator ingress ([ADR-0004](../adr/0004-operator-authentication-substrate.md) fixes the substrate). The operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1; their schema files are not yet built ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)), so `contract: null`. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
+Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): Control mints the Session JWT toward the Session sandbox on the host-dialled control channel; the JWT proves session identity and is checked against a separately-supplied expected container name on the same channel, not as a JWT claim (NFR-SEC-43); accepts a Generic internal token from the gateway service identity on session set-up; and accepts an operator credential on the operator ingress ([ADR-0004](../adr/0004-operator-authentication-substrate.md) fixes the substrate). The operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1; their schema files are not yet built ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)), so `contract: null`. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
 
 ## Invariants
 
@@ -57,7 +58,7 @@ Cross-cutting properties (zone membership, in-transit encryption, retention floo
 
 - Every route to create or manage a session enters through Control. No MCP-surface route resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress (IaC-policy assertion, NFR-SEC-52).
 - The host dials the guest. The kill-switch is a host-initiated stop, not a cooperative guest action; an unreachable control channel grants the guest no new authority (NFR-SEC-01).
-- Control holds no signing key. It relays the off-box-issued JWT unchanged and verifies no storage scope; the storage engine verifies the scope (NFR-SEC-43, [ADR-0013](../adr/0013-storage-credential-custody.md)).
+- Control verifies no storage scope; the Egress trust-edge validates the guest's weak session JWT and exchanges it for the real filestore credential, and the storage engine enforces scope on that injected credential ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md), [ADR-0013](../adr/0013-storage-credential-custody.md)).
 - A body-supplied session/tenant/`container_name` id is a hint, never the authority. The binding the host acts on is host-derived from the runtime-attested caller identity (hypervisor context id / kernel peer creds / per-session socket path; [`02-trust-boundaries.md`](../02-trust-boundaries.md) host-attested invariant), not from request fields, so a gateway or guest naming another session's id cannot bind or address it (forge-another-session test, NFR-SEC-43).
 - The gateway service identity carries no operator scope. Force-kill, denylist edit, and quota override are unreachable with that audience (audience-to-route map test, NFR-SEC-26).
 - Every privileged operator/SOAR action in the NFR-SEC-45 set emits a chain-linked OCSF event before acknowledgement, and the action is denied if the audit write fails (NFR-SEC-45; system-initiated lifecycle transitions owned by NFR-SEC-72).

@@ -16,7 +16,7 @@ threat-mitigation-link: ../06-threat-model.md
 
 The object-store service owns the guest file-operation contract and drives the storage engine through a pluggable engine adapter — a local volume and an S3 store from day one — so the guest never sees the backend protocol and no engine is bundled for production.
 
-# ADR-0010: Storage backend is a pluggable adapter behind the object-store service
+# ADR-0010: Storage engine is a pluggable adapter behind the object-store service
 
 ## Status
 
@@ -34,7 +34,7 @@ The object-store service drives the storage engine through a pluggable engine ad
 
 ## Consequences
 
-- **The two contracts stay distinct, and this closes [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).** The guest↔service contract is the OCU-defined file-operation interface (open/read/write/list over FUSE / virtio-fs / 9p, [08-contracts.md](../08-contracts.md)), deliberately POSIX-shaped, never the backend protocol. The boundary is asserted inside the object-store service: invariant 2 ([component 04](../components/04-object-store-service.md)) — no caller request names a backend object directly — is the falsifiable statement of the split. The engine choice is the role `conform` backend leg ([08-contracts.md](../08-contracts.md)); the file-op mount is the role `define` surface.
+- **The two contracts stay distinct, and this closes [#208](https://github.com/Wide-Moat/open-computer-use/issues/208).** The guest↔service contract is the OCU-defined file-operation interface (open/read/write/list over FUSE, a component-spec choice, [08-contracts.md](../08-contracts.md)), deliberately POSIX-shaped, never the backend protocol. The boundary is asserted inside the object-store service: invariant 2 ([component 04](../components/04-object-store-service.md)) — no caller request names a backend object directly — is the falsifiable statement of the split. The engine choice is the role `conform` backend leg ([08-contracts.md](../08-contracts.md)); the file-op mount is the role `define` surface.
 - Positive: swapping the engine changes neither the file-operation contract nor any of the object-store service's invariants ([component 04](../components/04-object-store-service.md)) — substrate and transport are component-spec choices, not contract. A later engine (e.g. a cloud object store) is a third adapter behind the unchanged contract, with the guest mount and the schema untouched.
 - Positive: the local-volume engine has no network leg, so the minimal shelf runs from one `docker-compose up` with no external object store and no cloud credential, holding the one-click-solo invariant ([03-non-negotiables.md](../manifesto/03-non-negotiables.md)). The egress-transit invariant ([NFR-SEC-25](../manifesto/02-nfrs.md)) applies to a network engine's leg, not to the local-volume engine, which has nothing to transit.
 - Positive: production engines are customer-provided and not bundled — AWS S3, Ceph RGW (the reference object store in [05-licensing-posture.md](../manifesto/05-licensing-posture.md)), or any S3-compatible store. OCU owns no engine CVE, SBOM, or version lifecycle, mirroring [ADR-0009](0009-audit-pipeline-pluggable-by-contract.md)'s no-CVE posture.

@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="ocu-components" name="Component map">
-        <mxGraphModel dx="1435" dy="1511" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="900" math="0" shadow="0">
+        <mxGraphModel dx="1078" dy="1662" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="900" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -19,8 +19,8 @@
                 <mxCell id="x-dpc" value="Data-plane client&#xa;browser / headless" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="552" width="170" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-issuer" value="Credential issuer&#xa;issues the weak session JWT to the guest;&#xa;exchanges it for the real filestore credential at the edge&#xa;(sole signing key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="540" y="90" width="210" height="70" as="geometry"/>
+                <mxCell id="o-issuer" value="RFC 8693 exchange counterparty&#xa;weak Storage-JWT → real filestore credential&#xa;may be external / customer-provided" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="1460" y="50" width="210" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="c01" value="MCP gateway&#xa;tool-call ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="426" width="180" height="64" as="geometry"/>
@@ -28,10 +28,10 @@
                 <mxCell id="cadmin" value="Operator console&#xa;read-only live view&#xa;&lt;b&gt;ocu-admin&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="260" y="349" width="180" height="64" as="geometry"/>
                 </mxCell>
-                <mxCell id="c02" value="Control / operator API&#xa;the only door to create or manage a session&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="c02" value="Control / operator API&#xa;the only door to create or manage a session&#xa;mints the Session JWT and the weak Storage-JWT; holds both keys, publishes JWKS&#xa;&lt;b&gt;ocu-control&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="540" y="360" width="210" height="90" as="geometry"/>
                 </mxCell>
-                <mxCell id="guestframe" value="UNTRUSTED GUEST SANDBOX · [1..N] · holds only a scoped JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#c0392b;strokeWidth=3;dashed=1;dashPattern=8 6;fontSize=11;fontStyle=1;fontColor=#c0392b;verticalAlign=top;align=center;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="guestframe" value="UNTRUSTED GUEST SANDBOX · [1..N] · holds the Session JWT (control channel) and the weak Storage-JWT (storage leg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#c0392b;strokeWidth=3;dashed=1;dashPattern=8 6;fontSize=11;fontStyle=1;fontColor=#c0392b;verticalAlign=top;align=center;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="830" y="179" width="230" height="320" as="geometry"/>
                 </mxCell>
                 <mxCell id="g-agent" value="Session sandbox&#xa;guest agent · PID 1 · executor&#xa;&lt;b&gt;ocu-sandbox&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;verticalAlign=top;spacingTop=6;" parent="guestframe" vertex="1">
@@ -55,7 +55,7 @@
                 <mxCell id="o-sds" value="Upstream-cred source&#xa;customer-provided" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1185" y="90" width="230" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-backend" value="Storage engine&#xa;S3 or local volume&#xa;verifies JWT · enforces scope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="o-backend" value="Storage engine&#xa;S3 or local volume&#xa;verifies the injected real credential · enforces scope" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="1760" y="399" width="200" height="80" as="geometry"/>
                 </mxCell>
                 <mxCell id="c07" value="Audit pipeline · hash-chained · host-side components emit (fan-in)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#666666;fontSize=12;verticalAlign=middle;align=center;" parent="1" vertex="1">
@@ -76,9 +76,16 @@
                 <mxCell id="e-admin-ctrl" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="cadmin" target="c02" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e-iss-ctrl" value="pre-signed JWT (out of request path)" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;fontSize=9;fontColor=#888;exitX=0.5;exitY=1;entryX=0.5;entryY=0;exitDx=0;exitDy=0;" parent="1" source="o-issuer" target="c02" edge="1">
+                <mxCell id="e-egr-iss" value="RFC 8693 exchange:&#xa;validated weak session JWT&#xa;→ real filestore credential" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;dashed=1;fontSize=9;fontColor=#888;exitX=0.5;exitY=0;entryX=0.5;entryY=1;exitDx=0;exitDy=0;" parent="1" source="c06" target="o-issuer" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="645" y="189" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="1350" y="285"/>
+                            <mxPoint x="1350" y="190"/>
+                            <mxPoint x="1450" y="190"/>
+                            <mxPoint x="1450" y="200"/>
+                            <mxPoint x="1565" y="200"/>
+                        </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="e-mount-egr" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeWidth=2;strokeColor=#d79b00;exitX=1;exitY=0.5;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="g-mount" target="c06" edge="1">

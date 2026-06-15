@@ -43,7 +43,7 @@ The guest storage data leg is one tier-universal network endpoint — the in-gue
 
 ## Alternatives considered
 
-- **Leave the transport a component-spec choice.** Rejected: an unpinned guest-facing leg let a host-dialled in-guest unix socket get baked, which cannot cross a microVM kernel boundary and contradicts the `^https://` `service_url` in the frozen mount contract ([08-contracts.md](../08-contracts.md) §1). A guest-facing leg's direction, reachability, and endpoint are trust-tier properties, not spec discretion; only the in-guest VFS substrate (FUSE/virtio-fs/9p) stays a spec choice.
+- **Leave the transport a component-spec choice.** Rejected: an unpinned guest-facing leg let a host-dialled in-guest unix socket get baked, which cannot cross a microVM kernel boundary and contradicts the `^https://` `service_url` in the frozen mount contract ([08-contracts.md](../08-contracts.md) §1). A guest-facing leg's direction, reachability, and endpoint are trust-tier properties, not spec discretion; only the in-guest VFS substrate (FUSE, a component-spec choice) stays a spec choice.
 - **Model storage as a host-pushed mount on the F7 "host dials guest" channel.** Rejected: it contradicts the frozen mount contract's guest-out `service_url` and folds the data leg into the exec/control channel, so a single host-dialled arrow would carry two traffic classes with different counterparties — the host control plane on one side, the storage backend on the other — and the data path would inherit the exec channel's host-attested-caller invariant it cannot satisfy. The host originates only the provisioning push; the data leg is guest-dialled-out.
 
 ## Compliance impact

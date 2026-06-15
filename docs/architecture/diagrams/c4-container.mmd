@@ -19,7 +19,7 @@ flowchart LR
     ENGINE["Storage engine<br/>(S3 or local volume · off-box<br/>verifies the injected real credential · enforces filesystem_id scope)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
     SDS["SDS source<br/>(static file solo · customer store enterprise)"]:::extOpt
-    ISSUER["Off-box credential issuer (OIDC)<br/>(sole signing key · issues the weak session JWT to the guest<br/>exchanges it for the real filestore credential at the edge)"]:::extOpt
+    ISSUER["RFC 8693 exchange counterparty<br/>(issues the real filestore credential at the edge; may be external)<br/>the Control plane mints the weak Storage-JWT + holds its signing key + publishes the JWKS the edge validates against"]:::extOpt
 
     %% ─── containers inside the system under design ───
     subgraph OCU["Open Computer Use"]
@@ -39,9 +39,8 @@ flowchart LR
     FILE -.->|"F11: SPA · file API (upload/preview/download)<br/>embed token → first-party session · bytes direct"| WEBUI
 
     %% ─── control + provisioning reach the guest host-side (host dials, guest listens; NFR-SEC-43) ───
-    CTRL -->|"F6: Session JWT bound to container_name<br/>host-attested caller · host dials guest"| VM
-    CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>off-box-issued scoped JWT + ca_cert · host dials guest"| VM
-    ISSUER -.->|"pre-signed scoped JWT (out of band)"| CTRL
+    CTRL -->|"F6: Session JWT · checked against a separately-supplied expected container name (not a JWT claim)<br/>host-attested caller · host dials guest"| VM
+    CTRL -->|"F7: mount provisioning push (ProvisionMountConfig)<br/>Control-plane-minted+signed scoped Storage-JWT + ca_cert · host dials guest"| VM
 
     %% ─── ONE door to storage: both legs reach the Object-store service, and only it speaks to the
     %%     storage engine. Guest leg: in-guest mount client → egress → object-store service → engine.
@@ -51,7 +50,8 @@ flowchart LR
     SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (hardening rung)"| EDGE
     WEBUI -->|"F9: file-op intent (host leg)<br/>intra-deployment · does not cross egress"| OSS
     EDGE -->|"agent egress · forwards to origin"| UPSTREAM
-    EDGE -->|"storage data leg (guest) · validates the weak session JWT<br/>exchanges it at the issuer for the real filestore credential (per-session, cached)"| OSS
+    EDGE -.->|"RFC 8693 exchange: presents the validated weak session JWT<br/>receives the real filestore credential (per-session, cached)"| ISSUER
+    EDGE -->|"storage data leg (guest) · validates the weak session JWT<br/>injects the exchanged real filestore credential"| OSS
     OSS -->|"the only door · engine verifies the injected real credential · enforces filesystem_id scope (ADR-0019)"| ENGINE
 
     %% ─── audit fan-in (host-side containers only; the Session sandbox does NOT emit) ───

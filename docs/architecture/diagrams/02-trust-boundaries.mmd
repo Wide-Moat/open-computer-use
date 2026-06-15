@@ -18,7 +18,7 @@ flowchart LR
     SIEM[Customer SIEM]:::extOpt
     KMS[Customer KMS / HSM]:::extOpt
     SDS[SDS source<br/>static file solo · customer store enterprise]:::extOpt
-    ISS[Off-box credential issuer (OIDC)<br/>sole signing key · issues the weak session JWT to the guest<br/>exchanges it for the real filestore credential at the edge]:::extOpt
+    ISS[RFC 8693 exchange counterparty<br/>issues the real filestore credential at the edge; may be external<br/>the Control plane mints the weak Storage-JWT + holds its signing key + publishes the JWKS the edge validates against]:::extOpt
     SOAR[SOAR<br/>signed webhook + admin API]:::extOpt
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
     TLOG[Transparency log]:::extOpt
@@ -62,9 +62,8 @@ flowchart LR
     SOAR <-->|"signed webhook + admin API · operator interface"| ORCH
 
     %% ─── internal edges (encrypted in transit; NFR-SEC-37) ───
-    ORCH -->|"Session JWT on WS<br/>bound to container_name<br/>TTL ≤60min · rotated"| VM
-    ISS -.->|"pre-signed scoped JWT<br/>out of request path"| ORCH
-    ORCH -->|"provisioning push · scoped Storage-JWT + ca_cert<br/>before the mount client starts · NFR-SEC-25"| VM
+    ORCH -->|"Session JWT on WS<br/>checked against a separately-supplied expected container name (not a JWT claim)<br/>short-lived, rotated (≤60min OCU anti-replay default)"| VM
+    ORCH -->|"provisioning push · Control-minted+signed scoped Storage-JWT + ca_cert<br/>before the mount client starts · NFR-SEC-25"| VM
     SDS -->|"upstream credential over SDS<br/>source owns mint · rotate · revoke<br/>NFR-SEC-23 · ADR-0005 · ADR-0007"| PROXY
 
     %% ─── storage data leg (guest-out; one door to storage) ───
@@ -78,6 +77,7 @@ flowchart LR
     %% NFR-SEC-85). The guest never reaches the storage engine directly. Mount
     %% substrate (FUSE / virtio-fs / 9p) is component-spec.
     MOUNT -->|"storage data leg · weak session JWT as Bearer<br/>guest-out over the single egress hop · NFR-SEC-85"| PROXY
+    PROXY -.->|"RFC 8693 exchange: validated weak session JWT → real filestore credential<br/>per-session, cached"| ISS
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -114,8 +114,10 @@ flowchart LR
     BUS -.->|"daily Merkle head<br/>submission envelope"| TLOG
 
     %% ─── KMS path (optional, full-capability shelf only) ───
-    %% The storage signing key is off-box at the credential issuer (ISS), not in a
-    %% zone here; the CMEK envelope (workspace_cmek_enabled) is a storage-engine concern.
+    %% The Control plane (ORCH) mints the weak Storage-JWT and holds its signing key,
+    %% publishing the JWKS the edge validates against; the RFC 8693 exchange counterparty
+    %% (ISS) issues the real filestore credential and may be external. The CMEK envelope
+    %% (workspace_cmek_enabled) is a storage-engine concern.
     BUS -.->|"PKCS#11 / KMIP<br/>signing on full shelf"| KMS
 
     %% ─── styling (project palette: red untrusted / amber semi-trusted / green trusted / blue isolated) ───

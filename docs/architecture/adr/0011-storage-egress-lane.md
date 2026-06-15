@@ -16,7 +16,7 @@ threat-mitigation-link: ../06-threat-model.md
 
 The guest storage leg rides the single egress hop like every other guest dial: the hop terminates TLS, validates the guest's weak session JWT, and exchanges it at the issuer for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); scope is enforced at the storage engine on the injected credential. Audience: anyone wiring or auditing how the guest reaches its storage backend.
 
-# ADR-0011: Storage backend rides the single egress hop
+# ADR-0011: Storage engine rides the single egress hop
 
 ## Status
 
@@ -24,9 +24,9 @@ The guest storage leg rides the single egress hop like every other guest dial: t
 
 ## Context
 
-A network storage engine ([ADR-0010](0010-storage-backend-pluggable-adapter.md)) is reached over a network leg from the guest. The guest dials out, and that dial leaves the sandbox on the Egress trust-edge, the single outbound hop every guest connection uses ([NFR-SEC-16](../manifesto/02-nfrs.md), [08-contracts.md](../08-contracts.md)). The storage credential is a guest-held, off-box-issued static JWT bearer ([ADR-0013](0013-storage-credential-custody.md)); no in-deployment component holds a storage signing key. The guest forwards that bearer unmodified on the guest→edge leg, and the edge exchanges it for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)).
+A network storage engine ([ADR-0010](0010-storage-backend-pluggable-adapter.md)) is reached over a network leg from the guest. The guest dials out, and that dial leaves the sandbox on the Egress trust-edge, the single outbound hop every guest connection uses ([NFR-SEC-16](../manifesto/02-nfrs.md), [08-contracts.md](../08-contracts.md)). The storage credential the guest holds is a weak session JWT the Control plane mints and signs ([ADR-0013](0013-storage-credential-custody.md)); the Control plane holds the Storage-JWT signing key and publishes a JWKS the edge validates against, and no guest, edge, or object-store component holds that key. The guest presents that weak JWT on the guest→edge leg, and the edge exchanges it for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)).
 
-The egress hop terminates TLS, inspects, and forwards the connection. It validates the guest's weak session JWT, strips it, and exchanges it at the OIDC issuer for the real filestore credential keyed on `filesystem_id`, overwriting the `Authorization` header ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); it mints no credential and holds no signing key — the issuer keeps it. Scope is enforced by the storage engine on the injected credential, which rejects a foreign `filesystem_id`. A local-volume engine has no network leg, so the hop is vacuous for it.
+The egress hop terminates TLS, inspects, and forwards the connection. It validates the guest's weak session JWT against the Control plane's JWKS, strips it, and exchanges it at the RFC 8693 exchange counterparty for the real filestore credential keyed on `filesystem_id`, overwriting the `Authorization` header ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); the edge mints no credential and holds no signing key — the Control plane keeps the Storage-JWT signing key. Scope is enforced by the storage engine on the injected credential, which rejects a foreign `filesystem_id`. A local-volume engine has no network leg, so the hop is vacuous for it.
 
 ## Decision
 

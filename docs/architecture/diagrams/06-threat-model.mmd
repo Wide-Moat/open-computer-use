@@ -8,7 +8,7 @@ flowchart LR
     OPER["Operator"]:::ext
     DPC["Data-plane client<br/>(SPA / headless)"]:::ext
     SDS["SDS source<br/>(static file / customer store)"]:::ext
-    ENGINE["Storage engine<br/>(off-box · verifies JWT · enforces scope)"]:::ext
+    ENGINE["Storage engine<br/>(off-box · verifies the injected real credential · enforces scope)"]:::ext
     subgraph OCU["Open Computer Use — STRIDE overlay"]
         MCPG["MCP gateway"]
         CTRL["Control / operator API"]
