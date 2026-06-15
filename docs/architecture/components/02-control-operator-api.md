@@ -40,7 +40,7 @@ Two listeners back this container: an operator/lifecycle ingress and a gateway s
 
 Owned state: the session registry (live sessions, their `container_name` binding, tenant, quota counters) and the denylist (kill-switch state). This container is the sole custodian of both. No other component mutates either, and the guest holds no handle that reaches them.
 
-Control mints and delivers the weak session JWT; relay and scope custody are in the table below ([ADR-0013](../adr/0013-storage-credential-custody.md)). Scrub-on-load is a requirement of the in-guest mount client ([`05-session-sandbox.md`](../05-session-sandbox.md)), not Control behaviour. The upstream LLM credential never reaches Control; it reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)).
+Control mints and delivers the weak session JWT; relay and scope custody are in the table below ([ADR-0013](../adr/0013-storage-credential-custody.md)). Scrub-on-load is a requirement of the in-guest mount client ([`05-session-sandbox.md`](05-session-sandbox.md)), not Control behaviour. The upstream LLM credential never reaches Control; it reaches the Egress trust-edge over Envoy SDS ([ADR-0007](../adr/0007-egress-auth-mechanism.md)).
 
 Custody of each credential ([ADR-0013](../adr/0013-storage-credential-custody.md)):
 
