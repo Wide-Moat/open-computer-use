@@ -3,7 +3,7 @@
   "$id": "https://schemas.open-computer-use.dev/storage/file-ops.schema.json",
   "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | Mount-plane file-operation RPC surface (in-guest mount client -> object-store service, guest-out over the single inspecting egress hop). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
   "title": "File-operation RPC surface (TBD)",
-  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the object-store service, which translates each verb into a storage-engine request. The substrate is Connect-RPC over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
+  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the object-store service, which translates each verb into a storage-engine request. The substrate is REST-JSON over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
 
   "$defs": {
     "SchemaVersion": {
@@ -14,7 +14,7 @@
     },
 
     "FilesystemId": {
-      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The pre-issued Storage-JWT is scoped to this id; a request for a foreign filesystem_id is rejected at the storage engine (401), not at the egress hop (NFR-SEC-25).",
+      "description": "Per-session logical scope (the isolation unit, not a crypto boundary). The pre-issued Storage-JWT is scoped to this id; a request for a foreign filesystem_id is rejected at the storage engine with 403 PermissionDenied — a valid signature but a foreign scope; a missing or expired token is 401 — not at the egress hop (NFR-SEC-25).",
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
@@ -22,13 +22,14 @@
     },
 
     "Intent": {
-      "description": "Operation class. The storage engine can deny by intent.",
+      "description": "Operation class (proto tag 1). The storage engine can deny by intent. The wire field is a proto3 string carrying no sourced enum; the read/write/preview value set below is an OCU default, not a frozen const set (mirrors the x_deny_reason hedge).",
       "type": "string",
+      "x-ocu-default-intent-vocab": "default, not a sourced enum",
       "enum": ["read", "write", "preview"]
     },
 
     "AuthorizationMetadata": {
-      "description": "Three-axis authorization attached to every file-op request as its own sub-message (carried at request field 4/5): scope (filesystem_id) + intent + downloadable. Richer than the bearer alone. The bearer is the pre-issued ES256 Storage-JWT the mount client holds in its config and forwards UNMODIFIED as a static Authorization header; it is signed off-box at a separate credential issuer and is NOT part of this object (NFR-SEC-25).",
+      "description": "Authorization sub-message attached to every file-op request, carried at request field 4/5. It has two members: intent (proto tag 1) and downloadable (proto tag 2; tag 9 in the upload-params carrier). The scope axis is the request's own filesystem_id sibling field (request tag 1/2, or 11 in its oneof), NOT a member of this sub-message. Richer than the bearer alone. The bearer is the pre-issued ES256 Storage-JWT the mount client holds in its config and forwards UNMODIFIED as a static Authorization header; it is signed off-box at a separate credential issuer and is NOT part of this object (NFR-SEC-25).",
       "type": "object",
       "additionalProperties": false,
       "required": ["filesystem_id", "intent", "downloadable"],
@@ -54,21 +55,24 @@
         "readFile",
         "readMetadata",
         "getFileMetadata",
+        "readFileMetadata",
         "listFiles",
         "copyFile",
         "moveFile",
         "removeFile",
+        "fileDelete",
         "fileUpload",
         "fileDownload",
         "importFiles",
         "importZip",
         "migrateFilesystem",
-        "removeFilesystem"
+        "removeFilesystem",
+        "releaseQuarantinedFiles"
       ]
     },
 
     "DenyReason": {
-      "description": "Structured deny returned by the storage engine on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). Transported as the x-deny-reason response header. The header NAME is sourced; the reason-code vocabulary below is an OCU default pending NFR-SEC-51 sign-off, not a frozen const set.",
+      "description": "Structured deny returned by the storage engine on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). The engine surfaces a typed PermissionDeniedError{message, resource} or AuthenticationRequiredError; both the transport (a response header vs a typed body) and the reason-code vocabulary below are OCU defaults pending NFR-SEC-51 sign-off, not sourced and not a frozen const set.",
       "type": "object",
       "additionalProperties": false,
       "required": ["x_deny_reason"],
@@ -143,7 +147,7 @@
           "type": "integer",
           "minimum": 1,
           "default": 4194304,
-          "x-ocu-default": "~4 MiB, the conventional Connect/gRPC message-size default; configurable, not a frozen protocol constant."
+          "x-ocu-default": "~4 MiB per-message ceiling that forces chunking on the REST file-op leg; configurable, not a frozen protocol constant."
         },
         "read_chunk_default_bytes": {
           "description": "Default read-chunk size for streamed reads.",
@@ -175,13 +179,16 @@
     "known-shape-hints": {
       "createFile": "request body field set TBD",
       "readMetadata": "request body field set TBD",
-      "getFileMetadata": "single-object metadata read; response field set TBD (distinct from listFiles, the directory-enumeration op)",
+      "getFileMetadata": "single-object metadata read by uuid; response field set TBD (distinct from listFiles, the directory-enumeration op, and from readFileMetadata, the path+filesystem_id read)",
+      "readFileMetadata": "metadata read by path + filesystem_id; request/response field set TBD (distinct from readMetadata, the path-addressed dir-entry read, and getFileMetadata, the by-uuid read)",
       "listFiles": "object enumeration under a scope; response entry shape TBD (distinct from getFileMetadata)",
       "fileDownload": "mount-plane read-path counterpart to the chunked fileUpload; streams the object back, the object-store service chunks it under the RPC message ceiling; request/response field set TBD",
       "importFiles": "session-pseudobucket import; request/response field set TBD",
       "importZip": "one-op zip import (the whole archive imported in a single op); request/response field set TBD",
       "migrateFilesystem": "in-session pseudobucket control primitive (rebind the session scope, not a durable-store data migration); request/response field set TBD",
-      "removeFilesystem": "session-pseudobucket control primitive; request/response field set TBD"
+      "removeFilesystem": "session-pseudobucket control primitive; request/response field set TBD",
+      "fileDelete": "delete-by-uuid (distinct from removeFile, the path-addressed delete); request/response field set TBD",
+      "releaseQuarantinedFiles": "whole-filesystem-scope quarantine-release control op, grouped with migrateFilesystem / removeFilesystem; request carries verdictRef + fsId + sourceOrg + targetOrg, response carries filesReleased; field set TBD"
     },
     "operations": {}
   },

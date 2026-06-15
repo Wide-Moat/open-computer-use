@@ -34,7 +34,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
-Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (Connect-RPC over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
+Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (REST-JSON over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
 
 The storage data leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the storage engine's API or the log operator's Merkle-head signing.
 
@@ -60,7 +60,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Bounded error verbosity | caller gets a stable reason code; `error.message`/`error.data` leak no internal topology or stack | NFR-SEC-51 |
 | Structured deny | deny is a machine-parseable object using the `x-deny-reason` vocabulary | NFR-SEC-17 |
 | Schema validation | every payload validates against the published schema; reject on violation | NFR-SEC-51 |
-| Bounded payload | gateway/REST/gRPC bound body size, array length, and object depth at the closed schema; the file-op and exec transport cap max-message/max-object | NFR-SEC-51, NFR-SEC-46 |
+| Bounded payload | gateway/REST/gRPC bound body size, array length, and object depth at the closed schema; the file-op (REST-JSON over HTTP/2) and exec transport cap max-message/max-object | NFR-SEC-51, NFR-SEC-46 |
 | Bounded Web UI inbound body | reject a body above the configured ceiling (default ≤50 MiB) pre-buffer, never partially staged; per-validated-caller op/byte rate limits on a dedicated file/UI ingress | NFR-SEC-78 |
 | Archive validation | reject pre-extraction on uncompressed-total / entry-count / traversal / symlink ceilings | NFR-SEC-80 |
 | Content classification | resolve content type on ingest (magic-byte + declared media type), record before mount-visibility; pre-stage deny on a policy-denied type | NFR-SEC-81 |
