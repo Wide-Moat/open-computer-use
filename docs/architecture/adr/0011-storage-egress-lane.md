@@ -20,7 +20,7 @@ The guest storage leg rides the single egress hop like every other guest dial: t
 
 ## Status
 
-`proposed` — amended by [ADR-0013](0013-storage-credential-custody.md) and [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md).
+`proposed` — amended by [ADR-0013](0013-storage-credential-custody.md), [ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md), and [ADR-0019](0019-egress-exchanges-filestore-credential.md).
 
 ## Context
 
