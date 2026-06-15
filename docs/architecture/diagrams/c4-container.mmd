@@ -16,19 +16,19 @@ flowchart LR
     OPER["Operator<br/>(PAM-JIT human)"]:::ext
     FILE["Data-plane client<br/>(OCU SPA · Web UI file API)"]:::extOpt
     UPSTREAM["Outbound endpoints<br/>(LLM · internal API)"]:::ext
-    ENGINE["Storage engine<br/>(S3 or local volume · off-box<br/>verifies the JWT · enforces scope)"]:::ext
+    ENGINE["Storage engine<br/>(S3 or local volume · off-box<br/>verifies the injected real credential · enforces filesystem_id scope)"]:::ext
     SINK["Customer SIEM / SOAR /<br/>transparency log"]:::extOpt
     SDS["SDS source<br/>(static file solo · customer store enterprise)"]:::extOpt
-    ISSUER["Off-box credential issuer<br/>(storage JWT signing key · out of request path)"]:::extOpt
+    ISSUER["Off-box credential issuer (OIDC)<br/>(sole signing key · issues the weak session JWT to the guest<br/>exchanges it for the real filestore credential at the edge)"]:::extOpt
 
     %% ─── containers inside the system under design ───
     subgraph OCU["Open Computer Use"]
         MCPG["MCP gateway<br/>agent-facing tool-calls · metadata-only"]
         CTRL["Control / operator API<br/>lifecycle · quota · kill-switch · credential DELIVERY"]
-        OSS["Object-store service<br/>the only door to storage · speaks the engine protocol<br/>forwards the static Bearer unmodified · no signing key"]
+        OSS["Object-store service<br/>the only door to storage · speaks the engine protocol<br/>receives the edge-injected real credential · no signing key"]
         WEBUI["Web UI<br/>file upload / preview / download · SPA · parser-sandbox<br/>OUR design · no signing key"]
         VM["Session sandbox [1..N]<br/>guest agent = PID 1 · in-guest mount client (dials the object-store service guest-out)"]
-        EDGE["Egress trust-edge proxy<br/>single TLS-inspected hop · forwards, no re-credential<br/>(data plane + SDS leaf-minter)"]
+        EDGE["Egress trust-edge proxy<br/>single TLS-inspected hop · validates the weak session JWT · exchanges it at the issuer for the real filestore credential<br/>no storage signing key · exchanges, does not mint the filestore credential · (data plane + SDS leaf-minter for the TLS bump)"]
         AUD["Audit pipeline<br/>durable bus · hash-chained store"]
     end
 
@@ -47,12 +47,12 @@ flowchart LR
     %%     storage engine. Guest leg: in-guest mount client → egress → object-store service → engine.
     %%     Host leg: Web UI → object-store service → engine (F9; does NOT cross the egress hop). ───
     VM -->|"F8: single outbound · guest dials out"| EDGE
-    VM -.->|"F7a: storage data leg over F8<br/>service_url · static Bearer (scoped JWT forwarded)"| EDGE
+    VM -.->|"F7a: storage data leg over F8<br/>service_url · weak session JWT presented as Bearer"| EDGE
     SDS -->|"upstream credential over SDS<br/>source owns mint/rotate/revoke (hardening rung)"| EDGE
     WEBUI -->|"F9: file-op intent (host leg)<br/>intra-deployment · does not cross egress"| OSS
     EDGE -->|"agent egress · forwards to origin"| UPSTREAM
-    EDGE -->|"storage data leg (guest) · forwards the scoped Bearer unmodified"| OSS
-    OSS -->|"the only door · engine verifies the JWT · enforces filesystem_id scope (ADR-0013)"| ENGINE
+    EDGE -->|"storage data leg (guest) · validates the weak session JWT<br/>exchanges it at the issuer for the real filestore credential (per-session, cached)"| OSS
+    OSS -->|"the only door · engine verifies the injected real credential · enforces filesystem_id scope (ADR-0019)"| ENGINE
 
     %% ─── audit fan-in (host-side containers only; the Session sandbox does NOT emit) ───
     %% A compromised guest can neither reach nor silence the pipeline; host-side

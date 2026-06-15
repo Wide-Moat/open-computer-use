@@ -11,14 +11,14 @@ flowchart LR
     MCPC[MCP client<br/>external actor]:::ext
     IDP[Customer IdP<br/>OIDC]:::extOpt
     LLM[LLM upstream]:::endpoint
-    ENGINE[Storage engine<br/>S3 or local volume · off-box<br/>verifies the JWT · enforces scope]:::endpoint
+    ENGINE[Storage engine<br/>S3 or local volume · off-box<br/>verifies the injected real credential · enforces filesystem_id scope]:::endpoint
     DPC[Data-plane client<br/>browser / headless]:::extOpt
     CPROXY[Customer outbound proxy]:::extOpt
     ICAP[Customer DLP-ICAP service]:::extOpt
     SIEM[Customer SIEM]:::extOpt
     KMS[Customer KMS / HSM]:::extOpt
     SDS[SDS source<br/>static file solo · customer store enterprise]:::extOpt
-    ISS[Off-box credential issuer<br/>holds the storage signing key · out of request path]:::extOpt
+    ISS[Off-box credential issuer (OIDC)<br/>sole signing key · issues the weak session JWT to the guest<br/>exchanges it for the real filestore credential at the edge]:::extOpt
     SOAR[SOAR<br/>signed webhook + admin API]:::extOpt
     OPER[Admin / Operator<br/>PAM-JIT human]:::ext
     TLOG[Transparency log]:::extOpt
@@ -34,7 +34,7 @@ flowchart LR
     end
 
     subgraph STORE[Storage]
-        OSS[Object-store service<br/>the only door to storage<br/>forwards the static Bearer unmodified · holds no signing key<br/>only component that speaks to the storage engine]
+        OSS[Object-store service<br/>the only door to storage<br/>receives the edge-injected real credential · holds no signing key<br/>only component that speaks to the storage engine]
         WEBUI[Web UI<br/>file upload / preview / download<br/>fronts the external data-plane client]
     end
 
@@ -69,14 +69,15 @@ flowchart LR
 
     %% ─── storage data leg (guest-out; one door to storage) ───
     %% Distinct from the provisioning push. The in-guest mount client dials the
-    %% object-store service guest-out over the single egress hop and forwards the
-    %% scoped Storage-JWT as a static Bearer; the hop terminates TLS and forwards the
-    %% bearer unmodified (no per-request signature to preserve). The object-store
-    %% service is the sole entry point — only it speaks to the storage engine, which
-    %% verifies the JWT and enforces the filesystem_id scope (NFR-SEC-25 ·
-    %% NFR-SEC-31 · NFR-SEC-85). The guest never reaches the storage engine
-    %% directly. Mount substrate (FUSE / virtio-fs / 9p) is component-spec.
-    MOUNT -->|"storage data leg · static Bearer (scoped JWT)<br/>guest-out over the single egress hop · NFR-SEC-85"| PROXY
+    %% object-store service guest-out over the single egress hop and presents the
+    %% weak session JWT as a static Bearer; the hop terminates TLS, validates that
+    %% weak JWT, and exchanges it at the issuer for the real filestore credential
+    %% (per-session, cached). The object-store service is the sole entry point —
+    %% only it speaks to the storage engine, which verifies the injected real
+    %% credential and enforces the filesystem_id scope (NFR-SEC-25 · NFR-SEC-31 ·
+    %% NFR-SEC-85). The guest never reaches the storage engine directly. Mount
+    %% substrate (FUSE / virtio-fs / 9p) is component-spec.
+    MOUNT -->|"storage data leg · weak session JWT as Bearer<br/>guest-out over the single egress hop · NFR-SEC-85"| PROXY
 
     %% ─── revoke channel (denylist; independent of IdP reachability) ───
     %% Compute plane gets a direct denylist check (Session JWT TTL ≤60min needs it);
@@ -88,7 +89,7 @@ flowchart LR
     %% ─── egress edges ───
     VM -->|"single outbound path<br/>no long-lived upstream secret in request<br/>credential attached at edge on a presented scoped credential<br/>NFR-SEC-27 · ADR-0007"| PROXY
     PROXY -->|"strict TLS validation<br/>upstream auth injected (SDS-delivered)<br/>fail-closed"| LLM
-    PROXY -->|"storage data leg (guest)<br/>TLS-terminated · static Bearer forwarded unmodified<br/>fail-closed"| OSS
+    PROXY -->|"storage data leg (guest)<br/>TLS-terminated · weak session JWT validated, exchanged for the real filestore credential (per-session, cached)<br/>fail-closed"| OSS
     PROXY -.->|"chained-proxy contract<br/>optional"| CPROXY
     PROXY -.->|"ICAP req-mod / resp-mod<br/>optional"| ICAP
 
@@ -97,7 +98,7 @@ flowchart LR
     WEBUI -->|"file-op intent (host leg)<br/>does not cross egress"| OSS
 
     %% ─── the one door to storage: only the object-store service reaches the engine ───
-    OSS -->|"forwards the static Bearer unmodified<br/>engine verifies + enforces scope"| ENGINE
+    OSS -->|"forwards the injected real credential<br/>engine verifies it + enforces filesystem_id scope"| ENGINE
 
     %% ─── audit fan-in (host-side components only; the guest does NOT emit) ───
     %% The Session sandbox is not a fan-in source: a compromised guest can neither

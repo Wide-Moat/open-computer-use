@@ -29,7 +29,7 @@
     },
 
     "AuthorizationMetadata": {
-      "description": "Authorization sub-message attached to every file-op request, carried at request field 4/5. It has two members: intent (proto tag 1) and downloadable (proto tag 2; tag 9 in the upload-params carrier). The scope axis is the request's own filesystem_id sibling field (request tag 1/2, or 11 in its oneof), NOT a member of this sub-message. Richer than the bearer alone. The bearer is the pre-issued ES256 Storage-JWT the mount client holds in its config and forwards UNMODIFIED as a static Authorization header; it is signed off-box at a separate credential issuer and is NOT part of this object (NFR-SEC-25).",
+      "description": "Authorization sub-message attached to every file-op request, carried at request field 4/5. It has two members: intent (proto tag 1) and downloadable (proto tag 2; tag 9 in the upload-params carrier). The scope axis is the request's own filesystem_id sibling field (request tag 1/2, or 11 in its oneof), NOT a member of this sub-message. Richer than the bearer alone. The bearer is the pre-issued ES256 WEAK session JWT the mount client holds in its config and forwards as a static Authorization header; it is signed off-box at the credential issuer (the sole signing-key holder) and is NOT part of this object. ocu-filestore never accepts this weak JWT: the egress edge validates it, strips it, and exchanges it at the issuer for the real filestore credential, which is what reaches the storage engine (NFR-SEC-25).",
       "type": "object",
       "additionalProperties": false,
       "required": ["filesystem_id", "intent", "downloadable"],

@@ -19,7 +19,7 @@
                 <mxCell id="x-dpc" value="Data-plane client&#xa;browser / headless" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="552" width="170" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="o-issuer" value="Credential issuer&#xa;signs the scoped JWT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                <mxCell id="o-issuer" value="Credential issuer&#xa;issues the weak session JWT to the guest;&#xa;exchanges it for the real filestore credential at the edge&#xa;(sole signing key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="540" y="90" width="210" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="c01" value="MCP gateway&#xa;tool-call ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
@@ -40,8 +40,8 @@
                 <mxCell id="g-mount" value="In-guest mount client&#xa;files as a filesystem&#xa;&lt;b&gt;ocu-rclone-filestore&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;verticalAlign=top;spacingTop=6;" parent="guestframe" vertex="1">
                     <mxGeometry x="20" y="60" width="190" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="c06" value="Egress trust-edge&#xa;single outbound hop · forwards the Bearer unchanged&#xa;Envoy + OCU config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
-                    <mxGeometry x="1180" y="300" width="240" height="90" as="geometry"/>
+                <mxCell id="c06" value="Egress trust-edge&#xa;single outbound hop&#xa;agent leg: forwards Bearer&#xa;storage leg: validates + exchanges the weak session JWT&#xa;Envoy + OCU config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
+                    <mxGeometry x="1180" y="285" width="240" height="120" as="geometry"/>
                 </mxCell>
                 <mxCell id="c08" value="Web UI&#xa;upload · preview · download&#xa;&lt;b&gt;ocu-webui&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;spacingTop=6;" parent="1" vertex="1">
                     <mxGeometry x="370" y="532" width="220" height="100" as="geometry"/>
@@ -84,7 +84,7 @@
                 <mxCell id="e-mount-egr" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeWidth=2;strokeColor=#d79b00;exitX=1;exitY=0.5;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="g-mount" target="c06" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e-egr-backend" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeWidth=2;strokeColor=#d79b00;exitX=1;exitY=0.85;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="c06" target="c04" edge="1">
+                <mxCell id="e-egr-backend" value="validates the weak session JWT, exchanges it&#xa;(at the issuer) for the real filestore credential&#xa;it injects · per-session cached" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=0;endArrow=block;strokeWidth=2;strokeColor=#d79b00;fontSize=9;fontColor=#666;exitX=1;exitY=0.85;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="c06" target="c04" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1500" y="439"/>

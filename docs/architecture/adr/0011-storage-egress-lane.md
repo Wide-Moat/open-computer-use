@@ -8,13 +8,13 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
 superseded-by: null
-amended-by: [0013, 0016]
+amended-by: [0013, 0016, 0019]
 compliance-impact: [SOC2-CC6.1, ISO27001-A.8.10, NYDFS-500.15, DORA-Art.28]
 license-impact: none
 threat-mitigation-link: ../06-threat-model.md
 ---
 
-The guest storage leg rides the single egress hop like every other guest dial: the hop terminates TLS, forwards the static Bearer unchanged, and enforces no storage scope; scope is the storage engine's. Audience: anyone wiring or auditing how the guest reaches its storage backend.
+The guest storage leg rides the single egress hop like every other guest dial: the hop terminates TLS, validates the guest's weak session JWT, and exchanges it at the issuer for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); scope is enforced at the storage engine on the injected credential. Audience: anyone wiring or auditing how the guest reaches its storage backend.
 
 # ADR-0011: Storage backend rides the single egress hop
 
@@ -24,13 +24,13 @@ The guest storage leg rides the single egress hop like every other guest dial: t
 
 ## Context
 
-A network storage engine ([ADR-0010](0010-storage-backend-pluggable-adapter.md)) is reached over a network leg from the guest. The guest dials out, and that dial leaves the sandbox on the Egress trust-edge, the single outbound hop every guest connection uses ([NFR-SEC-16](../manifesto/02-nfrs.md), [08-contracts.md](../08-contracts.md)). The storage credential is a guest-held, off-box-issued static JWT bearer ([ADR-0013](0013-storage-credential-custody.md)); no in-deployment component holds a storage signing key, and the bearer is forwarded unmodified.
+A network storage engine ([ADR-0010](0010-storage-backend-pluggable-adapter.md)) is reached over a network leg from the guest. The guest dials out, and that dial leaves the sandbox on the Egress trust-edge, the single outbound hop every guest connection uses ([NFR-SEC-16](../manifesto/02-nfrs.md), [08-contracts.md](../08-contracts.md)). The storage credential is a guest-held, off-box-issued static JWT bearer ([ADR-0013](0013-storage-credential-custody.md)); no in-deployment component holds a storage signing key. The guest forwards that bearer unmodified on the guest→edge leg, and the edge exchanges it for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)).
 
-The egress hop terminates TLS, inspects, and forwards the connection. It mints no credential, attaches none, and re-signs nothing — the bearer it forwards is byte-unchanged, and the hop enforces no storage scope ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)). Scope is enforced by the storage engine, which verifies the JWT and rejects a foreign `filesystem_id`. A local-volume engine has no network leg, so the hop is vacuous for it.
+The egress hop terminates TLS, inspects, and forwards the connection. It validates the guest's weak session JWT, strips it, and exchanges it at the OIDC issuer for the real filestore credential keyed on `filesystem_id`, overwriting the `Authorization` header ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); it mints no credential and holds no signing key — the issuer keeps it. Scope is enforced by the storage engine on the injected credential, which rejects a foreign `filesystem_id`. A local-volume engine has no network leg, so the hop is vacuous for it.
 
 ## Decision
 
-The guest storage leg uses the single egress hop, not a storage-dedicated lane and not a control inside the object-store service. The guest forwards the static Bearer; the hop terminates TLS and forwards it unchanged; the storage engine verifies and enforces scope. At the baseline the hop is permissive — one default route, no second socket, guest loopback dials blocked — and emits an edge-authored OCSF event per backend operation ([NFR-SEC-85](../manifesto/02-nfrs.md)); the destination allow-list, the proxy-owned resolver deny-set, and the connect-time structured deny are optional hardening on the same hop, not the baseline ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)). Every one of these controls is out-of-process from the object-store service and the guest.
+The guest storage leg uses the single egress hop, not a storage-dedicated lane and not a control inside the object-store service. The guest forwards its weak session JWT; the hop terminates TLS, validates that JWT, and exchanges it at the issuer for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)); the storage engine verifies and enforces scope on the injected credential. At the baseline the hop is permissive — one default route, no second socket, guest loopback dials blocked — and emits an edge-authored OCSF event per backend operation ([NFR-SEC-85](../manifesto/02-nfrs.md)); the destination allow-list, the proxy-owned resolver deny-set, and the connect-time structured deny are optional hardening on the same hop, not the baseline ([ADR-0016](0016-egress-baseline-inspection-hop-backend-scope.md)). Every one of these controls is out-of-process from the object-store service and the guest.
 
 ## Consequences
 
@@ -50,7 +50,7 @@ The guest storage leg uses the single egress hop, not a storage-dedicated lane a
 
 ## Compliance impact
 
-- `SOC2-CC6.1` / `ISO27001-A.8.10`: no in-deployment component holds the storage signing key, and the egress hop holds no credential — the guest forwards a scoped, time-bounded bearer the storage engine verifies.
+- `SOC2-CC6.1` / `ISO27001-A.8.10`: no in-deployment component holds the storage signing key, and the egress hop holds none either — the edge exchanges the guest's weak session JWT for the real filestore credential ([ADR-0019](0019-egress-exchanges-filestore-credential.md)), which is the credential the storage engine verifies.
 - `NYDFS-500.15` / `DORA-Art.28`: the storage leg is a controlled, audited outbound path with an edge-authored event a compromised guest cannot suppress; third-party-storage access is governed and recorded.
 
 ## License impact

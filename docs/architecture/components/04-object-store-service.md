@@ -18,7 +18,7 @@ The only door to storage. Audience: engineers and security reviewers implementin
 
 ## Purpose
 
-It exposes a file API to its two callers — the in-guest mount client (guest leg) and the [Web UI](08-web-ui.md) (host leg) — and is a client to one pluggable storage engine (S3 or a local volume, [ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)). It forwards the off-box-issued storage JWT to the engine unchanged and holds no signing key. The engine verifies the JWT and enforces the `filesystem_id` scope ([ADR-0013](../adr/0013-storage-credential-custody.md)).
+It exposes a file API to its two callers — the in-guest mount client (guest leg) and the [Web UI](08-web-ui.md) (host leg) — and is a client to one pluggable storage engine (S3 or a local volume, [ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)). On the guest leg it receives the real filestore credential the [Egress trust-edge](06-egress-trust-edge.md) injected after exchanging the guest's weak session JWT at the issuer ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md)); it forwards that credential to the engine and holds no signing key. The engine verifies the credential and enforces the `filesystem_id` scope on it ([ADR-0013](../adr/0013-storage-credential-custody.md)).
 
 ## Boundaries
 
@@ -29,11 +29,11 @@ It exposes a file API to its two callers — the in-guest mount client (guest le
 
 ```mermaid
 flowchart LR
-    MC["In-guest mount client<br/>forwards the bearer"]
+    MC["In-guest mount client<br/>guest leg · weak session JWT as Bearer"]
     WEBUI["Web UI<br/>host leg"]
-    EGRESS["Egress trust-edge<br/>forwards bearer unchanged"]
+    EGRESS["Egress trust-edge<br/>validates weak session JWT · exchanges at issuer · injects real cred"]
     OSS["Object-store service<br/>one door to storage"]
-    ENG["Storage engine<br/>S3 / local volume<br/>verifies JWT, enforces scope"]
+    ENG["Storage engine<br/>S3 / local volume<br/>verifies the injected real credential · enforces filesystem_id scope"]
     AUDIT["Audit pipeline"]
     MC -->|"guest leg, static Bearer"| EGRESS
     EGRESS --> OSS
@@ -52,13 +52,13 @@ The file-operation verb names are fixed in [`file-ops`](../../../contracts/stora
 | The storage-engine adapter selection (S3 or local volume) and its chunked-multipart transfer policy ([ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)) | No authorization authority — the engine validates the `filesystem_id` claim and rejects a foreign scope ([ADR-0013](../adr/0013-storage-credential-custody.md)) |
 | The engine credential where one exists — a network-engine key or a local-volume host-filesystem permission ([NFR-SEC-60](../manifesto/02-nfrs.md)) | No client-file API, embeddable SPA, or preview-render — those are the [Web UI](08-web-ui.md) |
 
-The credential flow: the control plane delivers the pre-signed JWT into the mount config, the guest forwards it unmodified as a static `Authorization: Bearer`, and the engine verifies it ([ADR-0013](../adr/0013-storage-credential-custody.md)). The operation names and the three authorization axes are fixed in the bound schema; the per-operation field types are TBD there, not invented here ([`mount-config`](../../../contracts/storage/mount-config.schema.json), [`file-ops`](../../../contracts/storage/file-ops.schema.json)).
+The credential flow: the control plane delivers the weak session JWT into the mount config, the guest presents it to the edge as a static `Authorization: Bearer`, the edge exchanges it at the issuer for the real filestore credential and injects that credential, and the engine verifies the real credential ([ADR-0013](../adr/0013-storage-credential-custody.md), [ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md)). The operation names and the three authorization axes are fixed in the bound schema; the per-operation field types are TBD there, not invented here ([`mount-config`](../../../contracts/storage/mount-config.schema.json), [`file-ops`](../../../contracts/storage/file-ops.schema.json)).
 
 ## Invariants
 
 1. No file-op resolves a path or object handle outside the request's host-attested `filesystem_id` prefix; traversal, symlink, absolute-path, and URL-shaped handles are rejected before any engine call (property-test, [NFR-SEC-25](../manifesto/02-nfrs.md)).
 2. No caller request names a backend object directly; the service maps a verb to an engine request bound to the mapped prefix. A caller-supplied scope id is treated as a hint and rejected if it does not match the host-attested `filesystem_id` binding (property-test, [NFR-SEC-43](../manifesto/02-nfrs.md)).
-3. The service mints no credential and signs no request; it forwards the off-box-issued bearer unmodified, and a build or runtime that gives it a signing path fails admission (unit-test, [ADR-0013](../adr/0013-storage-credential-custody.md)).
+3. The service mints no credential and signs no request; it forwards the edge-injected real filestore credential to the engine unmodified, and a build or runtime that gives it a signing path fails admission (unit-test, [ADR-0013](../adr/0013-storage-credential-custody.md)).
 4. Scope is the engine's decision, not the service's; a foreign-`filesystem_id` token is rejected at the engine with HTTP 403 PermissionDenied — a valid signature but a foreign scope; a missing or expired token is 401 — not here (integration test on foreign-scope rejection, [NFR-SEC-25](../manifesto/02-nfrs.md)).
 5. `downloadable` is resolved at read from the host-attested session, never from a caller-supplied claim; a non-downloadable object is readable in-session but yields no egress-eligible artifact, and `intent=preview` stays read-only regardless of stored tag (property-test, [NFR-SEC-73](../manifesto/02-nfrs.md)).
 6. A large transfer crosses as chunked multipart, never one message; the size ceiling lives in the chunk policy and every engine adapter translates chunking to the backend's transfer model (property-test, [NFR-SEC-46](../manifesto/02-nfrs.md), [ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)).

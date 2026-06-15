@@ -81,7 +81,7 @@
           "examples": ["/workspace/out"]
         },
         "auth_token": {
-          "description": "Pre-issued ES256 Storage-JWT bearer, opaque to the holder. Scoped {filesystem_id + workspace + org} with a ~6h fixed TTL and no refresh; signed off-box by a separate credential issuer and delivered (never signed) by the control plane in the provisioning push. The mount client forwards it unmodified as a static Authorization: Bearer; scope is enforced at the storage engine.",
+          "description": "Pre-issued ES256 WEAK session JWT, opaque to the holder. Scoped {filesystem_id + intent + downloadable} with a short fixed TTL and no refresh; signed off-box by the credential issuer (the sole signing-key holder) and delivered (never signed) by the control plane in the provisioning push. It is an edge-only assertion: the egress edge validates it, strips it, and exchanges it at the issuer for the real filestore credential keyed on filesystem_id; the mount client forwards this weak JWT as a static Authorization: Bearer, but ocu-filestore never receives it — it receives only the edge-injected real credential, on which the storage engine enforces scope.",
           "type": "string",
           "minLength": 1
         },
@@ -123,7 +123,7 @@
       "examples": ["https://storage.internal"]
     },
     "ca_cert_pem": {
-      "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress hop that terminates TLS and forwards the static bearer unmodified.",
+      "description": "Inspection-CA trust anchor (PEM) injected into the guest trust store so the guest trusts the egress hop that terminates TLS, validates the weak session JWT, and exchanges it for the real filestore credential it injects onward.",
       "type": "string",
       "contentMediaType": "application/x-pem-file",
       "pattern": "-----BEGIN CERTIFICATE-----"
