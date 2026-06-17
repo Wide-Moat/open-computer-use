@@ -30,6 +30,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0010](0010-storage-backend-pluggable-adapter.md) | Storage backend is a pluggable adapter behind the broker | proposed | — | 2026-06-07 |
 | [0011](0011-storage-egress-lane.md) | Storage backend reached over a storage-dedicated egress lane | proposed | — | 2026-06-07 |
 | [0012](0012-implementation-language.md) | Implementation language — Go host-side, Rust guest agent | proposed | legacy 0001/0002 | 2026-06-08 |
+| [0020](0020-sandbox-image-provisioning.md) | Sandbox image provisioning (image-fatness ladder + BYO) — stub | proposed | — | 2026-06-16 |
 
 ## Lifecycle
 

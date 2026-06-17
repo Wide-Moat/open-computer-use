@@ -44,6 +44,7 @@ Host-side control and supervision processes are written in **Go**: the Control /
 - A Cargo workspace MAY share a wire-types crate across Rust binaries, but the guest agent and any host-side Rust helper compile to separate binaries; the guest binary ships inside the hostile rootfs and the host binaries never do.
 - Component specs record no language in their prose; this ADR is the single source. New source files carry the SPDX header in the comment syntax of their language.
 - This decision binds implementation only. It forces no Layer-6 container split and changes no contract, NFR, or trust boundary.
+- The "ships inside every image / rootfs" phrasing above describes where the agent *runs* (PID 1 in the hostile guest), not where it is *stored*: [ADR-0020](0020-sandbox-image-provisioning.md) fixes the agent as a runtime artifact injected at session-start, never baked into a sandbox image. The language choice here is unaffected.
 
 ## Alternatives considered
 
