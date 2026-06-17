@@ -8,8 +8,8 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
-contract: contracts/exec/exec-channel.schema.json
-adr: [0003, 0005, 0007, 0013, 0014, 0015, 0016, 0017]
+contract: [contracts/exec/exec-channel.schema.json, contracts/control/control-rpc.schema.json]
+adr: [0003, 0005, 0007, 0013, 0014, 0015, 0016, 0017, 0018]
 ---
 
 Internal design of the per-session execution container, for engineers implementing and auditing the guest agent and its host-side edges.
@@ -27,6 +27,7 @@ The container is one process tree rooted at the guest agent (PID 1). The Control
 | Direction | What crosses | Internal terminator | Note |
 |---|---|---|---|
 | Control → guest | exec/PTY+CDP control union + stdin frames | exec supervisor (host-dialled; non-host peer dropped at accept) | one WebSocket per session; envelope frozen in [`exec/exec-channel`](../../../contracts/exec/exec-channel.schema.json) |
+| Control → guest | control-RPC verbs (v1: `shutdown` only) | control-RPC listener (host-dialled UDS; non-host peer dropped at accept by kernel peer-creds) | host-owned Unix socket, HTTP+JSON; envelope in [`control/control-rpc`](../../../contracts/control/control-rpc.schema.json); the endpoint [ADR-0017](../adr/0017-control-plane-repo-boundary.md) names and [ADR-0018](../adr/0018-in-guest-control-rpc-endpoint.md) specifies. Separate from the exec WebSocket ([`08-contracts.md`](../08-contracts.md) §1) |
 | Control → guest | Session JWT (selects session identity) | guest agent | TTL per [`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 |
 | Control → guest | mount config: one config with top-level `service_url` + `ca_cert_pem` and a `mounts[]` array; each mount carries `destination`, its own `auth_token` (the Control-minted weak session JWT), the `filesystem_id`/`memory_store_id` scope, and `readonly` (F7) | guest agent (mount client) | written before the in-guest mount client starts; the guest holds no storage credential beyond the per-mount scoped JWTs |
 | guest → Control | stdout/stderr binary frames + result/EOF | exec supervisor | length-prefixed, bounded per call (Invariants) |
@@ -58,6 +59,7 @@ Each is falsifiable by the named check; cross-cutting zone, egress-mode, retenti
 12. No session-scoped secret is present in guest RAM or disk at snapshot-create time, and on resume the guest re-derives a fresh host-attested identity and reseeds entropy and unique IDs so no two guests restored from one image share a token, nonce, RNG stream, or `boot_id` (offline image-extraction scan + N-fork uniqueness test, NFR-SEC-44 + NFR-SEC-71).
 13. Every TTL/expiry decision the guest is subject to reads a monotonic clock immune to wall-clock setback, and on resume the wall clock is corrected before any time-bound check runs (red-team clock-rollback harness, NFR-SEC-48 + NFR-SEC-63 — trusted-time theme [#185](https://github.com/Wide-Moat/open-computer-use/issues/185), [`06-threat-model.md`](../06-threat-model.md) §5).
 14. A recycled mount substrate carries no readable session-1 content into session-2: the page cache is dropped and the local mount/scratch region is zeroized (or its per-session DEK destroyed) before the region is re-granted, so erase completes-before re-grant (property test: write a session-1 marker, recycle, assert session-2 cannot read it, NFR-SEC-54 + NFR-SEC-64 + NFR-SEC-66). The resume-time CSPRNG/identity reseed that prevents a shared RNG stream is invariant 12, not restated here.
+15. The control-RPC endpoint ([`control/control-rpc`](../../../contracts/control/control-rpc.schema.json), [ADR-0018](../adr/0018-in-guest-control-rpc-endpoint.md)) is a second host-dialled listener on a host-owned UDS, not a redefinition of invariant 2's exec listener: a connection from any non-host peer is dropped at accept by kernel peer-credentials before any frame is parsed (accept-time negative-test, NFR-SEC-76 — the accept-time enforcement of NFR-SEC-43, scoped here to the control-RPC listener), it adds no outbound network route (invariant 4 holds), and invariant 3's predicate extends to it (a guest with in-sandbox root cannot dial it through the guest's own network stack nor present another session's identity). No control verb carries standalone authority: every body field is a hint, the host-attested caller identity the sole authority (matching component-02's hint-never-authority invariant); `shutdown` is therefore a cooperative fast-path that cannot reorder or mark-complete the host-driven finalizer (Operational concerns, NFR-SEC-65).
 
 ## Failure modes
 
@@ -82,7 +84,7 @@ The host-facing default is fail-closed on every boundary the guest can pressure:
 
 Scaling axis is per session — one container per session `[1..N]`, lifecycle bound to the session ([`05-c4-container.md`](../05-c4-container.md) §3). Capacity is governed by the host substrate and the per-sandbox cgroup ceiling (NFR-SEC-14). Session-create targets ≤500 ms p99 warm-pool-hit (NFR-PERF-02), ≤2 s p99 cold-start (NFR-PERF-03), and ≤400 ms p99 on the user-space-kernel substrate (NFR-PERF-08). Compute-plane RTO for new sessions is ≤30 min with in-flight state non-durable (NFR-REL-02); stateful hibernate/resume/snapshot/fork is demonstrated end-to-end (NFR-REL-08).
 
-Cooperative shutdown is `terminationGracePeriodSeconds=30`, SIGTERM→5 s→SIGKILL, tmpdir clean ≤10 s (NFR-REL-11). Teardown then runs a host-driven ordered finalizer that revokes the session credential, drops the outbound route, and scrubs writable surfaces before kill, independent of guest cooperation (NFR-SEC-65). A guest that ran a session is destroyed, never re-pooled (NFR-SEC-68); a warm-pool claim re-derives a fresh host-attested identity and discards the pre-warm placeholder (NFR-SEC-69).
+Cooperative shutdown is `terminationGracePeriodSeconds=30`, SIGTERM→5 s→SIGKILL, tmpdir clean ≤10 s (NFR-REL-11). The control-RPC `shutdown` verb ([ADR-0018](../adr/0018-in-guest-control-rpc-endpoint.md)) is a cooperative fast-path into this same phase, not a separate teardown: it can at most advance the SIGTERM phase the guest already runs, and its reply is never a completion claim (invariant 15 owns the fail-closed predicate). Teardown then runs a host-driven ordered finalizer that revokes the session credential, drops the outbound route, and scrubs writable surfaces before kill, independent of guest cooperation (NFR-SEC-65). A guest that ran a session is destroyed, never re-pooled (NFR-SEC-68); a warm-pool claim re-derives a fresh host-attested identity and discards the pre-warm placeholder (NFR-SEC-69).
 
 Config surface: the runtime tier (set by `workload_trust_profile`, validated at admission — NFR-SEC-38), the cgroup/quota ceilings (NFR-SEC-14, NFR-SEC-46), the per-stream stdio ceiling (default ≤8 MiB/stream, retunable per tier — NFR-SEC-74), the spawn-time env allowlist (NFR-SEC-75), and the exec-channel capability flags negotiated in the handshake (trace, compression — see the contract). Concurrency on the exec channel is sequential-default with opt-in parallelism (NFR-IC-05); PTY and CDP multiplex one socket per session (NFR-IC-03).
 
