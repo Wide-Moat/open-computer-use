@@ -16,7 +16,7 @@ blocks: []
 blockedBy: [0017]
 ---
 
-The host-dialled in-guest control-RPC endpoint runs HTTP+JSON over a host-owned Unix socket, carries a closed tagged-union of verbs that hold no standalone authority, and ships one verb in v1 — a cooperative `shutdown` the host-driven finalizer outranks. Audience: engineers implementing or auditing the per-session executor's control face.
+The host-dialled in-guest control-RPC endpoint runs newline-delimited JSON over a host-owned Unix socket, carries a closed tagged-union of verbs that hold no standalone authority, and ships one verb in v1 — a cooperative `shutdown` the host-driven finalizer outranks. Audience: engineers implementing or auditing the per-session executor's control face.
 
 # ADR-0018: In-guest control-RPC endpoint (FID-03)
 
@@ -42,8 +42,8 @@ Scope is the docker/runc/runsc tiers, whose canon transport is the host kernel w
 
 We will specify the FID-03 endpoint [ADR-0017](0017-control-plane-repo-boundary.md) names, as a contract ([`contracts/control/control-rpc.schema.json`](../../../contracts/control/control-rpc.schema.json), [`08-contracts.md`](../08-contracts.md) §1):
 
-- **Transport is a host-owned Unix domain socket; the guest authenticates the caller by kernel peer-credentials / per-session socket path, and a non-host peer is dropped at accept before any frame is parsed** (NFR-SEC-43, NFR-SEC-76). Not loopback TCP: the guest shares the loopback stack, so a TCP control port is a guest-reachable surface by default.
-- **Wire is HTTP+JSON over that socket**, a closed externally-tagged union. An unknown tag is a hard protocol error on both sides, never silent-accept; a future verb is an additive schema change (NFR-IC-04), not an open extension point. Errors reuse the exec channel's bounded-reason envelope (NFR-SEC-51).
+- **Transport is a host-owned Unix domain socket in a 0700 host-owned directory; a non-host peer cannot connect(2) to it and is dropped before any frame is parsed** (NFR-SEC-43, NFR-SEC-76). The directory-permission gate is the v1 realization of the host-only-at-accept property — the same gate the exec listener relies on; an `SO_PEERCRED` uid compare is named future hardening, not a v1 requirement. Not loopback TCP: the guest shares the loopback stack, so a TCP control port is a guest-reachable surface by default.
+- **Wire is newline-delimited JSON over that socket** — one compact JSON request object terminated by `\n`, one reply object terminated by `\n`, then close — carrying a closed externally-tagged union. No HTTP request-line or headers in v1; the framing is a transport detail and the contract fixes only the JSON union shape. An unknown tag is a hard protocol error on both sides, never silent-accept; a future verb is an additive schema change (NFR-IC-04), not an open extension point. Errors reuse the exec channel's bounded-reason envelope (NFR-SEC-51).
 - **No verb carries standalone authority.** The sole authority is the host-attested caller identity re-checked at accept; every body field is a hint, never the authority (mirrors component-02's hint-never-authority invariant). An under-specified verb fails closed.
 - **The v1 verb set is a single `shutdown`** (wire tag `Shutdown`), a cooperative fast-path. It can at most advance the cooperative SIGTERM phase the guest already runs; it can never reorder, substitute for, or mark-complete the host-driven finalizer (NFR-SEC-65), which executes regardless of any guest reply. It is idempotent and host-caller-only, and carries no body — there is no session or `container_name` field to forge.
 
