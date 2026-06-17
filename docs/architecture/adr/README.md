@@ -37,6 +37,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0017](0017-control-plane-repo-boundary.md) | Control plane and per-session executor are distinct deployables | proposed | — | 2026-06-14 |
 | 0018 | — intentionally skipped (number not assigned) | — | — | — |
 | [0019](0019-egress-exchanges-filestore-credential.md) | Egress exchanges the filestore credential from the session JWT | proposed | 0013 (storage-leg custody half) | 2026-06-15 |
+| [0020](0020-sandbox-image-provisioning.md) | Sandbox image provisioning (image-fatness ladder + BYO) — stub | proposed | — | 2026-06-16 |
 
 ## Lifecycle
 
