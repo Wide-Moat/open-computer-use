@@ -24,6 +24,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | SOAR revoke (inbound) | SOAR → Control / operator API | OpenAPI 3.1 | define | NFR-SEC-01 |
 | Session set-up RPC | MCP gateway → Control / operator API | Protobuf/gRPC | define | NFR-IC-04 |
 | Exec / PTY+CDP | Control / operator API → Session sandbox | WebSocket, single per session (tagged-JSON control + binary stream frames) | define | NFR-IC-03, NFR-SEC-43 |
+| Control → guest control-RPC | Control / operator API → Session sandbox | newline-delimited JSON over a host-owned UDS (closed tagged-union; v1 verb set `shutdown` only) | define | NFR-SEC-43, NFR-SEC-76 |
 | Mount provisioning push | Control / operator API → Session sandbox | HTTP+JSON mount config (`filesystem_id`, `service_url`, Control-minted weak session JWT, `ca_cert_pem`, mount set) pushed host-to-guest before the mount client starts | define | NFR-SEC-25 |
 | Storage [data leg](glossary.md#data-leg) | Session sandbox → Object-store service (over the Egress trust-edge) | the in-guest mount client (object-store client + transport, one binary) dials `service_url` guest-out, static `Authorization: Bearer` (the weak Storage-JWT); the Egress trust-edge validates and exchanges it for the real filestore credential, which the storage engine verifies and on which it enforces scope | define | NFR-SEC-25, NFR-SEC-46, NFR-SEC-85 |
 | File / artifact data plane | Data-plane client → [Web UI](components/08-web-ui.md) | OpenAPI 3.1 (HTTP+JSON: upload/list/download/downloadArchive/getManifest/preview-render/delete + embeddable SPA) | define | NFR-SEC-78, NFR-SEC-82, NFR-SEC-49, NFR-SEC-73 |
@@ -34,7 +35,7 @@ OCU does not define every contract it speaks. Five external surfaces are integra
 | Transparency-log submission | Audit pipeline → log | submission envelope | define (envelope only) | NFR-SEC-03 |
 | KMS / proxy / DLP | Egress trust-edge ↔ customer substrate | PKCS#11 · chained-proxy · ICAP | relying-party / conform | NFR-FLEX-04, NFR-COMP-28, NFR-FLEX-15 |
 
-Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket. The file-op message-set substrate (REST-JSON over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
+Protobuf/gRPC is the unary session set-up leg only (create, route, destroy a session). The mount config is HTTP+JSON and the exec stream is a WebSocket; the control-RPC differs from the exec WebSocket in shape — verb requests over a UDS, not a bidirectional byte stream. The file-op message-set substrate (REST-JSON over HTTP/2) is a component-spec choice, not part of the contract. Egress secret delivery rides Envoy's native Secret Discovery Service (gRPC xDS); it is off-the-shelf and not an OCU-defined contract.
 
 The storage data leg and the transparency log are mixed-ownership: OCU defines its half and conforms to the storage engine's API or the log operator's Merkle-head signing.
 
@@ -81,12 +82,13 @@ The control-plane RPC rule (breaking = major version + deprecation header) is ca
 
 ## 5. Schema artifacts
 
-This overview is the map; the schema files under `contracts/` own the field-level types. Six schema files are drafted (the storage surface carries three — mount config, the mount-plane file-op RPC, the Web UI file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
+This overview is the map; the schema files under `contracts/` own the field-level types. Seven schema files are drafted (the storage surface carries three — mount config, the mount-plane file-op RPC, the Web UI file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
 
 Drafted (not merged):
 
 - `contracts/mcp/2025-06-18/ocu-constraints.schema.json` — the MCP conform profile.
 - `contracts/exec/exec-channel.schema.json` — the exec/PTY WebSocket envelope.
+- `contracts/control/control-rpc.schema.json` — the in-guest control-RPC envelope (host-owned UDS; v1 verb set `shutdown` only, the deferred and forbidden verbs carried as `x-ocu-tbd-verbs` absent members). STATUS `partial`.
 - `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount-plane mount config and file-op RPC (the file-op message bodies are tbd).
 - `contracts/storage/file-artifact-api.schema.json` — the Web UI file/artifact data plane (upload/list/download/getManifest/preview-render + the embed-token/CSP/CSRF envelope). Per-operation bodies are tbd, like the mount-plane RPC; the embed-token binding claim ([#217](https://github.com/Wide-Moat/open-computer-use/issues/217)) and preview-render parser isolation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) are tracked open items.
 - `contracts/audit/audit-fanin.asyncapi.yaml` — the OCSF fan-in (the compute-metering and saturation payloads are tbd, [#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).

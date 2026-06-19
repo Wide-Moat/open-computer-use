@@ -16,6 +16,7 @@ The wire contracts OCU defines or conforms to, one file per boundary. Read [`doc
 |---|---|---|---|
 | `mcp/2025-06-18/ocu-constraints.schema.json` | Agent tool-call ingress (caller → MCP gateway) | JSON Schema 2020-12 (MCP conform profile) | `json-schema` CI job |
 | `exec/exec-channel.schema.json` | Exec / PTY+CDP (control API → sandbox, machine-to-machine) | JSON Schema 2020-12 | `json-schema` CI job |
+| `control/control-rpc.schema.json` | Control → guest control-RPC (control plane → sandbox, over a host-owned UDS) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/mount-config.schema.json` | Mount-plane mount config (control plane → in-guest mount client) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/file-ops.schema.json` | Object-store client RPC (in-guest mount client → object-store service) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/file-artifact-api.schema.json` | Web UI file/artifact data plane (data-plane client → Web UI) | JSON Schema 2020-12 | `json-schema` CI job |
@@ -27,7 +28,7 @@ The storage surface is three files: the guest mount config (`mount-config`), the
 
 1. `$comment` carries the SPDX header, a one-line scope, and the NFR anchors the file satisfies.
 2. `$defs` holds the reusable shapes; the root `type`/`properties` is the message envelope.
-3. A `STATUS` of `partial` in `$comment` means the named shapes are fixed but some bodies stay unspecified — see the `x-ocu-tbd-bodies` block for which.
+3. A `STATUS` of `partial` in `$comment` means the named shapes are fixed but some bodies or union members stay unspecified — see the `x-ocu-tbd-bodies` block (unspecified bodies) or the `x-ocu-tbd-verbs` block (deferred/forbidden union members) for which.
 4. Run the same check CI runs:
 
 ```sh
@@ -44,6 +45,7 @@ A field lands in a schema only when it is sourced, NFR-derived, or explicitly de
 | `x-ocu-design` | A design-level decision (e.g. an envelope carrier name) referencing a sourced shape; named here, not externally fixed. |
 | `x-ocu-default` | An NFR-derived default value (a ceiling, a TTL). Configurable, not frozen — the number tracks the NFR, deployments tune it. |
 | `x-ocu-tbd` / `x-ocu-tbd-bodies` | Deliberately unspecified — no field-level source pins it yet. Carries the tracking issue. Do not invent a body to fill it. |
+| `x-ocu-tbd-verbs` | A union schema's deferred or forbidden members, named but absent from the v1 tag set. Each entry carries a disposition, its threat where it bears one, and a tracking issue. Adding a verb is an additive bump, not an open extension point. |
 | `x-ocu-open-questions` | A list of unresolved shape decisions for this file. |
 
 The rule the files hold to: never invent a wire field. If a body is not sourced and not NFR-derived, it stays `x-ocu-tbd` with an issue, not a guess.

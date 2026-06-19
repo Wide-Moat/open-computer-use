@@ -13,6 +13,7 @@ license-impact: none
 threat-mitigation-link: ../06-threat-model.md
 blocks: []
 blockedBy: [0015]
+amended-by: [0018]
 ---
 
 The one-per-deployment Control plane and the per-session executor are distinct deployables across an interface seam; the Control plane mints and delivers each weak Storage-JWT and holds the Storage-JWT signing key, while the per-session executor holds none. Audience: engineers wiring the build's repository layout and anyone auditing where the storage signing key lives.
@@ -22,6 +23,8 @@ The one-per-deployment Control plane and the per-session executor are distinct d
 ## Status
 
 `proposed`
+
+Amended by [ADR-0018](0018-in-guest-control-rpc-endpoint.md): the "host-only HTTP/vsock control port" this ADR names as the host-dialled channel between the two units is specified there as a contract — a host-owned UDS, HTTP+JSON, closed tagged-union, host-attested authority. The deployable-boundary decision below is unchanged; the port mention points to ADR-0018 for its wire contract.
 
 ## Context
 

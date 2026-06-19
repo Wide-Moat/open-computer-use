@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/control/control-rpc.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0. Copyright (c) 2025 Open Computer Use Contributors. STATUS partial (the v1 union is fixed; deferred and forbidden verbs are absent members listed in the x-ocu-tbd-verbs block, each with its disposition and tracking issue). In-guest control-RPC endpoint (Control plane -> Session sandbox), the FID-03 surface named but unspecified by ADR-0017 and specified by ADR-0018. Host-dialled over a host-owned Unix domain socket that lives in a 0700 host-owned directory; a non-host peer cannot connect(2) to it and so is dropped before any frame is parsed (the v1 realization of the NFR-SEC-76 host-only-at-accept property; an SO_PEERCRED uid compare is named future hardening, not a v1 requirement) (NFR-SEC-43, NFR-SEC-76). Wire = newline-delimited JSON over that UDS: one compact JSON request object + '\\n', one reply object + '\\n', then close. No HTTP request-line or headers in v1 (the framing is a transport detail; this schema fixes only the JSON union shape, identical under any framing). This is NOT the exec/PTY+CDP WebSocket (contracts/exec/exec-channel.schema.json); control verbs never enter the exec union. v1 verb set is a single Shutdown (cooperative fast-path; the host-driven finalizer NFR-SEC-65 is authoritative). The discriminator is the sole top-level key (externally-tagged closed union); an unknown tag is a hard protocol error on both sides, never silent-accept. A future verb is an additive schema change (NFR-IC-04), not an open extension point. The schema validates STRUCTURE only: it rejects unknown tags, multi-tag frames, and non-empty Shutdown bodies, but the authority model, Shutdown idempotency, and finalizer ordering are runtime invariants the peer enforces (NFR-SEC-65, component-02 hint-never-authority), not schema-checkable. Scope: docker/runc/runsc tiers; the Firecracker/vsock control transport and its freeze/thaw/mount_root/snapstart/write_etc/drop-caches verb set are deferred (see x-ocu-tbd-verbs.firecracker_lifecycle).",
+
+  "title": "ControlRpcMessage",
+  "description": "A single tagged-JSON control-RPC frame on the host-owned UDS. Request frames are host->guest; reply frames are guest->host. The discriminator is the sole top-level property name (an externally-tagged union). No verb carries standalone authority: the authority is the host-attested caller identity, established at accept by the 0700 host-owned-directory gate that only a host peer can connect(2) through (the v1 realization; an SO_PEERCRED uid compare is named future hardening — NFR-SEC-43/NFR-SEC-76); every body field below is a hint, never the authority.",
+
+  "$defs": {
+    "BoundedReason": {
+      "$comment": "NFR-SEC-51: bounded error verbosity. Same envelope as the exec channel (contracts/exec/exec-channel.schema.json#/$defs/BoundedReason). Caller gets a stable reason code; message carries no stack trace or internal topology. Length capped.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        },
+        "message": {
+          "$comment": "x-ocu-default: maxLength 256 is the NFR-SEC-51 default pending sign-off, not a source-pinned value; retunable per workload tier. Matches the exec-channel BoundedReason.",
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": ["reason_code"]
+    },
+
+    "Shutdown": {
+      "$comment": "Advisory cooperative shutdown fast-path request (host->guest). OPTIONAL, not required for teardown: teardown is host-side. On the bare docker/runc/runsc tier the v1 teardown is an unconditional force-remove (SIGKILL, no SIGTERM and no cooperative drain window); a SIGTERM/grace window exists only when an orchestrator supplies one (terminationGracePeriodSeconds) or the host first issues this advisory verb. So the verb earns its place only as a pre-SIGTERM advance-grace hint on the bare-container tier — it does not gate teardown. Carries no body: the guest does not name the session or any target — the authority is the host-attested caller identity on this UDS (NFR-SEC-43/NFR-SEC-76), so there is no session/container_name field to forge. This verb can at most advance a cooperative SIGTERM phase the guest already knows how to run (component-05 Operational concerns: SIGTERM->5s->SIGKILL drain). It can NEVER substitute, reorder, or mark-complete the host-driven ordered finalizer (NFR-SEC-65): credential-revoke, egress-route-drop, and writable-surface scrub stay host-executed regardless of any guest reply, and the force-remove subsumes any drain the guest skips. NOTE: this is cooperative shutdown, NOT a page-cache-drop maintenance op — a cache-drop is a distinct verb (snapstart family), never folded into Shutdown. Idempotent: a repeat request after the guest has begun shutting down returns the same ShutdownAccepted reply. An empty object, not null, so a future need can add an x-ocu-tbd field as an additive bump without changing the tag's JSON type.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "ShutdownAccepted": {
+      "$comment": "Reply (guest->host): the guest has begun the cooperative SIGTERM phase. NOT a completion claim — the host-driven finalizer (NFR-SEC-65) is the authority on whether teardown is complete, and a guest that skips the cooperative phase then claims clean is overridden by the host-executed steps (P2-T2). Empty object for the same additive-bump reason as Shutdown.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+
+    "ControlError": {
+      "$comment": "Reply (guest->host) for a request the guest could not accept or process: unknown tag (hard protocol error, never silent-accept), malformed body, or an internal failure. reason_code is stable; the host treats any non-ShutdownAccepted reply, and any transport-level drop, as non-authoritative for teardown — the finalizer (NFR-SEC-65) proceeds regardless.",
+      "$ref": "#/$defs/BoundedReason"
+    },
+
+    "ControlRequest": {
+      "$comment": "Host->guest frame. Externally-tagged closed union: exactly one top-level key, additionalProperties:false rejects an unknown tag at parse (closed union, hard ErrProtocol on both sides — mirrors the exec ClientMessage/ServerMessage shape and the peer's serde deny_unknown_fields). v1 has one member, Shutdown. Deferred and forbidden verbs are ABSENT members (see x-ocu-tbd-verbs), not open objects; adding one later is an additive schema bump (NFR-IC-04), coordinated on both sides, never a silent forward-compat hole.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "Shutdown": { "$ref": "#/$defs/Shutdown" }
+      }
+    },
+
+    "ControlReply": {
+      "$comment": "Guest->host frame. Same closed-union shape. A reply is either ShutdownAccepted (the only success variant in v1) or ControlError.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "ShutdownAccepted": { "$ref": "#/$defs/ShutdownAccepted" },
+        "ControlError": { "$ref": "#/$defs/ControlError" }
+      }
+    }
+  },
+
+  "x-ocu-tbd-verbs": {
+    "$comment": "Verbs named in the surrounding canon but deliberately absent from the v1 union. Each is an ADDITIVE member when it lands (NFR-IC-04), never an open extension point on the existing tags. Silence is not deferral: each carries its disposition and, where it bears a threat, that threat. A deferred verb is an absent member, not an open body.",
+    "container_name_update": {
+      "disposition": "forbidden",
+      "x-ocu-tbd": "FORBIDDEN in every version, not merely deferred. The session registry's container_name binding is the host-attested auth predicate a later host connection is validated against (component-02 sole-custody). The host-attested binding that rejects a guest-supplied identity is NFR-SEC-43; the predicate itself — the Session JWT checked against a separately-supplied expected container name, not carried as a claim — is the 02-trust-boundaries §8 token-taxonomy row (NFR-SEC-10). A guest-supplied or guest-mutated name must never become that predicate (rename-poison). The Control plane is the sole custodian (component-02 Owned state); the guest holds no handle. If an informational, non-authoritative push is ever wanted, it is a new ADR plus an accept-time invariant that it can never feed the auth predicate — tracked at https://github.com/Wide-Moat/open-computer-use/issues/286.",
+      "tracking_issue": "https://github.com/Wide-Moat/open-computer-use/issues/286"
+    },
+    "verify_key_install": {
+      "disposition": "deferred-v1",
+      "x-ocu-tbd": "Runtime (re)delivery of the public Ed25519 control-WS client-auth verify-key (component-02: the guest uses it to authenticate the host-dialled control-WebSocket client; a PUBLIC key, distinct from the Session-JWT signing key). ADR-0018 rules that v1 installs it once at session bring-up over the host-only provisioning push (sole authority = the NFR-SEC-76 host-accept; no prior key exists to authorise against) and does not redeliver it over this endpoint. THREAT if later added at runtime: substitution (a caller installs a key it controls, then authenticates as host) and downgrade/rollback (replaying an older key). If permitted later, the write must be authorised against the CURRENT key + NFR-SEC-76, carry a monotonic epoch checked anti-rollback, and may never widen who counts as host. Deferral is bounded by per-session guest ephemerality (the key need not rotate within a session). Cadence gap: no current NFR anchors this key's rotation (NFR-SEC-11 = Session-JWT signing, NFR-SEC-04 = tenant DEK/KEK, NFR-SEC-26 = no cadence) — flagged, not mis-cited. Tracked at https://github.com/Wide-Moat/open-computer-use/issues/287.",
+      "tracking_issue": "https://github.com/Wide-Moat/open-computer-use/issues/287"
+    },
+    "clock_sync": {
+      "disposition": "deferred-v1",
+      "x-ocu-tbd": "A host-pushed wall-clock correction. Deferred from v1: its only safe form (host-push only, no guest-influenced backward set, rollback-guarded) couples this endpoint to the trusted-time invariants (component-05 invariants 12/13, NFR-SEC-48/NFR-SEC-63) and is real design surface against the thinnest-v1 goal. If added: pin to invariant 13 (resume-time correction before any time-bound check), host-push only, reject any backward set per NFR-SEC-48. Tracked at https://github.com/Wide-Moat/open-computer-use/issues/288.",
+      "tracking_issue": "https://github.com/Wide-Moat/open-computer-use/issues/288"
+    },
+    "firecracker_lifecycle": {
+      "disposition": "deferred-scope",
+      "x-ocu-tbd": "The microVM-tier control transport is vsock, not this UDS (component-05: the VMM with vsock backs the microVM tier). The freeze/thaw/mount_root/snapstart/write_etc/drop-caches verb set rides that transport and is out of scope for the docker/runc/runsc tiers this file specifies. A future ADR specifies the Firecracker/vsock control surface. Tracked at https://github.com/Wide-Moat/open-computer-use/issues/289.",
+      "tracking_issue": "https://github.com/Wide-Moat/open-computer-use/issues/289"
+    }
+  },
+
+  "$comment-oneOf": "A frame is either a host->guest ControlRequest or a guest->host ControlReply. Request and reply share no tag (ControlRequest exposes Shutdown; ControlReply exposes ShutdownAccepted and ControlError), so the two arms are mutually exclusive — oneOf both documents that and fails closed if a future edit ever introduced a tag shared across the arms. Each arm is itself a closed externally-tagged union, so an unknown tag in either direction is a hard protocol error.",
+  "oneOf": [
+    { "$ref": "#/$defs/ControlRequest" },
+    { "$ref": "#/$defs/ControlReply" }
+  ]
+}

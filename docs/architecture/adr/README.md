@@ -34,8 +34,8 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0014](0014-storage-transport-tier-universal-network-leg.md) | Storage data leg is a tier-universal network endpoint | proposed | — | 2026-06-14 |
 | [0015](0015-storage-decomposition-by-trust-plane.md) | Storage decomposition by trust plane | proposed | — | 2026-06-14 |
 | [0016](0016-egress-baseline-inspection-hop-backend-scope.md) | Egress baseline — one inspection hop, engine-enforced scope | proposed | — | 2026-06-14 |
-| [0017](0017-control-plane-repo-boundary.md) | Control plane and per-session executor are distinct deployables | proposed | — | 2026-06-14 |
-| 0018 | — intentionally skipped (number not assigned) | — | — | — |
+| [0017](0017-control-plane-repo-boundary.md) | Control plane and per-session executor are distinct deployables | proposed (amended by 0018) | — | 2026-06-14 |
+| [0018](0018-in-guest-control-rpc-endpoint.md) | In-guest control-RPC endpoint (FID-03) | proposed | — | 2026-06-17 |
 | [0019](0019-egress-exchanges-filestore-credential.md) | Egress exchanges the filestore credential from the session JWT | proposed | 0013 (storage-leg custody half) | 2026-06-15 |
 | [0020](0020-sandbox-image-provisioning.md) | Sandbox image provisioning (image-fatness ladder + BYO) — stub | proposed | — | 2026-06-16 |
 
