@@ -7,6 +7,10 @@
 #   - every *.schema.json is valid JSON and a valid JSON Schema 2020-12 document
 #     (ajv compile against the draft 2020-12 meta-schema).
 #   - every *.asyncapi.yaml is a valid AsyncAPI document (asyncapi validate).
+#   - every *.openapi.yaml is a valid OpenAPI 3.1 document (redocly lint against
+#     contracts/openapi/redocly.yaml — the operator plane is a host-owned UDS, so
+#     the no-empty-servers and the not/required-XOR rules are turned off there).
+#   - every *.proto lints and builds (buf lint, against contracts/proto/buf.yaml).
 #   - no denied naming terms leak into a contract file.
 
 name: contracts-lint
@@ -67,6 +71,41 @@ jobs:
             npx --yes @asyncapi/cli@6.0.0 validate "$f"
             echo "::endgroup::"
           done
+
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate OpenAPI 3.1 documents
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          files=(contracts/openapi/*.openapi.yaml)
+          if [ ${#files[@]} -eq 0 ]; then echo "no openapi files"; exit 0; fi
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            npx --yes @redocly/cli@1.34.2 lint "$f" --config contracts/openapi/redocly.yaml
+            echo "::endgroup::"
+          done
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Protobuf definitions
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          files=(contracts/proto/**/*.proto)
+          if [ ${#files[@]} -eq 0 ]; then echo "no proto files"; exit 0; fi
+          curl -sSL -o /tmp/buf "https://github.com/bufbuild/buf/releases/download/v1.34.0/buf-$(uname -s)-$(uname -m)"
+          chmod +x /tmp/buf
+          cd contracts/proto
+          /tmp/buf lint
+          /tmp/buf build
 
   lexicon:
     runs-on: ubuntu-latest
