@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: null
-adr: [0005, 0006, 0007, 0008, 0013, 0016]
+adr: [0005, 0006, 0007, 0008, 0013, 0016, 0021]
 ---
 
 The sandbox's single outbound hop: it terminates TLS for inspection, and on the storage leg validates the guest's weak session JWT and exchanges it at the issuer for the real filestore credential it injects — holding no signing key, minting nothing. Audience: engineers and security reviewers wiring or auditing egress policy.
@@ -54,6 +54,7 @@ Each rule holds independent of the caller and is falsifiable by the named check.
 7. Where edge-injection hardening is enabled, the injected authorization never reaches a guest-visible response surface; it is stripped before any response crosses back to the guest leg (integration test, [NFR-SEC-23](../manifesto/02-nfrs.md)).
 8. When the denylist names a session, the edge drops its outbound connections independent of any credential's validity window ([ADR-0008](../adr/0008-session-egress-attribution.md), integration test, [NFR-SEC-04](../manifesto/02-nfrs.md), [NFR-SEC-29](../manifesto/02-nfrs.md)).
 9. Denylist-propagation timing reads a monotonic clock, so a wall-clock setback cannot stall the revoke signal past its window (clock-rollback red-team harness, [NFR-SEC-48](../manifesto/02-nfrs.md), [NFR-SEC-63](../manifesto/02-nfrs.md)).
+10. The L3 ingress face is a host-root-netns hop bound on each session's per-session bridge gateway, the single host-attested exit a guest's bytes cross into before any L7 read; it owns the allow/deny decision and its deny-all default relays nothing to a sibling even though the host root netns can route to one ([ADR-0021](../adr/0021-egress-l3-attach-seam.md), cross-session zero-relay under a positive control, [NFR-SEC-22](../manifesto/02-nfrs.md), [NFR-SEC-27](../manifesto/02-nfrs.md)). The L7 demux that splits sessions on this shared face, the forwarding element to the genuine origin, and the credential exchange (Invariant 3) are the edge proper; the L3 attach proven in [component 05](05-session-sandbox.md) terminates without them until the edge is built.
 
 ## Failure modes
 

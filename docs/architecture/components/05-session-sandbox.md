@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/exec/exec-channel.schema.json, contracts/control/control-rpc.schema.json]
-adr: [0003, 0005, 0007, 0013, 0014, 0015, 0016, 0017, 0018]
+adr: [0003, 0005, 0007, 0013, 0014, 0015, 0016, 0017, 0018, 0021]
 ---
 
 Internal design of the per-session execution container, for engineers implementing and auditing the guest agent and its host-side edges.
@@ -60,6 +60,7 @@ Each is falsifiable by the named check; cross-cutting zone, egress-mode, retenti
 13. Every TTL/expiry decision the guest is subject to reads a monotonic clock immune to wall-clock setback, and on resume the wall clock is corrected before any time-bound check runs (red-team clock-rollback harness, NFR-SEC-48 + NFR-SEC-63 — trusted-time theme [#185](https://github.com/Wide-Moat/open-computer-use/issues/185), [`06-threat-model.md`](../06-threat-model.md) §5).
 14. A recycled mount substrate carries no readable session-1 content into session-2: the page cache is dropped and the local mount/scratch region is zeroized (or its per-session DEK destroyed) before the region is re-granted, so erase completes-before re-grant (property test: write a session-1 marker, recycle, assert session-2 cannot read it, NFR-SEC-54 + NFR-SEC-64 + NFR-SEC-66). The resume-time CSPRNG/identity reseed that prevents a shared RNG stream is invariant 12, not restated here.
 15. The control-RPC endpoint ([`control/control-rpc`](../../../contracts/control/control-rpc.schema.json), [ADR-0018](../adr/0018-in-guest-control-rpc-endpoint.md)) is a second host-dialled listener on a host-owned UDS in a 0700 host-owned directory, not a redefinition of invariant 2's exec listener: a non-host peer cannot connect to the socket and so is dropped before any frame is parsed (accept-time negative-test, NFR-SEC-76 — the host-only-at-accept enforcement of NFR-SEC-43, scoped here to the control-RPC listener; the directory-permission gate is the v1 realization, an `SO_PEERCRED` compare is future hardening), it adds no outbound network route (invariant 4 holds), and invariant 3's predicate extends to it (a guest with in-sandbox root cannot dial it through the guest's own network stack nor present another session's identity). No control verb carries standalone authority: every body field is a hint, the host-attested caller identity the sole authority (matching component-02's hint-never-authority invariant); `shutdown` is therefore a cooperative fast-path that cannot reorder or mark-complete the host-driven finalizer (Operational concerns, NFR-SEC-65).
+16. The session's outbound L3 path reaches the Egress trust-edge over a host-driven attach on its per-session bridge gateway IP, added with no privilege the control plane lacks and reaped at teardown ahead of the route drop; the per-session bridge stays `Internal`, so the attach opens no cross-session L3 hole and the deny-all default relays nothing to a sibling even from the host root netns ([ADR-0021](../adr/0021-egress-l3-attach-seam.md)). The cross-session-relay deny is proven a packet drop on a route that is live under a positive control, not an absent route, and holds identically under `runc` and `runsc` (egress attach e2e: transit to the host hop + zero-relay-to-sibling under positive control, both tiers, NFR-SEC-22 + NFR-SEC-27).
 
 ## Failure modes
 

@@ -38,6 +38,7 @@ Architecture Decision Records. One file per decision. ADRs appear on demand foll
 | [0018](0018-in-guest-control-rpc-endpoint.md) | In-guest control-RPC endpoint (FID-03) | proposed | — | 2026-06-17 |
 | [0019](0019-egress-exchanges-filestore-credential.md) | Egress exchanges the filestore credential from the session JWT | proposed | 0013 (storage-leg custody half) | 2026-06-15 |
 | [0020](0020-sandbox-image-provisioning.md) | Sandbox image provisioning (image-fatness ladder + BYO) — stub | proposed | — | 2026-06-16 |
+| [0021](0021-egress-l3-attach-seam.md) | Host-side L3 egress attach seam (gateway-bound stand-in) | proposed | — | 2026-06-20 |
 
 ## Lifecycle
 
