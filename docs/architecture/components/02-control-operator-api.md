@@ -87,6 +87,8 @@ Control authors the denylist; the Egress trust-edge reads it and refuses a revok
 
 Config surface: the operator/lifecycle ingress listener and the gateway service-identity listener are distinct network endpoints (the NFR-SEC-52 separation). Per-caller create-rate, per-tenant concurrent-session and calls/min ceilings (NFR-COST-06), and the reserved lifecycle/revoke capacity (NFR-SEC-55) are the principal knobs.
 
+Control renders the Storage-JWT JWKS as a static artifact at `-jwks-path` (atomic write, re-rendered on key rotation); the deploy layer serves it over HTTP at the egress edge's `remote_jwks` URI ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md) §35). Control adds no third listener — the two-listener invariant (§39, NFR-SEC-52) is unchanged; the JWKS is a published public-key artifact, not a network endpoint on the signing-key holder.
+
 Observability: this container emits OCSF on the audit fan-in for session create/destroy, every enumerated privileged action (NFR-SEC-45), and quota rejections, into the hash-chained pipeline ([`audit/audit-fanin`](../../../contracts/audit/audit-fanin.asyncapi.yaml), NFR-SEC-03). The audit-write is on the critical path of a privileged action (fail-closed), not a side-channel.
 
 Scaling axis: this is a one-per-deployment deployable, distinct from the per-session `[1..N]` executor it drives over the host-dials-guest control channel; the two are separate repositories, `ocu-control` and `ocu-sandbox` ([ADR-0017](../adr/0017-control-plane-repo-boundary.md)). The single-instance minimal shelf is in scope for the kill-switch-under-saturation target (NFR-SEC-55), so the capacity model reserves admission priority for the revoke route rather than scaling out. RTO/RPO of this plane is NFR-REL-01.
