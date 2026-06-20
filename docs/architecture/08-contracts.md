@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-14
+last-reviewed: 2026-06-20
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -82,7 +82,7 @@ The control-plane RPC rule (breaking = major version + deprecation header) is ca
 
 ## 5. Schema artifacts
 
-This overview is the map; the schema files under `contracts/` own the field-level types. Seven schema files are drafted (the storage surface carries three — mount config, the mount-plane file-op RPC, the Web UI file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
+This overview is the map; the schema files under `contracts/` own the field-level types. Eight schema files are drafted (the storage surface carries three — mount config, the mount-plane file-op RPC, the Web UI file/artifact API); the rest are not yet built. [`contracts/README.md`](../../contracts/README.md) is the navigator: how to read a schema file and what the `x-ocu-*` annotations mean.
 
 Drafted (not merged):
 
@@ -92,6 +92,7 @@ Drafted (not merged):
 - `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount-plane mount config and file-op RPC (the file-op message bodies are tbd).
 - `contracts/storage/file-artifact-api.schema.json` — the Web UI file/artifact data plane (upload/list/download/getManifest/preview-render + the embed-token/CSP/CSRF envelope). Per-operation bodies are tbd, like the mount-plane RPC; the embed-token binding claim ([#217](https://github.com/Wide-Moat/open-computer-use/issues/217)) and preview-render parser isolation ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) are tracked open items.
 - `contracts/audit/audit-fanin.asyncapi.yaml` — the OCSF fan-in (the compute-metering and saturation payloads are tbd, [#150](https://github.com/Wide-Moat/open-computer-use/issues/150)).
+- `contracts/admission/runtime-tokens.schema.json` — the admission tier vocabulary: the frozen workload-trust-profile and runtime-tier wire tokens and the 9-cell pairing matrix (NFR-SEC-38, [ADR-0003](adr/0003-sandbox-runtime-tier-ladder.md)). Not a runtime wire message — the tier is resolved independently in the Control / operator API (deploy-time admission) and the Session sandbox (Invariant 8 re-validation), and this schema is the single frozen reference both are checked against. STATUS `frozen`; the microVM tier is pairing-valid but capability-deferred ([#161](https://github.com/Wide-Moat/open-computer-use/issues/161)).
 
 Not built:
 

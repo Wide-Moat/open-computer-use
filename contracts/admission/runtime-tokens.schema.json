@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/admission/runtime-tokens.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0. Copyright (c) 2025 Open Computer Use Contributors. STATUS frozen (the tier wire-token vocabulary and the 9-cell pairing matrix are fixed; the microVM tier is pairing-valid but not capability-built in v1 GA, the per-session trust profile is deferred). The shared admission vocabulary contract for the sandbox runtime tier: the workload-trust profile enum, the runtime-tier WIRE tokens, and the workload-trust-profile x runtime-tier pairing matrix with its three outcome classes. This is NOT a wire message that crosses a session boundary at runtime: the tier is resolved independently from deployment configuration in BOTH the Control / operator API (component-02, deploy-time admission) and the Session sandbox (component-05, Invariant 8 re-validation as the last-line gate), and component-05 Invariant 8 requires the two to agree (NFR-SEC-38, ADR-0003). This schema is the single frozen reference both planes are checked against: a control plane MUST emit exactly these tier wire tokens and MUST produce admit/reject outcomes matching this matrix; the sandbox runtime seam MUST accept exactly these tokens and reject any other (fail-closed). The distinction this contract freezes: gVisor's runtime WIRE token is the string `runsc` (the value dockerd dispatches on) — the human label `gvisor` is a control-internal audit label on a different layer and is deliberately NOT part of this vocabulary; any synonym or case variant of a wire token is non-conformant. Pairing policy and the rejected cells live in NFR-SEC-38; the tier-selection axis (by deployment-wide workload-trust profile, never by data classification) lives in ADR-0003. Per-tier escape resistance is governed by NFR-SEC-02, the tier-downgrade alarm by NFR-SEC-39 (config.trust_profile.downgraded). Scope: docker/runc/runsc tiers; the microVM tier is named here as pairing-valid-but-deferred (open-computer-use #161), and the per-session trust profile is deferred (#162). This schema validates the SHAPE of a conforming token/matrix declaration; the runtime authority (admission runs before any mutable host state, no fallback, no tier substitution) is a peer invariant, not schema-checkable (NFR-SEC-38, component-05 Invariant 8).",
+
+  "title": "AdmissionRuntimeTokens",
+  "description": "The frozen workload-trust-profile and runtime-tier vocabulary plus the 9-cell pairing matrix. A conforming control plane and the sandbox each declare this same structure; the values below are the canon reference (NFR-SEC-38, ADR-0003).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles", "tier_wire_tokens", "matrix"],
+
+  "$defs": {
+    "WorkloadTrustProfile": {
+      "$comment": "Closed enum (NFR-SEC-38). The deployment-declared trust posture of the workloads a deployment admits; deployment configuration, never a per-request field. The per-session trust profile is deferred (#162).",
+      "type": "string",
+      "enum": ["trusted_operator", "internal_workforce", "untrusted"]
+    },
+    "RuntimeTierWireToken": {
+      "$comment": "Closed enum of the runtime-tier WIRE tokens (ADR-0003 code-tokens) — the exact strings the runtime seam dispatches on and a control plane must emit. `runsc` is the gVisor tier (the human label `gvisor` is a control-internal audit label on a different layer and is NOT a wire token). `firecracker` is the microVM tier (pairing-valid, capability-deferred in v1 GA, #161). No synonym, no case variant.",
+      "type": "string",
+      "enum": ["runc", "runsc", "firecracker"]
+    },
+    "PairingOutcome": {
+      "$comment": "The three outcome classes a (profile, tier) cell resolves to (NFR-SEC-38). `ga_live`: pairing-valid AND capability-built in v1 GA (admit, then run). `microvm_not_shipped`: pairing-valid by policy but the microVM tier is not capability-built in v1 GA (admit the pairing, then fail closed at the runtime seam) — the two-layer, defense-in-depth refusal. `pairing_rejected`: forbidden by pairing policy, a hard error at admission before the runtime is consulted. A control plane MAY collapse `microvm_not_shipped` into an admission-time reject (same end-state, both fail closed); only the end-state and `mismatch is a hard error` are mandated, the refusal layer is implementation latitude.",
+      "type": "string",
+      "enum": ["ga_live", "microvm_not_shipped", "pairing_rejected"]
+    },
+    "MatrixCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "tier", "outcome"],
+      "properties": {
+        "profile": { "$ref": "#/$defs/WorkloadTrustProfile" },
+        "tier": { "$ref": "#/$defs/RuntimeTierWireToken" },
+        "outcome": { "$ref": "#/$defs/PairingOutcome" }
+      }
+    }
+  },
+
+  "properties": {
+    "profiles": {
+      "$comment": "The closed profile enum, restated as the authoritative set so a conforming declaration is checked against it by value.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/WorkloadTrustProfile" },
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "tier_wire_tokens": {
+      "$comment": "The closed wire-token enum, the frozen LAYER-B vocabulary a control plane is checked against by value.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/RuntimeTierWireToken" },
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "matrix": {
+      "$comment": "The full 9-cell NFR-SEC-38 pairing matrix as data: every (profile, tier) pair with its outcome class. Exactly 9 cells, one per (profile x tier) combination. The canon partition is 3 ga_live + 3 microvm_not_shipped + 3 pairing_rejected; 6 cells are valid by pairing rules (3 GA-deployable + 3 microVM-not-shipped) and 3 are pairing-rejected.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/MatrixCell" },
+      "minItems": 9,
+      "maxItems": 9,
+      "uniqueItems": true
+    }
+  },
+
+  "examples": [
+    {
+      "$comment": "The canon reference values (NFR-SEC-38, ADR-0003). A conforming declaration on either plane equals this set: trusted_operator runs runc (the one-click solo default) or the stronger runsc; internal_workforce runs runsc; both may pair with microVM (deferred); untrusted pairs only with microVM (deferred). runc for a weaker-than-trusted_operator profile, and runsc for untrusted, are pairing-rejected.",
+      "profiles": ["trusted_operator", "internal_workforce", "untrusted"],
+      "tier_wire_tokens": ["runc", "runsc", "firecracker"],
+      "matrix": [
+        { "profile": "trusted_operator", "tier": "runc", "outcome": "ga_live" },
+        { "profile": "trusted_operator", "tier": "runsc", "outcome": "ga_live" },
+        { "profile": "trusted_operator", "tier": "firecracker", "outcome": "microvm_not_shipped" },
+        { "profile": "internal_workforce", "tier": "runc", "outcome": "pairing_rejected" },
+        { "profile": "internal_workforce", "tier": "runsc", "outcome": "ga_live" },
+        { "profile": "internal_workforce", "tier": "firecracker", "outcome": "microvm_not_shipped" },
+        { "profile": "untrusted", "tier": "runc", "outcome": "pairing_rejected" },
+        { "profile": "untrusted", "tier": "runsc", "outcome": "pairing_rejected" },
+        { "profile": "untrusted", "tier": "firecracker", "outcome": "microvm_not_shipped" }
+      ]
+    }
+  ]
+}
