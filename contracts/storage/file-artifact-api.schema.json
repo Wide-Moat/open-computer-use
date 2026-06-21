@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.open-computer-use.dev/storage/file-artifact-api.schema.json",
-  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-artifact data plane, Web UI API (data-plane client -> Web UI service). HTTP+JSON REST plus the embeddable SPA, served on a dedicated file/UI ingress, NOT the MCP-tool-call listener. The Web UI service is its own deployable inside the Storage zone, alongside the object-store service (file-ops.schema.json) and the in-guest mount client (mount-plane). STATUS: TBD. Operation NAMES, the route shape, the three-axis authorization, the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are sourced (PoC route shape) or NFR-derived (x-ocu-design / x-ocu-default); per-operation request/response BODIES are not pinned by any field-level source and are left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-49, NFR-SEC-73, NFR-SEC-78, NFR-SEC-79, NFR-SEC-80, NFR-SEC-81, NFR-SEC-82, NFR-SEC-83, NFR-SEC-84.",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | File-artifact data plane, Web UI API (data-plane client -> Web UI service). HTTP+JSON REST plus the embeddable SPA, served on a dedicated file/UI ingress, NOT the MCP-tool-call listener. The Web UI service is its own deployable inside the Storage zone, alongside the object-store service (file-ops.schema.json) and the in-guest mount client (mount-plane). STATUS: SUPERSEDED by ADR-0023 (Files-API north contract) — the public north op-shape is now the Files-API (/v1/files); the embed-token verify, cookie/CSRF/CSP envelope, and three-axis authorization survive as the auth/transport wrapper. See docs/architecture/adr/0023-files-api-north-contract.md. Operation NAMES, the route shape, the three-axis authorization, the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are sourced (PoC route shape) or NFR-derived (x-ocu-design / x-ocu-default); per-operation request/response BODIES are not pinned by any field-level source and are left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-49, NFR-SEC-73, NFR-SEC-78, NFR-SEC-79, NFR-SEC-80, NFR-SEC-81, NFR-SEC-82, NFR-SEC-83, NFR-SEC-84.",
   "title": "File-artifact data plane (Web UI API, TBD)",
-  "description": "The data-plane client HTTP API and embeddable SPA served by the Web UI service. Operation set and the auth/response envelope are fixed; per-operation message bodies are TBD until a field-level source pins them. Do not invent bodies, opaque object ids, list pagination, resumable upload, or share-by-link capability URLs — none are sourced for this surface. Fill each operation only when sourced.",
+  "description": "PoC north op-shape superseded by ADR-0023; the public north contract is now the Files-API (/v1/files) with an opaque, scope-bound, server-minted file_id and opaque-id cursor pagination. The auth/transport wrapper (embed-token verify, cookie/CSRF/CSP envelope, three-axis authorization) survives. Do not extend this PoC op-shape; new work lands on the Files-API surface per ADR-0023. Resumable upload and share-by-link capability URLs remain un-sourced for either surface.",
 
   "$defs": {
     "SchemaVersion": {
@@ -64,7 +64,7 @@
     },
 
     "FileEntry": {
-      "description": "List/metadata entry. Field names are sourced from the PoC list/outputs route shape; the union of the upload-list and output-list shapes. Object handle is the {filesystem_id, path} pair (the PoC addresses by chat-scope + relative path; it carries NO opaque object id, so none is modelled — inventing one is a P4-artifact-E3 traversal risk).",
+      "description": "List/metadata entry, superseded shape. The Files-API FileObject (ADR-0023) replaces FileEntry on the north surface: it carries an opaque, scope-bound, server-minted file_id whose traversal/enumeration risk is held by the scope-binding keystone (the resolver takes scope from the host-attested channel; a foreign or unknown file_id resolves to not_found, never forbidden), not by refusing an id. FileEntry stays the superseded PoC shape; field names are sourced from the PoC list/outputs route shape (the union of the upload-list and output-list shapes), addressed by {filesystem_id, path}. New work uses the FileObject per ADR-0023.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "path", "size", "modified"],
@@ -308,7 +308,7 @@
         },
         "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
         "object_handle": {
-          "description": "The {filesystem_id, path} handle (NOT an opaque object id — none exists in this surface).",
+          "description": "The resolved {filesystem_id, path} object reference logged on the audit event. The public north face addresses by the opaque, scope-bound file_id (ADR-0023); the event records the resolved object reference, not that public file_id.",
           "$ref": "#/$defs/RelativePath"
         },
         "byte_count": {
@@ -363,7 +363,7 @@
 
   "x-ocu-tbd-bodies": {
     "status": "tbd",
-    "reason": "No field-level source pins the per-operation request/response message bodies. The operation set, the route shape (chat-scope + relative path; ?download=1 -> attachment vs inline-by-MIME), the sourced list/metadata fields (FileEntry), the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are known; full request/response bodies are not. Fill each entry below only when a field-level source exists; do not invent bodies, an opaque object id, list pagination, resumable/chunked upload, or share-by-link capability URLs — none are sourced for this surface.",
+    "reason": "Superseded by ADR-0023: the public north contract is now the Files-API (/v1/files) with an opaque, scope-bound, server-minted file_id and opaque-id cursor pagination; new work lands there, not on this PoC op-shape. The PoC route shape (chat-scope + relative path; ?download=1 -> attachment vs inline-by-MIME), the sourced list/metadata fields (FileEntry), the embed-token verify contract, the cookie/CSRF/CSP response envelope, and the body/archive/classification ceilings are the surviving auth/transport wrapper. Resumable/chunked upload and share-by-link capability URLs remain un-sourced for either surface.",
     "operations": {
       "upload": "POST to a {filesystem_id, path} target; multipart form field `file` (SOURCED). Response carries status + filename + size + md5 (SOURCED PoC shape). Bound by InboundBound (NFR-SEC-78); archive bodies validated pre-extraction (NFR-SEC-80); body classified on ingest (NFR-SEC-81). Full envelope TBD.",
       "listFiles": "GET list under a filesystem scope; returns FileEntry[] + total (SOURCED union of PoC uploads-list and outputs-list shapes). The unification of the two PoC route families into one operation is OCU-DESIGN. NO pagination cursor (PoC returns the full list; do not adopt one without a source). Full envelope TBD.",
@@ -371,7 +371,7 @@
       "download": "GET a {filesystem_id, path} object; ?download=1 -> Content-Disposition: attachment (octet-stream), else inline by real MIME (SOURCED). The Web UI service resolves downloadable at read (NFR-SEC-73); a non-downloadable object's byte path to the browser is refused. Full envelope TBD.",
       "downloadArchive": "GET the outputs of a filesystem scope as a zip; Content-Disposition: attachment (SOURCED PoC). Full envelope TBD.",
       "previewRender": "GET the embeddable SPA for a filesystem scope (SOURCED PoC SPA route). Render/parser isolation model is OCU-DESIGN with mechanism TBD (#218). Carries the SessionResponseEnvelope framing headers (NFR-SEC-83). Full envelope TBD.",
-      "delete": "NO PoC route. The operation exists by NFR (NFR-SEC-79 names delete in the Web UI activity set), but its request/response wire body is TBD — no field-level source pins it. Needs its own tracking issue before the body is filled. Do not invent it."
+      "delete": "ADR-0023 authorizes the DELETE /v1/files/{file_id} route on the Files-API north surface (the operation NFR-SEC-79 names in the Web UI activity set); it unlinks the handle so the file_id stops resolving and makes no byte-erasure guarantee. New work lands on that Files-API route, not on this superseded PoC op-shape."
     },
     "tbd-issues": {
       "embed-token-replay-binding": "https://github.com/Wide-Moat/open-computer-use/issues/217",
