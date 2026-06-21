@@ -2,7 +2,7 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
+status: accepted
 last-reviewed: 2026-06-22
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
@@ -20,7 +20,7 @@ The canonical public north contract of filestore is the de-facto Files-API shape
 
 ## Status
 
-`proposed`
+`accepted`
 
 ## Context
 
