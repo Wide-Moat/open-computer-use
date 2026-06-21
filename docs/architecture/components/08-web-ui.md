@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/storage/file-artifact-api.schema.json]
-adr: [0002, 0013, 0015, 0016, 0017]
+adr: [0002, 0013, 0015, 0016, 0017, 0023]
 ---
 
 The host-side file API and embeddable SPA an external data-plane client reaches to upload, preview, and download files; it calls the object-store service for every backend operation. Audience: engineers implementing or auditing the file data-plane surface.
@@ -31,7 +31,7 @@ The Web UI fronts one counterparty: the external data-plane client (E5). It does
 | internal | untrusted artifact body for validation and preview-render | Web UI → parser-sandbox | capability-free sub-boundary (below) |
 | outbound | OCSF File System Activity event per operation, fail-closed | Web UI → Audit pipeline (F10) | Published Language (OCSF) |
 
-The Web UI never reaches the storage engine; the object-store service is the one door to storage and speaks the backend leg ([ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md)). `F#` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4. The files surface is one entry in the descriptor-driven view list ([ADR-0002](../adr/0002-session-view-descriptor.md)); the deferred live-view surfaces ([#210](https://github.com/Wide-Moat/open-computer-use/issues/210)) sit outside this spec. The operation set, route shape, authorization axes, embed-token verify contract, response envelope, and size ceilings are frozen in [`file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json); per-operation message bodies are TBD there and not invented here.
+The Web UI never reaches the storage engine; the object-store service is the one door to storage and speaks the backend leg ([ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md)). `F#` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4. The files surface is one entry in the descriptor-driven view list ([ADR-0002](../adr/0002-session-view-descriptor.md)); the deferred live-view surfaces ([#210](https://github.com/Wide-Moat/open-computer-use/issues/210)) sit outside this spec. The public north op-shape is the Files-API (`/v1/files`) with an opaque, scope-bound `file_id` ([ADR-0023](../adr/0023-files-api-north-contract.md)); the embed-token verify, cookie/CSRF/CSP response envelope, three-axis authorization axes, and size ceilings survive as the auth/transport wrapper, frozen in [`file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json), and per-operation message bodies are TBD there and not invented here.
 
 ### Parser-sandbox sub-boundary
 
@@ -68,7 +68,7 @@ Each rule holds for any caller and is falsifiable by the named check. The reachi
 2. Every state-mutating call requires a server-validated CSRF token, and every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (NFR-SEC-83, NFR-SEC-84). Header values are fixed in [`08-contracts.md`](../08-contracts.md) §3.
 3. The Web UI holds no backend key and sends no OCU secret to the browser; the object-store service is the one door to storage and the Web UI reaches it over the host leg, never the storage engine directly ([ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md)) (unit-test + property-test, NFR-SEC-82, NFR-SEC-25).
 4. Authorization (scope `filesystem_id` + intent `read`/`write`/`preview` + downloadable) is re-derived per request, deny-by-default, keyed on the authenticated caller; a `preview`-authorized caller cannot invoke `download` or `write`, and `intent=preview` stays read-only and non-downloadable regardless of stored tag (property-test, NFR-SEC-49, NFR-SEC-73).
-5. No file operation resolves a handle outside the request's `filesystem_id` scope; the handle is the `{filesystem_id, path}` pair, and traversal, symlink, absolute-path, and URL-shaped handles are rejected before any object-store-service call (property-test, NFR-SEC-49, NFR-SEC-80).
+5. The handle is an opaque, server-minted, scope-bound `file_id` ([ADR-0023](../adr/0023-files-api-north-contract.md)); the resolver always takes scope from the host-attested channel (embed-token + cookie) and refuses any `file_id` outside the attested `filesystem_id` scope, returning `not_found` (never `forbidden`) so a cross-scope or unknown id is indistinguishable from non-existence (anti-enumeration); traversal, symlink, absolute-path, and URL-shaped inputs are still rejected before any object-store-service call (property-test, NFR-SEC-49, NFR-SEC-80).
 6. An inbound body above the configured ceiling is rejected pre-buffer, never partially staged; an archive body is validated (uncompressed total, entry count, traversal, symlink) and content-classified before extraction (schema-validation + property-test, NFR-SEC-78, NFR-SEC-80, NFR-SEC-81).
 7. Preview-render and archive validation run in the parser-sandbox; a body the parser rejects mints no session state and reaches no credential ([#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) (isolation assertion, NFR-SEC-25, NFR-SEC-49).
 8. Every file operation emits an OCSF File System Activity event into the hash-chained pipeline before the operation is acknowledged, under host-attested identity; an audit-write failure denies the operation (unit-test, NFR-SEC-79).

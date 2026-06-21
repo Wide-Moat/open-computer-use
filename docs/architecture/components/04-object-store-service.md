@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/storage/mount-config.schema.json, contracts/storage/file-ops.schema.json]
-adr: [0003, 0010, 0013, 0014, 0015, 0016]
+adr: [0003, 0010, 0013, 0014, 0015, 0016, 0023]
 ---
 
 The only door to storage. Audience: engineers and security reviewers implementing or auditing the storage path.
@@ -50,7 +50,8 @@ The file-operation verb names are fixed in [`file-ops`](../../../contracts/stora
 |---|---|
 | The `filesystem_id`→engine-prefix mapping | No storage-JWT signing key — the Control plane mints + holds it ([ADR-0013](../adr/0013-storage-credential-custody.md)) |
 | The storage-engine adapter selection (S3 or local volume) and its chunked-multipart transfer policy ([ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)) | No authorization authority — the engine validates the `filesystem_id` claim and rejects a foreign scope ([ADR-0013](../adr/0013-storage-credential-custody.md)) |
-| The engine credential where one exists — a network-engine key or a local-volume host-filesystem permission ([NFR-SEC-60](../manifesto/02-nfrs.md)) | No client-file API, embeddable SPA, or preview-render — those are the [Web UI](08-web-ui.md) |
+| The engine credential where one exists — a network-engine key or a local-volume host-filesystem permission ([NFR-SEC-60](../manifesto/02-nfrs.md)) | No client-file API, embeddable SPA, or preview-render — those are the [Web UI](08-web-ui.md); but the `file_id` handle-store and resolver the Web UI's Files-API surface calls are owned here ([ADR-0023](../adr/0023-files-api-north-contract.md)) |
+| The durable `file_id`→handle-record index for the Files-API north face — metadata plus a customer-store reference, never bytes; a fsync'd on-disk store beside the audit `FileSink` ([ADR-0010](../adr/0010-storage-backend-pluggable-adapter.md)-clean, [ADR-0023](../adr/0023-files-api-north-contract.md)) | Not the control plane's — Control keeps only the session↔`filesystem_id` binding and holds no file-handle table ([ADR-0023](../adr/0023-files-api-north-contract.md)) |
 
 The credential flow: the control plane delivers the weak session JWT into the mount config, the guest presents it to the edge as a static `Authorization: Bearer`, the edge exchanges it at the issuer for the real filestore credential and injects that credential, and the engine verifies the real credential ([ADR-0013](../adr/0013-storage-credential-custody.md), [ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md)). The operation names and the three authorization axes are fixed in the bound schema; the per-operation field types are TBD there, not invented here ([`mount-config`](../../../contracts/storage/mount-config.schema.json), [`file-ops`](../../../contracts/storage/file-ops.schema.json)).
 
