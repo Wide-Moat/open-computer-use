@@ -14,7 +14,7 @@ license-impact: none
 threat-mitigation-link: ../06-threat-model.md
 ---
 
-The canonical public north contract of filestore is the de-facto Files-API shape (`/v1/files`), superseding the PoC custom op-shape while preserving the embed-token, cookie/CSRF/CSP, and three-axis-authz wrapper. Audience: anyone wiring an external file client into the Web UI, or editing the north-face contract or its handle model.
+The canonical public north contract of filestore is the de-facto Files-API shape (`/v1/files`), superseding the PoC custom op-shape while preserving the embed-token, cookie/CSRF/CSP, and three-axis-authz wrapper — for anyone wiring an external file client into the Web UI or editing the north-face contract or its handle model.
 
 # ADR-0023: Files-API as the north contract of filestore
 
