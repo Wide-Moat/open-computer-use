@@ -60,7 +60,109 @@
       "items": { "$ref": "#/$defs/MatrixCell" },
       "minItems": 9,
       "maxItems": 9,
-      "uniqueItems": true
+      "uniqueItems": true,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "trusted_operator" },
+              "tier": { "const": "runc" },
+              "outcome": { "const": "ga_live" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "trusted_operator" },
+              "tier": { "const": "runsc" },
+              "outcome": { "const": "ga_live" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "trusted_operator" },
+              "tier": { "const": "firecracker" },
+              "outcome": { "const": "microvm_not_shipped" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "internal_workforce" },
+              "tier": { "const": "runc" },
+              "outcome": { "const": "pairing_rejected" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "internal_workforce" },
+              "tier": { "const": "runsc" },
+              "outcome": { "const": "ga_live" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "internal_workforce" },
+              "tier": { "const": "firecracker" },
+              "outcome": { "const": "microvm_not_shipped" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "untrusted" },
+              "tier": { "const": "runc" },
+              "outcome": { "const": "pairing_rejected" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "untrusted" },
+              "tier": { "const": "runsc" },
+              "outcome": { "const": "pairing_rejected" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["profile", "tier", "outcome"],
+            "properties": {
+              "profile": { "const": "untrusted" },
+              "tier": { "const": "firecracker" },
+              "outcome": { "const": "microvm_not_shipped" }
+            }
+          }
+        }
+      ],
+      "$comment-allOf": "WHY the allOf-of-9-contains, not minItems/maxItems/uniqueItems alone: uniqueItems on objects is WHOLE-object uniqueness (shape-only), so it neither pins each (profile, tier) pair to its frozen outcome nor forbids a duplicate pair carrying a different outcome while another canonical pair goes missing. Each contains below requires the EXACT canonical (profile, tier, outcome) triple to be PRESENT; nine such requirements against exactly nine unique slots (maxItems 9 + uniqueItems) leave no room for a wrong-outcome, duplicate-pair, or missing-pair forgery. Only the frozen canon matrix validates. The array has no guaranteed element order, so this is order-independent (contains), not positional (prefixItems)."
     }
   },
 
