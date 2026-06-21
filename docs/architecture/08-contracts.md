@@ -68,7 +68,7 @@ Every OCU-defined contract carries the Layer 7 mitigations as machine-checked co
 | Embed-token verify | reject any embed token not signature-valid, not naming this surface in audience, or past `exp` (`exp ≤ 120 s`); no OCU upstream secret crosses to the browser | NFR-SEC-82 |
 | Frame-ancestors allowlist | every UI/artifact response carries `CSP: frame-ancestors` from the per-deployment allowlist (header-only, default `'none'`) | NFR-SEC-83 |
 | First-party session + CSRF | a state-mutating request requires a server-validated CSRF token; a missing/invalid session is 401 with no anonymous fallback | NFR-SEC-84 |
-| File-activity audit (Web UI) | every upload/list/download/delete emits an OCSF File System Activity event into the hash-chained pipeline under host-attested identity, fail-closed | NFR-SEC-79 |
+| File-activity audit (Web UI) | every upload/list/download/delete emits an OCSF File System Activity event under host-attested identity, durable-committed to a local record before fan-out into the hash-chained pipeline; the durable commit is the non-repudiation point, so a downstream sink failure neither denies nor stalls the operation — a dropped fan-out is counted and reconciled, never silently lost | NFR-SEC-79 |
 | Three-axis authz | scope (`filesystem_id`) + intent (`read`/`write`/`preview`) + `downloadable`, carried in the Storage-JWT and resolved at the storage engine from the host-attested session, never a client-supplied claim; `intent=preview` is read-only and non-downloadable | NFR-SEC-49 |
 | Downloadable axis at read | the storage engine resolves `downloadable` at read for both the mount leg and the Web UI; a non-downloadable object yields no egress-eligible artifact (preview ≠ remove-from-sandbox) | NFR-SEC-73 |
 
