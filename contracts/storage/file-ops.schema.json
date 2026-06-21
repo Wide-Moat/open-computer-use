@@ -3,7 +3,7 @@
   "$id": "https://schemas.open-computer-use.dev/storage/file-ops.schema.json",
   "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | Mount-plane file-operation RPC surface (in-guest mount client -> object-store service, guest-out over the single inspecting egress hop). STATUS: TBD. Operation NAMES and the authorization axes are sourced; per-operation request/response BODIES are not yet pinned by any field-level source and are intentionally left unspecified. JSON Schema 2020-12 (json-schema.org). NFR-SEC-25, NFR-SEC-46, NFR-SEC-51.",
   "title": "File-operation RPC surface (TBD)",
-  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the object-store service, which translates each verb into a storage-engine request. The substrate is REST-JSON over HTTP/2 (component-spec choice, not modelled here). Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
+  "description": "Stub. The mount-plane file-op RPC set spoken by the in-guest mount client (the narrow object-store client + transport in one binary) to the object-store service, which translates each verb into a storage-engine request. The substrate is REST-JSON over HTTP/2: each operation is `POST <service_url>/v1/filestore/fs/<operation>` (the operation name is the path segment), the bearer rides the `Authorization` header, fileUpload carries a multipart body, fileDownload returns a chunked octet-stream; component-04 pins this route shape. Operation names and the three-axis authorization (filesystem_id + intent + downloadable) are fixed; message bodies are TBD until a field-level source pins them. Do not invent bodies — fill each operation's request/response only when sourced.",
 
   "$defs": {
     "SchemaVersion": {
@@ -32,9 +32,8 @@
       "description": "Authorization sub-message attached to every file-op request, carried at request field 4/5. It has two members: intent (proto tag 1) and downloadable (proto tag 2; tag 9 in the upload-params carrier). The scope axis is the request's own filesystem_id sibling field (request tag 1/2, or 11 in its oneof), NOT a member of this sub-message. Richer than the bearer alone. The bearer is the pre-issued WEAK session JWT (an OCU-chosen signing algorithm, e.g. ES256) the mount client holds in its config and forwards as a static Authorization header; it is minted and signed by the Control plane (the Storage-JWT signing-key holder, which publishes a JWKS the egress edge validates against) and is NOT part of this object. ocu-filestore never accepts this weak JWT: the egress edge validates it, strips it, and exchanges it for the real filestore credential — the exchange counterparty issuing the real credential MAY be an external/customer credential authority — which is what reaches the storage engine (NFR-SEC-25).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["filesystem_id", "intent", "downloadable"],
+      "required": ["intent", "downloadable"],
       "properties": {
-        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
         "intent": { "$ref": "#/$defs/Intent" },
         "downloadable": {
           "description": "Whether data may leave the perimeter (distinct from may-read). The preview-not-download exfiltration control.",
@@ -72,22 +71,28 @@
     },
 
     "DenyReason": {
-      "description": "Structured deny returned by the storage engine on authorization failure. Carries no internal topology (NFR-SEC-51, NFR-SEC-17). The engine surfaces a typed PermissionDeniedError{message, resource} or AuthenticationRequiredError; both the transport (a response header vs a typed body) and the reason-code vocabulary below are OCU defaults pending NFR-SEC-51 sign-off, not sourced and not a frozen const set.",
+      "description": "Structured deny returned by the storage engine on a request it could not accept or authorize. The HTTP status is authoritative — the caller maps on status (401/403 → permission, 404 → not_found incl. anti-enumeration, 409 → already_exists, 400/422 → invalid, 429/503 → retryable); this body is diagnostic, never the authority. It carries no internal topology (NFR-SEC-51, NFR-SEC-17): a stable reason_code and a bounded message, no stack trace, no backend prefix, no resource path. Same BoundedReason envelope as the exec channel (contracts/exec/exec-channel.schema.json#/$defs/BoundedReason) and the control-RPC endpoint (contracts/control/control-rpc.schema.json#/$defs/BoundedReason) — one envelope across all three OCU machine surfaces (NFR-SEC-51). The reason_code vocabulary below is the OCU default value set for the storage surface; it is an OCU default, not a sourced const set, so an engine may add a code as an additive change — but every code matches the frozen pattern and the envelope shape is frozen.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["x_deny_reason"],
+      "required": ["reason_code"],
       "properties": {
-        "x_deny_reason": {
+        "reason_code": {
           "type": "string",
-          "x-ocu-default-deny-vocab": "default, pending NFR-SEC-51 sign-off",
-          "enum": [
-            "scope_mismatch",
-            "intent_denied",
-            "not_downloadable",
-            "lease_expired",
-            "size_exceeded",
-            "not_found"
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "x-ocu-default-deny-vocab": "OCU default value set; additive, the pattern and envelope are frozen",
+          "examples": [
+            "SCOPE_MISMATCH",
+            "INTENT_DENIED",
+            "NOT_DOWNLOADABLE",
+            "LEASE_EXPIRED",
+            "SIZE_EXCEEDED",
+            "NOT_FOUND"
           ]
+        },
+        "message": {
+          "$comment": "x-ocu-default: maxLength 256 is the NFR-SEC-51 default, retunable per workload tier. Matches the exec-channel and control-RPC BoundedReason.",
+          "type": "string",
+          "maxLength": 256
         }
       }
     },
