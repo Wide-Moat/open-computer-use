@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-05-31
+last-reviewed: 2026-06-20
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -21,6 +21,7 @@ The wire contracts OCU defines or conforms to, one file per boundary. Read [`doc
 | `storage/file-ops.schema.json` | Object-store client RPC (in-guest mount client → object-store service) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/file-artifact-api.schema.json` | Web UI file/artifact data plane (data-plane client → Web UI) | JSON Schema 2020-12 | `json-schema` CI job |
 | `audit/audit-fanin.asyncapi.yaml` | Audit event fan-in (five source channels → audit → SIEM) | AsyncAPI 3.0 / OCSF | `asyncapi` CI job |
+| `admission/runtime-tokens.schema.json` | Admission tier vocabulary (shared profile/tier-token + pairing matrix, resolved independently in control plane and sandbox) | JSON Schema 2020-12 | `json-schema` CI job |
 
 The storage surface is three files: the guest mount config (`mount-config`), the mount-plane RPC (`file-ops`), and the Web UI HTTP API (`file-artifact-api`). The two callers stay distinct — `file-ops` is the in-guest mount client's RPC to the object-store service (the narrow object-store client speaks the storage protocol guest-out, holds no signing key, and forwards the weak session JWT it was provisioned; the egress edge validates that JWT and exchanges it at the issuer for the real filestore credential, which the object-store service translates each verb into a storage-engine request against, and the engine enforces the scope), `file-artifact-api` is the data-plane client's HTTP surface to the Web UI. Not-yet-built surfaces (operator REST, session-setup gRPC, transparency-log envelope, mock servers) are tracked in `08-contracts.md` §5.
 
