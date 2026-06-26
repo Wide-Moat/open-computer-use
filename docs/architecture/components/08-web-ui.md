@@ -9,7 +9,7 @@ applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: [contracts/storage/file-artifact-api.schema.json]
-adr: [0002, 0013, 0015, 0016, 0017, 0023]
+adr: [0002, 0013, 0015, 0016, 0017, 0023, 0025]
 ---
 
 The host-side file API and embeddable SPA an external data-plane client reaches to upload, preview, and download files; it calls the object-store service for every backend operation. Audience: engineers implementing or auditing the file data-plane surface.
@@ -31,7 +31,7 @@ The Web UI fronts one counterparty: the external data-plane client (E5). It does
 | internal | untrusted artifact body for validation and preview-render | Web UI → parser-sandbox | capability-free sub-boundary (below) |
 | outbound | OCSF File System Activity event per operation, durable-first (local commit before fan-out, fail-open producer) | Web UI → Audit pipeline (F10) | Published Language (OCSF) |
 
-The Web UI never reaches the storage engine; the object-store service is the one door to storage and speaks the backend leg ([ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md)). `F#` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4. The files surface is one entry in the descriptor-driven view list ([ADR-0002](../adr/0002-session-view-descriptor.md)); the deferred live-view surfaces ([#210](https://github.com/Wide-Moat/open-computer-use/issues/210)) sit outside this spec. The public north op-shape is the Files-API (`/v1/files`) with an opaque, scope-bound `file_id` ([ADR-0023](../adr/0023-files-api-north-contract.md)); the embed-token verify, cookie/CSRF/CSP response envelope, three-axis authorization axes, and size ceilings survive as the auth/transport wrapper, frozen in [`file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json), and per-operation message bodies are TBD there and not invented here.
+The Web UI never reaches the storage engine; the object-store service is the one door to storage and speaks the backend leg ([ADR-0015](../adr/0015-storage-decomposition-by-trust-plane.md)). `F#` flow labels are defined in [`05-c4-container.md`](../05-c4-container.md) §4. The files surface is one entry in the descriptor-driven view list ([ADR-0002](../adr/0002-session-view-descriptor.md)); the deferred live-view surfaces ([#210](https://github.com/Wide-Moat/open-computer-use/issues/210)) sit outside this spec. The public north op-shape is the Files-API (`/v1/files`) with an opaque, scope-bound `file_id` ([ADR-0023](../adr/0023-files-api-north-contract.md)); the embed-token verify, cookie/CSRF/CSP response envelope, three-axis authorization axes, and size ceilings survive as the auth/transport wrapper, frozen in [`file-artifact-api`](../../../contracts/storage/file-artifact-api.schema.json), and per-operation message bodies are TBD there and not invented here. The F9 host leg reaches the object-store service over its dedicated north listener — the five Files-API verbs against the durable handle-store, not the south mount RPC ([ADR-0025](../adr/0025-f9-internal-transport.md)).
 
 ### Parser-sandbox sub-boundary
 
