@@ -72,9 +72,20 @@ verification is never disabled).
 
 ## Bring-up
 
+The web UI BFF refuses to start without a real embed-verify and session secret
+(no default — a default-keyed deployment would accept forged embed tokens), so
+provide an env file first:
+
 ```
-docker compose -f deploy/fleet/docker-compose.fleet.yml up -d --build --wait
+cp deploy/fleet/.env.example deploy/fleet/.env
+# set OCU_EMBED_VERIFY_SECRET and OCU_SESSION_SECRET (openssl rand -hex 32 each)
+docker compose -f deploy/fleet/docker-compose.fleet.yml --env-file deploy/fleet/.env \
+  up -d --build --wait
 ```
+
+The object-store engine reaches MinIO over a dedicated `ocu-storage-backend`
+network, kept off the credential-bearing south plane. Without it the daemon's
+S3 versioning probe cannot dial `minio` and the process fail-closes at boot.
 
 The sandbox guest is not a long-lived service: control creates it per session
 through the Docker socket. The standalone sandbox smoke runs through `octl`
@@ -145,3 +156,35 @@ Sandbox leg: `octl create --runtime runc --image process_api:prod` →
 `make e2e-vm`). The createFile write verb on the north leg is `501` until #304
 freezes the upload body; the live read-plane (list, metadata, content, the
 keystone) is fully exercised.
+
+## Smoke-wave verdict
+
+Each component carries its own critical-aspect smokes, run firsthand against
+the real component (not the fleet stand-ins where those differ — see the live
+stack caveats below). Every smoke was proven non-vacuous by a planted mutation
+that drove it red before revert.
+
+| Component | Aspects proven (PASS) | Non-vacuity |
+|---|---|---|
+| filestore (04) | north/south router split (#10: north 404 / south 405); F9 503 fail-closed without scope header, 501 create-fenced (#304), 404 keystone byte-identical for foreign vs unknown fsid; handle-store durability across kill+restart | 2 planted mutations red the keystone + the create-fence tests |
+| rclone mount (04) | validate→strip→RFC8693→inject→route swap; weak-JWT matrix on the **live edge** (fsrw=200, no-token=401, forged=401, foreign-scope=403); single-hop proven by L3 route block (backend IPs unreachable from mount-facing); FUSE cap hardening | 3 planted mutations red the swap, the sig check, the cap posture |
+| control (02) | killswitch isolation, required-flag boot gate, ADR-0017 no-scope mint refusal, audit-error propagation on destroy-deny; live `ocu-controld` 0.0.0.0 bind fail-closes 401 on unattested caller; distroless image (no shell) | 4 planted mutations each red their aspect |
+| webui (08) | proxy runs on the Node runtime (no node:crypto-in-edge); F9 TLS trust via NODE_EXTRA_CA_CERTS; embed-verify boot gate refuses a short key (HTTP 500); live F9 round-trip list=200, keystone=404 | 2 planted mutations + a defanged short-key boot |
+| admin | every Constitution "never" (BFF→authority import, `.sock` leak, gate fail-open, JWT alg-pin drop, cookie `Secure`/`SameSite` drop, config fallback); build, typecheck, 40/40 vitest, Stryker 92.45% | 6 planted defects each red their guard |
+
+### Live stack caveats (honest)
+
+- **filestore** — the live fleet container now runs the F9 north plane (`:7080`)
+  and stays healthy; the S3 dial it crashed on at first bring-up is fixed (the
+  `ocu-storage-backend` network). The live F9 round-trip above (list=200,
+  keystone=404) is proven from inside the web UI container.
+- **control** — the live fleet `control-plane` container is the south-credential
+  harness stand-in (mint + JWKS only), not this repo's `ocu-controld`. The
+  control invariants are smoked against the real daemon directly; smoking the
+  stand-in would be a fake-green.
+- **admin** — not in the fleet compose and has no Dockerfile; its operator
+  read-surface (ADR-0022) is unbuilt, so it is correctly absent from the live
+  data path. Its guards are smoked in-repo.
+- **sandbox** — the live FUSE/runtime e2e needs `/dev/fuse` + runsc, which live
+  on Lima `ocu-linux`, not the Darwin Docker host the fleet runs on. The leg is
+  proven through `octl` in Lima (above), not the Darwin stack.

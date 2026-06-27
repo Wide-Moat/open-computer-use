@@ -31,6 +31,13 @@ networks:
     driver: bridge
   ocu-edge-backend:
     driver: bridge
+  ocu-storage-backend:
+    # The object-store engine's own backend (north F9 + MinIO). Kept distinct
+    # from ocu-edge-backend: F9 is the no-credential read plane and has no place
+    # on the credential-bearing south mount network. The north object-store
+    # reaches MinIO here without taking the `filestore` alias that the south
+    # upstream owns on ocu-edge-backend.
+    driver: bridge
   ocu-state:
     driver: bridge
 
@@ -94,6 +101,7 @@ services:
       - minio-data:/data
     networks:
       - ocu-edge-backend
+      - ocu-storage-backend
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -117,6 +125,8 @@ services:
           "${OCU_S3_SECRET_ACCESS_KEY:-ocu-fleet-secret-key}"
         mc mb -p fleet/${OCU_S3_BUCKET:-ocu-fleet} || true
         echo "bucket ${OCU_S3_BUCKET:-ocu-fleet} ready"
+    # minio-init only needs to reach MinIO on whichever net; the bucket it seeds
+    # is what the north F9 plane reads through ocu-storage-backend.
 
   # -------------------------------------------------------------------------
   # object-store service — two faces, two planes, one identity (ADR-0025,
@@ -191,13 +201,18 @@ services:
       - filestore-handles:/var/lib/ocu-filestore/engine-root
       - filestore-audit:/var/log/ocu-filestore
     networks:
-      # North only: the F9 no-credential Files-API the web UI reaches. The
-      # object-store service is NOT on ocu-edge-backend — the south mount leg is
-      # served by the self-contained harness south-filestore (which owns the
-      # `filestore` alias on the backend net). Putting the north object-store on
+      # North (read plane) only: the F9 no-credential Files-API the web UI
+      # reaches. The object-store service is NOT on ocu-edge-backend — the south
+      # mount leg is served by the self-contained harness south-filestore (which
+      # owns the `filestore` alias there). Putting the north object-store on
       # edge-backend with that alias would collide and shadow the south upstream.
       ocu-north:
         aliases: [filestore, ocu-filestore]
+      # The engine's own S3 backend. Distinct from the south credential plane;
+      # no alias here, so nothing the south leg resolves is shadowed. Without
+      # this the daemon's S3 versioning probe cannot dial `minio` and the
+      # process fail-closes at boot (the F9 north plane is S3-backed).
+      ocu-storage-backend: {}
     user: "65532:65532"
     read_only: true
     cap_drop: [ALL]
