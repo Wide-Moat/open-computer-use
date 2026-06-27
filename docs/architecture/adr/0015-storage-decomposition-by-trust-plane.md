@@ -79,5 +79,5 @@ Re-anchors P4 by counterparty: P4-mount fronts the untrusted guest, P4-artifact 
 
 ## Open questions
 
-1. Parser-sandbox substrate (process boundary vs in-language capability confinement) — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).
+1. ~~Parser-sandbox substrate (process boundary vs in-language capability confinement) — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).~~ Resolved by [ADR-0026](0026-parser-sandbox-substrate.md): substrate is chosen per render location — ingest in-language, body render browser null-origin iframe, server heavy-parser process-boundary deferred behind a trigger.
 2. Whether `memory_store_id` is a recognized v1 mount-plane scope class or scoped out with a tracking issue — [#188](https://github.com/Wide-Moat/open-computer-use/issues/188).

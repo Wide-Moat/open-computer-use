@@ -158,7 +158,7 @@ This register groups the cross-cutting PARTIAL §3 rows by residual theme; per-e
 | Downloadable axis (read vs remove) | NFR-SEC-73 | P4-mount-I2, P4-artifact-I3, P4-artifact-E3, P6-I1 | — |
 | Web UI file-activity attribution | NFR-SEC-79 + 09 | P4-artifact-R2 | [#181](https://github.com/Wide-Moat/open-computer-use/issues/181) |
 | Embeddable-UI authentication (Web UI) | NFR-SEC-82 + 83 + 84 | P4-artifact-S3, P4-artifact-T3 | [#217](https://github.com/Wide-Moat/open-computer-use/issues/217) |
-| Preview-render parser isolation (Web UI) | NFR-SEC-81 + 83 | P4-artifact-I3, P4-artifact-E3 | [#218](https://github.com/Wide-Moat/open-computer-use/issues/218) |
+| Preview-render parser isolation (Web UI) | NFR-SEC-81 + 83 + 86 | P4-artifact-I3, P4-artifact-E3 | [ADR-0026](adr/0026-parser-sandbox-substrate.md) (resolves [#218](https://github.com/Wide-Moat/open-computer-use/issues/218)) |
 | Mount remanence (Session sandbox teardown) | NFR-SEC-54 + 13 + 64 | P4-mount-I2 | [#188](https://github.com/Wide-Moat/open-computer-use/issues/188) |
 | Spawn-time secret leak | NFR-SEC-75 | P5-I4 | — |
 | Cross-tenant side-channel (accept-with-tier) | NFR-SEC-58 | P5-I1 | [#183](https://github.com/Wide-Moat/open-computer-use/issues/183) |

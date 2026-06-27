@@ -98,7 +98,7 @@ Scaling: per validated caller, not per sandbox session. Capacity is bounded by t
 
 ## Open questions
 
-1. Parser-sandbox substrate for untrusted preview and archive bodies — process boundary versus in-language capability confinement — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).
+1. ~~Parser-sandbox substrate for untrusted preview and archive bodies — process boundary versus in-language capability confinement — [#218](https://github.com/Wide-Moat/open-computer-use/issues/218).~~ Resolved by [ADR-0026](../adr/0026-parser-sandbox-substrate.md): ingest stays in-language capability-free; body render runs in a browser null-origin sandboxed iframe under a body content-CSP; a server-side heavy parser flips to a process boundary deferred behind an adoption trigger.
 2. Embed-token replay-binding (`jti`/nonce single-use or token↔channel binding) within the `exp` window — [#217](https://github.com/Wide-Moat/open-computer-use/issues/217).
 3. Per-action and per-object authorization granularity beyond resource class — [#187](https://github.com/Wide-Moat/open-computer-use/issues/187).
 4. Binding the OCSF `actor` to the embed-asserted principal on the Web UI event — [#181](https://github.com/Wide-Moat/open-computer-use/issues/181).
