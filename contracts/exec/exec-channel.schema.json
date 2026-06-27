@@ -29,6 +29,24 @@
       "minimum": 0,
       "maximum": 255
     },
+    "TraceEvent": {
+      "$comment": "A trace event, Chrome-Trace-Event-shaped. The body is pinned to exactly these five fields and closed (additionalProperties:false): name and ph are required; cat, ts, and dur_us are optional. ONE shared definition referenced by both the server and client TraceEvent tags, so the two directions can never drift. The five field names (name/cat/ph/ts/dur_us) and the Chrome-trace shape are an evidence-led contract choice, pinned here as the trace contract. ph is a single ASCII phase letter. ts is microseconds since an unspecified epoch; like memory_limit_bytes the integer carries a u64 wire-type domain, so no JSON-number maximum is expressed (the ceiling is a wire-type bound, not a numeric maximum a validator would round).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "cat": { "type": "string", "maxLength": 256 },
+        "ph": { "type": "string", "pattern": "^[A-Za-z]$" },
+        "ts": {
+          "$comment": "microseconds since an unspecified epoch; the u64 ceiling is a wire-type bound, NOT a JSON-number maximum (a validator would round 2^64-1 out of IEEE-754 safe-integer range).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "dur_us": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["name", "ph"]
+    },
+
     "BoundedReason": {
       "$comment": "NFR-SEC-51: bounded error verbosity. Caller gets a stable reason code; message must not carry stack traces or internal topology. Length capped.",
       "type": "object",
@@ -58,7 +76,7 @@
           "items": { "type": "string", "maxLength": 4096 },
           "maxItems": 1024
         },
-        "env_vars": {
+        "env": {
           "type": "object",
           "additionalProperties": { "type": "string", "maxLength": 32768 },
           "maxProperties": 1024
@@ -74,7 +92,7 @@
         "gid": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "allow_process_id_reuse": { "type": "boolean", "default": false },
         "reattachable": { "type": "boolean", "default": false },
-        "boundPid": {
+        "bound_pid": {
           "type": ["integer", "null"],
           "minimum": 0,
           "maximum": 4294967295
@@ -84,7 +102,7 @@
     },
 
     "ProcessConnection": {
-      "$comment": "Handshake envelope (client message 1 or 2). create_req present => spawn; absent => reattach. expected_container_name and the out-of-band JWT sub both carry NFR-SEC-43 container binding. want_trace_events and accept_compression are the client side of capability negotiation: the client advertises them in the handshake; the server answers with the ConnectionCapabilities first frame.",
+      "$comment": "Handshake envelope (client message 1 or 2). create_req present => spawn; absent => reattach. expected_container_name and the out-of-band JWT sub both carry NFR-SEC-43 container binding. want_trace_events and accept_compression are the client side of capability negotiation: the client advertises them in the handshake; the server answers with the ConnectionCapabilities first frame. The compression flag's pinned algorithm (one self-contained zstd frame per binary stdio frame) is described on accept_compression.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -94,24 +112,24 @@
         "want_trace_events": { "type": "boolean" },
         "accept_compression": {
           "type": "boolean",
-          "x-ocu-tbd": "Client advertises it accepts frame compression. The algorithm and the compressed-frame layout are not pinned by any source; carried as a negotiation flag, not a frozen algorithm choice (x-ocu-open-questions: compression-algorithm)."
+          "$comment": "Client advertises it accepts frame compression. The algorithm is pinned: each compressed binary frame is ONE self-contained zstd frame (RFC 8878) with a window no larger than 2^17 bytes; only the raw stdio binary frames are compressed (the tagged-JSON text control frames are never compressed), gated on the negotiated supports_compression. The flag itself stays type:boolean — pinning the algorithm changes no wire shape."
         }
       },
       "required": ["process_id"]
     },
 
     "ConnectionCapabilities": {
-      "$comment": "First server frame after the handshake. Per-feature negotiation, not a version integer: each flag toggles one capability so the protocol evolves without a global version bump. The V1/V2 split is expressed through the message tags (ProcessCreated vs ProcessCreatedV2, AttachedToProcess vs AttachedToProcessV2), not a version field in the handshake. supports_compression advertises that frames may be compressed; the algorithm and compressed-frame layout are not pinned by any source, so the flag is carried but the wire format is left to the sandbox.",
+      "$comment": "First server frame after the handshake. Per-feature negotiation, not a version integer: each flag toggles one capability so the protocol evolves without a global version bump. The V1/V2 split is expressed through the message tags (ProcessCreated vs ProcessCreatedV2, AttachedToProcess vs AttachedToProcessV2), not a version field in the handshake. supports_compression advertises that frames may be compressed; the algorithm is pinned (one self-contained zstd frame per binary stdio frame, RFC 8878), described on supports_compression.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "supports_trace": { "type": "boolean" },
+        "supports_traces": { "type": "boolean" },
         "supports_compression": {
           "type": "boolean",
-          "x-ocu-tbd": "Server advertises frame compression support. The algorithm and frame layout are unsourced; carried as a negotiation flag, not a frozen algorithm choice (x-ocu-open-questions: compression-algorithm)."
+          "$comment": "Server advertises frame compression support. The algorithm is pinned: each compressed binary frame is ONE self-contained zstd frame (RFC 8878) with a window no larger than 2^17 bytes; only the raw stdio binary frames are compressed (the tagged-JSON text control frames are never compressed), gated on this negotiated flag. The flag itself stays type:boolean — pinning the algorithm changes no wire shape."
         }
       },
-      "required": ["supports_trace", "supports_compression"]
+      "required": ["supports_traces", "supports_compression"]
     },
 
     "ServerMessage": {
@@ -124,13 +142,15 @@
 
         "ProcessCreated": { "type": "null" },
         "ProcessCreatedV2": {
-          "$comment": "V2 spawn-success variant. The tag exists; no source pins its payload body, so it is left as an open object (TBD: field set, see x-ocu-open-questions).",
-          "type": "object"
+          "$comment": "V2 spawn-success variant. The body is deliberately empty until the V2 status carrier is pinned: additionalProperties:false with no properties validates exactly {} and rejects any keyed object. Both V2 tags are kept (a symmetric wire pair). Pinning the status set later is a forward-compatible revision that ADDS properties, not a re-opening (see x-ocu-open-questions).",
+          "type": "object",
+          "additionalProperties": false
         },
         "AttachedToProcess": { "type": "null" },
         "AttachedToProcessV2": {
-          "$comment": "V2 reattach-success variant. The tag exists; its payload body is unpinned by any source, same TBD as ProcessCreatedV2.",
-          "type": "object"
+          "$comment": "V2 reattach-success variant. The body is deliberately empty until the V2 status carrier is pinned: additionalProperties:false with no properties validates exactly {} and rejects any keyed object — same deliberately-empty closure as ProcessCreatedV2.",
+          "type": "object",
+          "additionalProperties": false
         },
         "ProcessNotRunning": { "type": "null" },
         "ProcessAlreadyAttached": {
@@ -168,8 +188,8 @@
         "InvalidSignal": { "$ref": "#/$defs/BoundedReason" },
 
         "TraceEvent": {
-          "$comment": "Server-side trace event; emitted only when supports_trace was negotiated. No source pins a field list, so the body is an open object (TBD: field set, see x-ocu-open-questions).",
-          "type": "object"
+          "$comment": "Server-side trace event; emitted only when supports_traces was negotiated. The body is the pinned, closed shared TraceEvent shape — the SAME $defs/TraceEvent the client tag references, so the two directions never drift.",
+          "$ref": "#/$defs/TraceEvent"
         },
 
         "ProcessExited": {
@@ -218,20 +238,18 @@
         "KeepAlive": { "type": "null" },
         "Closed": { "type": "null" },
         "TraceEvent": {
-          "$comment": "Client-side trace event; valid only when supports_trace was negotiated. Body unspecified by any source, so left as an open object (TBD: field set, see x-ocu-open-questions).",
-          "type": "object"
+          "$comment": "Client-side trace event; valid only when supports_traces was negotiated. The body is the pinned, closed shared TraceEvent shape — the SAME $defs/TraceEvent the server tag references, so the two directions never drift.",
+          "$ref": "#/$defs/TraceEvent"
         }
       }
     }
   },
 
   "x-ocu-open-questions": [
-    "ProcessCreatedV2 / AttachedToProcessV2 payload body: the V2 success tags exist but no source pins their frame body. A server-tracked status set (memory_usage_bytes, memory_cgroup_path, process_group_pid, internal_state with states CgroupCreated/Ready) is the expected payload, but its carrier frame is unconfirmed. Pin the V2 payload (and whether it carries the status set) before hardening either tag's body beyond an open object.",
-    "TraceEvent field set: the tag is negotiated via supports_trace but no source pins its fields; define a trace contract before constraining the body.",
-    "compression-algorithm: accept_compression / supports_compression negotiate frame compression, but no source pins the algorithm or the compressed-frame layout; pick and pin the algorithm before constraining the wire format."
+    "ProcessCreatedV2 / AttachedToProcessV2 payload body: both V2 success tags are now closed-empty (additionalProperties:false, no properties — they validate exactly {}), which is the only V2 body emitted today. The expected future payload is a server-tracked status set (memory_usage_bytes, memory_cgroup_path, process_group_pid, internal_state with states CgroupCreated/Ready), but its carrier frame is unconfirmed. Pinning that status set is a FUTURE forward-compatible revision that ADDS properties to these empty bodies — not a re-opening; the tags stay closed until that revision lands."
   ],
 
-  "$comment-anyOf": "A frame is the phase-1 handshake (ProcessConnection, identified by its required process_id) or a post-handshake control frame. Frame direction — server-sent vs client-sent — is a transport property (which peer wrote it), not an envelope distinction, so the same tag may appear in both directions (e.g. TraceEvent flows both ways under a negotiated supports_trace). anyOf, not oneOf: a TraceEvent frame is a valid control frame in either direction, and the envelope does not assert mutual exclusivity the wire does not have.",
+  "$comment-anyOf": "A frame is the phase-1 handshake (ProcessConnection, identified by its required process_id) or a post-handshake control frame. Frame direction — server-sent vs client-sent — is a transport property (which peer wrote it), not an envelope distinction, so the same tag may appear in both directions (e.g. TraceEvent flows both ways under a negotiated supports_traces). anyOf, not oneOf: a TraceEvent frame is a valid control frame in either direction, and the envelope does not assert mutual exclusivity the wire does not have.",
   "anyOf": [
     { "$ref": "#/$defs/ProcessConnection" },
     { "$ref": "#/$defs/ServerMessage" },
