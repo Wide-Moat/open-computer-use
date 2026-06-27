@@ -45,6 +45,7 @@ volumes:
   minio-data:
   filestore-handles:
   filestore-audit:
+  webui-audit:
   control-audit:
   control-runtime:
   tls-certs:
@@ -127,6 +128,22 @@ services:
         echo "bucket ${OCU_S3_BUCKET:-ocu-fleet} ready"
     # minio-init only needs to reach MinIO on whichever net; the bucket it seeds
     # is what the north F9 plane reads through ocu-storage-backend.
+
+  # -------------------------------------------------------------------------
+  # webui-audit-init — chowns the audit-journal volume to the BFF's uid (node,
+  # 1000) before the web UI boots. The named volume is root-owned by default;
+  # the web UI runs non-root under a read-only rootfs, so without this its
+  # durable audit sink can't append and every file-op fail-closes. A production
+  # image would pre-own the dir at build; this one-shot keeps the fleet's webui
+  # image unmodified. One-shot; the web UI waits on it.
+  # -------------------------------------------------------------------------
+  webui-audit-init:
+    image: alpine:latest
+    volumes:
+      - webui-audit:/var/audit
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown 1000:1000 /var/audit
 
   # -------------------------------------------------------------------------
   # object-store service — two faces, two planes, one identity (ADR-0025,
@@ -239,6 +256,8 @@ services:
     depends_on:
       cert-init:
         condition: service_completed_successfully
+      webui-audit-init:
+        condition: service_completed_successfully
       filestore:
         condition: service_healthy
     environment:
@@ -251,8 +270,16 @@ services:
       OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
       OCU_SESSION_SECRET: ${OCU_SESSION_SECRET:?set a >=32-byte session secret}
       OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-}
+      # The append-only OCSF audit journal. Deny-by-default: the BFF hard-fails
+      # a file-op at request time if this path is unset (NFR-SEC-79 — no file-op
+      # serves 2xx without a committed local durable record). The local commit
+      # is fail-closed; SIEM fan-out (when wired) is fail-open.
+      OCU_AUDIT_LOG_PATH: /var/audit/ocu-webui.jsonl
     volumes:
       - tls-certs:/etc/ocu:ro
+      # Writable journal dir under the read-only rootfs — the durable audit sink
+      # appends + fsyncs here before each file-op.
+      - webui-audit:/var/audit
     ports:
       - "127.0.0.1:3000:3000"
     networks:
