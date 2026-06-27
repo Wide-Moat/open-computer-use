@@ -45,7 +45,7 @@ We will authenticate the minimal-shelf MCP caller with a per-caller static API k
 - The MCP wire contract ([`ocu-constraints.schema.json`](../../../contracts/mcp/2025-06-18/ocu-constraints.schema.json)) gains an `x-ocu-authz` mode (`static-key` default | `oauth2-rs` full shelf); the Origin-validation and no-passthrough rules stay unconditional, the RFC 8707/9728 relying-party rules become conditional on the OAuth mode.
 - [02-trust-boundaries.md](../02-trust-boundaries.md) §8 adds the inbound-caller credential class to the token taxonomy (which today lists only OCU-minted classes); the [glossary](../glossary.md) gains "MCP API key".
 - The `occ mcp-key` verb is a new Control operator surface ([component-02](../components/02-control-operator-api.md)); the boot-set delivery is a new Control→gateway config contract.
-- NFR-SEC-09 is kept, not amended: a per-caller, hashed-at-rest, revocable key is a managed credential, not an anonymous or shared path. The new floor lands as NFR-SEC-86 (entropy ≥ 256 bits, salted-hash-at-rest, revoke ≤ 5 min). The threat-model P1-S1 mitigation names the `sk-` key as the minimal-shelf form; no new threat row.
+- NFR-SEC-09 is kept, not amended: a per-caller, hashed-at-rest, revocable key is a managed credential, not an anonymous or shared path. The new floor lands as NFR-SEC-87 (entropy ≥ 256 bits, salted-hash-at-rest, revoke ≤ 5 min). The threat-model P1-S1 mitigation names the `sk-` key as the minimal-shelf form; no new threat row.
 - Residual: a leaked key grants the caller's reach until revoked — bounded by per-caller scope, revocation, and the minimal-shelf single-tenant posture.
 
 ## Alternatives considered

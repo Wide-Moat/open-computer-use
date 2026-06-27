@@ -3,13 +3,13 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-03
+last-reviewed: 2026-06-27
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
 contract: contracts/mcp/2025-06-18/ocu-constraints.schema.json
-adr: []
+adr: [0027]
 ---
 
 The agent tool-call ingress: it authenticates the MCP caller, validates the tool-call, and routes a session request to the control plane. Audience: engineers and security reviewers implementing or auditing the inbound MCP edge.
@@ -43,7 +43,7 @@ Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns th
 Each holds independent of the caller and is falsifiable by the named check.
 
 - Every inbound tool-call is validated against the MCP base schema then the OCU profile before any forward, and an unknown field or out-of-bound payload is rejected pre-buffer with a structured deny, never partially acted on (schema-validation + property-test, NFR-SEC-51, NFR-SEC-46).
-- The bearer must name this MCP server in its audience claim or the request is refused with the relying-party challenge; identity is never read from the request body (schema-validation + unit-test, NFR-SEC-09).
+- The caller bearer must resolve to a non-expired, non-revoked record in this gateway's boot-loaded key set (minimal shelf) or carry an `aud` claim naming this server, verified against the customer IdP (full shelf), or the request is refused; identity is never read from the request body ([ADR-0027](../adr/0027-mcp-caller-static-api-key-auth.md); schema-validation + unit-test, NFR-SEC-09).
 - The caller bearer never appears on the forward leg, in a forwarded argument, or in any path reaching the sandbox; the forward carries only the gateway's own service identity (code-path audit + integration-test, NFR-SEC-09, NFR-SEC-26).
 - No gateway code path resolves to a lifecycle, denylist, or kill-switch route, and no rendered deploy manifest grants the gateway a network route to the operator ingress on either shelf (IaC-policy assertion, NFR-SEC-52).
 - Outbound errors and discovery responses are size-bounded and carry a stable reason class plus a correlation id only — never a session id, `container_name`, internal host/route, or stack detail (schema-validation + property-test, NFR-SEC-51).
@@ -78,7 +78,7 @@ Scaling axis: a single instance per deployment, not per session; capacity is bou
 
 Upgrade/rotation: the gateway carries no semver. Its revision is the date string negotiated on `initialize`, and a peer that cannot negotiate the revision is the breaking signal, not an HTTP deprecation header (NFR-IC-04). The service-identity signing key rotates on the inter-component identity cadence ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8).
 
-Shelf delta ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf runs the gateway as a single co-located process whose service identity is a host-local signing key and whose caller authN is a host-rooted local credential; the full shelf schedules a single instance whose service identity is a customer-PKI workload identity and whose caller authN is the customer-IdP-asserted relying-party flow (NFR-COMP-29). The invariants above are boundary properties and hold on both shelves; only the identity substrate and listener scheduling change.
+Shelf delta ([`05-c4-container.md`](../05-c4-container.md) §5): the minimal shelf runs the gateway as a single co-located process whose service identity is a host-local signing key and whose caller authN is a per-caller static `sk-ocu-` API key, Control-minted, salted-hash-at-rest, resolved in-process against a boot-loaded key set ([ADR-0027](../adr/0027-mcp-caller-static-api-key-auth.md)); the full shelf schedules a single instance whose service identity is a customer-PKI workload identity and whose caller authN is the customer-IdP-asserted relying-party flow (NFR-COMP-29). The invariants above are boundary properties and hold on both shelves; only the identity substrate and listener scheduling change.
 
 ## Open questions
 

@@ -76,6 +76,12 @@ The weak, edge-only session assertion the [in-guest mount client](#in-guest-moun
 
 Used in: [`05-c4-container.md`](./05-c4-container.md) §3, [`06-threat-model.md`](./06-threat-model.md) §3, [`08-contracts.md`](./08-contracts.md) §1, [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-60.
 
+## MCP API key
+
+The minimal-shelf credential an MCP caller presents to the MCP gateway ([`components/01-mcp-gateway.md`](./components/01-mcp-gateway.md)) on the inbound tool-call leg: a per-caller, opaque, `sk-ocu-`-prefixed static key with ≥256-bit entropy. Minted by the Control plane via `occ mcp-key`, stored only as a salted hash, and resolved in-process by the gateway against a boot-loaded key set — its tenant and deployment binding come from the resolved record, not from a claim in the key. Revocable within ≤5 min via a Control boot-set re-push; never forwarded onto the F5 control leg or into the sandbox. The full shelf replaces it with the customer-IdP relying-party flow ([ADR-0027](./adr/0027-mcp-caller-static-api-key-auth.md)). Distinct from the [Storage-JWT](#storage-jwt) (an OCU-minted scoped session assertion, not a caller credential).
+
+Used in: [`components/01-mcp-gateway.md`](./components/01-mcp-gateway.md), [`manifesto/02-nfrs.md`](./manifesto/02-nfrs.md) NFR-SEC-87.
+
 ## Data-leg
 
 The session's storage data path: the [in-guest mount client](#in-guest-mount-client) dials out to the [Object-store service](#object-store-service) at a network `service_url` (REST-JSON over HTTP/2) over the single [Egress trust-edge](#egress-trust-edge) hop, which terminates TLS, validates the [Storage-JWT](#storage-jwt), and exchanges it at the [Credential issuer](#credential-issuer) for the real filestore credential it injects toward the [Object-store service](#object-store-service). Guest-out, not host-dialled, and tier-universal — every runtime (runc / gVisor / microVM) has a guest network stack. Distinct from the host→guest provisioning push that delivers the mount config and the Storage-JWT before boot ([ADR-0014](./adr/0014-storage-transport-tier-universal-network-leg.md)). A local-volume [storage engine](#storage-engine) ([ADR-0010](./adr/0010-storage-backend-pluggable-adapter.md)) opens no network leg; the leg, when present, always transits the inspection hop.
