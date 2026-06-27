@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
-last-reviewed: 2026-06-01
+status: accepted
+last-reviewed: 2026-06-27
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -19,7 +19,7 @@ Fixes how a human operator and an automated SOAR caller authenticate to the Cont
 
 ## Status
 
-`proposed`
+`accepted`
 
 ## Context
 
