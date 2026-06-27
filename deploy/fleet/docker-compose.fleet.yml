@@ -31,6 +31,8 @@ networks:
     driver: bridge
   ocu-edge-backend:
     driver: bridge
+  ocu-state:
+    driver: bridge
 
 volumes:
   minio-data:
@@ -41,6 +43,7 @@ volumes:
   tls-certs:
   south-shared:
   south-filestore-workspace:
+  control-db-data:
 
 services:
   # -------------------------------------------------------------------------
@@ -247,12 +250,36 @@ services:
       - no-new-privileges:true
 
   # -------------------------------------------------------------------------
+  # Postgres — the durable state.Store backing the control plane's session
+  # reservation registry, deny posture, and quota counters. control applies the
+  # embedded schema idempotently on boot (postgres.Open), so no init job is
+  # needed. Replaces the in-memory minimal-shelf store.
+  # -------------------------------------------------------------------------
+  control-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${OCU_PG_USER:-ocu}
+      POSTGRES_PASSWORD: ${OCU_PG_PASSWORD:-ocu-fleet-pg}
+      POSTGRES_DB: ${OCU_PG_DB:-ocu_control}
+    volumes:
+      - control-db-data:/var/lib/postgresql/data
+    networks:
+      - ocu-state
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OCU_PG_USER:-ocu} -d ${OCU_PG_DB:-ocu_control}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # -------------------------------------------------------------------------
   # control plane — one per deployment. Gateway ingress (service-identity
   # session create) on 0.0.0.0:9466 for the cross-container MCP caller; the
   # operator ingress stays a host-owned UDS (kill-switch / mint never reachable
   # from the gateway — NFR-SEC-52, structural). Creates the sandbox guest per
   # session through the Docker socket (shared dockerd). A create with no storage
-  # scope skips mint+render and boots a compute-only guest (ADR-0017).
+  # scope skips mint+render and boots a compute-only guest (ADR-0017). Session
+  # state is durable in Postgres (-state-dsn) — it survives a daemon restart.
   # -------------------------------------------------------------------------
   control:
     build:
@@ -274,6 +301,11 @@ services:
       - /run/secrets/storage-jwt-signing.key
       - -audit-sink
       - /var/log/ocu-control/audit.ocsf.jsonl
+      - -state-dsn
+      - postgres://${OCU_PG_USER:-ocu}:${OCU_PG_PASSWORD:-ocu-fleet-pg}@control-db:5432/${OCU_PG_DB:-ocu_control}?sslmode=disable
+    depends_on:
+      control-db:
+        condition: service_healthy
     volumes:
       - control-audit:/var/log/ocu-control
       - control-runtime:/run/ocu-control
@@ -283,7 +315,13 @@ services:
       - "127.0.0.1:9466:9466"
     networks:
       - ocu-frontend
+      - ocu-state
     user: "65532:65532"
+    # The Docker socket is root:root (gid 0) under Docker Desktop; control runs
+    # as uid 65532 with a read-only rootfs, so it joins gid 0 to read the socket
+    # for the per-session container lifecycle. A hardened deployment replaces
+    # this with a brokered / rootless socket (see the docker.sock mount note).
+    group_add: ["0"]
     read_only: true
     cap_drop: [ALL]
     security_opt:

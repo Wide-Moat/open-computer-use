@@ -79,3 +79,69 @@ docker compose -f deploy/fleet/docker-compose.fleet.yml up -d --build --wait
 The sandbox guest is not a long-lived service: control creates it per session
 through the Docker socket. The standalone sandbox smoke runs through `octl`
 (see `ocu-sandbox`).
+
+## Durable state
+
+The control plane's session state — the reservation registry, the deny posture,
+and the quota counters — is durable in Postgres (`control-db`), not in-memory.
+Control opens it via `-state-dsn` and applies its embedded schema idempotently
+on boot, so a fresh deployment provisions the three lock-domain tables and an
+existing one is a no-op. Session reservations survive a control restart.
+
+Verify the schema provisioned + state survives a restart:
+
+```
+docker compose -f deploy/fleet/docker-compose.fleet.yml exec control-db \
+  psql -U ocu -d ocu_control -c '\dt'
+# -> sessions, denylist, quota_counters
+
+docker compose -f deploy/fleet/docker-compose.fleet.yml exec control-db \
+  psql -U ocu -d ocu_control -c \
+  "INSERT INTO denylist (scope,key,reason,since) VALUES (0,'probe','x',now());"
+docker compose -f deploy/fleet/docker-compose.fleet.yml restart control
+docker compose -f deploy/fleet/docker-compose.fleet.yml exec control-db \
+  psql -U ocu -d ocu_control -c "SELECT key FROM denylist WHERE key='probe';"
+# -> the row survives the daemon restart
+```
+
+## Seam smokes
+
+Each data seam has a smoke that reds on a real break — run them after bring-up.
+
+North F9 (web UI → object-store north), from the `ocu-north` network:
+
+```
+# keystone: an unknown or cross-scope file_id is 404 not_found, never 403
+docker run --rm --network ocu-fleet_ocu-north curlimages/curl -sk \
+  -H 'X-OCU-Filesystem-Id: fs-fleet' \
+  -o /dev/null -w '%{http_code}\n' https://filestore:7080/v1/files/unknown
+# -> 404 (a 403 here would be an enumeration leak)
+
+# the BFF trusts the object-store leaf via NODE_EXTRA_CA_CERTS, not by disabling
+# verification — proven from inside the web UI container
+docker compose -f deploy/fleet/docker-compose.fleet.yml exec webui \
+  node -e 'const https=require("https"),fs=require("fs");
+  https.get({host:"filestore",port:7080,path:"/v1/files?limit=1",
+  headers:{"X-OCU-Filesystem-Id":"fs-fleet"},ca:fs.readFileSync(process.env.NODE_EXTRA_CA_CERTS)},
+  r=>console.log(r.statusCode))'
+# -> 200
+```
+
+South mount (guest → edge → exchange → south object-store), from
+`ocu-mount-facing`, using the weak JWT the harness renders into the shared
+volume:
+
+```
+# valid weak JWT completes the validate->strip->exchange->inject->route chain
+curl -sk --cacert <ca.pem from south-shared> \
+  -H "Authorization: Bearer <weak JWT from guest-config.json>" \
+  -X POST -d '{"filesystem_id":"fsrw","path":"/"}' \
+  https://edge:8450/v1/filestore/fs/listDirectory
+# -> 200 ; the same request with no token -> 401
+```
+
+Sandbox leg: `octl create --runtime runc --image process_api:prod` →
+`octl exec` → `octl destroy` (zero-leak), run in Lima (`ocu-sandbox`,
+`make e2e-vm`). The createFile write verb on the north leg is `501` until #304
+freezes the upload body; the live read-plane (list, metadata, content, the
+keystone) is fully exercised.

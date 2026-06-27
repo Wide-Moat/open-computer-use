@@ -143,3 +143,4 @@ docs/future-architecture/research/21-*.md
 docs/future-architecture/research/22-*.md
 docs/future-architecture/research/23-*.md
 docs/future-architecture/research/proof-anthropic-*.md
+deploy/fleet/secrets/
