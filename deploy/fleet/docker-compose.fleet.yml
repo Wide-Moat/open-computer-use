@@ -1,0 +1,476 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Fleet assembly for the next/v1 architecture. Wires the web UI, object-store
+# service (north + south), real S3 (MinIO), control plane, and the south mount
+# edge into one deployment. See README.md for fleet-vs-PoC, the network map, and
+# the Phase-E/Phase-F split on the south leg.
+#
+# Bring-up:
+#   docker compose -f deploy/fleet/docker-compose.fleet.yml up -d --build --wait
+#
+# The sandbox guest is not a service here — control creates it per session
+# through the Docker socket. The standalone sandbox smoke runs through octl.
+#
+# Component images are built from sibling repos checked out beside this one:
+#   ../ocu-webui, ../ocu-filestore, ../ocu-control, ../ocu-rclone-filestore.
+# Adjust the build contexts if your checkout layout differs.
+
+name: ocu-fleet
+
+# ---------------------------------------------------------------------------
+# Networks. The guest sits on ocu-mount-facing ONLY; it has no route to the
+# object-store south face, control, the exchange peer, or MinIO. Single hop.
+# ---------------------------------------------------------------------------
+networks:
+  ocu-frontend:
+    driver: bridge
+  ocu-north:
+    driver: bridge
+  ocu-mount-facing:
+    driver: bridge
+  ocu-edge-backend:
+    driver: bridge
+
+volumes:
+  minio-data:
+  filestore-handles:
+  filestore-audit:
+  control-audit:
+  control-runtime:
+  tls-certs:
+  south-shared:
+  south-filestore-workspace:
+
+services:
+  # -------------------------------------------------------------------------
+  # cert-init — mints one leaf whose SAN covers `filestore` and `ocu-filestore`
+  # (the two names the object-store service is reachable as), shared by its
+  # north (:7080) and south (:8444) listeners, plus the CA the web UI trusts
+  # via NODE_EXTRA_CA_CERTS. One-shot; the stack waits on it.
+  # -------------------------------------------------------------------------
+  cert-init:
+    image: alpine/openssl:latest
+    volumes:
+      - tls-certs:/certs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cd /certs
+        if [ -f tls-cert.pem ] && [ -f ca.pem ]; then echo "certs present"; exit 0; fi
+        # CA
+        openssl genpkey -algorithm ED25519 -out ca-key.pem
+        openssl req -x509 -new -key ca-key.pem -days 3650 -out ca.pem \
+          -subj "/CN=ocu-fleet-ca"
+        # leaf with SANs covering both reachable names
+        openssl genpkey -algorithm ED25519 -out tls-key.pem
+        openssl req -new -key tls-key.pem -out leaf.csr -subj "/CN=filestore"
+        printf 'subjectAltName=DNS:filestore,DNS:ocu-filestore,DNS:localhost\n' > san.ext
+        openssl x509 -req -in leaf.csr -CA ca.pem -CAkey ca-key.pem \
+          -CAcreateserial -days 825 -out tls-cert.pem -extfile san.ext
+        # The object-store service reads the leaf key as uid 65532 under a
+        # read-only rootfs, so the dev leaf key is world-readable. These are
+        # throwaway self-signed certs for the local fleet only; production
+        # supplies real certs through proper key-management with tight modes.
+        chmod 0644 tls-cert.pem ca.pem tls-key.pem
+        chown 65532:65532 tls-key.pem tls-cert.pem 2>/dev/null || true
+        echo "minted leaf (SAN filestore,ocu-filestore,localhost) + CA"
+
+  # -------------------------------------------------------------------------
+  # MinIO — the real S3 backend the object-store service writes customer bytes
+  # to. No mock. Lives on the credential-bearing backend plane only.
+  # -------------------------------------------------------------------------
+  minio:
+    image: quay.io/minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${OCU_S3_ACCESS_KEY_ID:-ocu-fleet-root}
+      MINIO_ROOT_PASSWORD: ${OCU_S3_SECRET_ACCESS_KEY:-ocu-fleet-secret-key}
+    volumes:
+      - minio-data:/data
+    networks:
+      - ocu-edge-backend
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - ocu-edge-backend
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set fleet http://minio:9000 \
+          "${OCU_S3_ACCESS_KEY_ID:-ocu-fleet-root}" \
+          "${OCU_S3_SECRET_ACCESS_KEY:-ocu-fleet-secret-key}"
+        mc mb -p fleet/${OCU_S3_BUCKET:-ocu-fleet} || true
+        echo "bucket ${OCU_S3_BUCKET:-ocu-fleet} ready"
+
+  # -------------------------------------------------------------------------
+  # object-store service — two faces, two planes, one identity (ADR-0025,
+  # invariant #10). North (:7080) serves the no-credential F9 Files-API the web
+  # UI reaches directly; south (:8444) serves the edge-dialed mount RPC. They
+  # never share a listener, router, or resolver.
+  # -------------------------------------------------------------------------
+  filestore:
+    build:
+      # The F9 north Files-API (-north-bind, the durable handle-store) lives on
+      # the feat/f9-storage-seam line, not the default checkout. Until that line
+      # merges to next/v1 (the #305 cascade), the build sources the F9 worktree.
+      # Production sources the merged F9 line from origin.
+      context: ../../../ocu-filestore/.claude/worktrees/feat+storage-rest-pivot
+      dockerfile: Dockerfile
+    image: ocu-filestore:fleet
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    command:
+      - -engine
+      - s3
+      - -s3-endpoint
+      - http://minio:9000
+      - -s3-bucket
+      - ${OCU_S3_BUCKET:-ocu-fleet}
+      - -s3-region
+      - us-east-1
+      - -s3-path-style
+      - -north-bind
+      - 0.0.0.0:7080
+      - -south-bind
+      - 0.0.0.0:8444
+      - -handle-store
+      # The image pre-owns /var/lib/ocu-filestore/engine-root for uid 65532 (its
+      # one staged writable dir under /var/lib); the durable handle-store lives
+      # under it so the daemon can create + flock it under read-only rootfs. A
+      # dedicated /var/lib/ocu-filestore/handles dir is a filestore-image change
+      # (skel + chown) tracked for the merged F9 line.
+      - /var/lib/ocu-filestore/engine-root/handles.db
+      - -tls-cert
+      - /etc/ocu-filestore/tls/tls-cert.pem
+      - -tls-key
+      - /etc/ocu-filestore/tls/tls-key.pem
+      - -audit-sink
+      - /var/log/ocu-filestore/audit.ocsf.jsonl
+      - -filesystem-id
+      - ${OCU_FILESYSTEM_ID:-fs-fleet}
+      - -broker-max-file-size
+      - "1073741824"
+      - -granted-intents
+      - read,write
+      - -downloadable-prefixes
+      - /pub
+      - -profile
+      - trusted_operator
+      - -tenancy
+      - single-tenant
+      - -ops-listen
+      - 127.0.0.1:9464
+    environment:
+      OCU_S3_ACCESS_KEY_ID: ${OCU_S3_ACCESS_KEY_ID:-ocu-fleet-root}
+      OCU_S3_SECRET_ACCESS_KEY: ${OCU_S3_SECRET_ACCESS_KEY:-ocu-fleet-secret-key}
+    volumes:
+      - tls-certs:/etc/ocu-filestore/tls:ro
+      # Mounted on engine-root (pre-owned 65532 in the image) so the named
+      # volume inherits that ownership; the handle-store lives under it.
+      - filestore-handles:/var/lib/ocu-filestore/engine-root
+      - filestore-audit:/var/log/ocu-filestore
+    networks:
+      # North only: the F9 no-credential Files-API the web UI reaches. The
+      # object-store service is NOT on ocu-edge-backend — the south mount leg is
+      # served by the self-contained harness south-filestore (which owns the
+      # `filestore` alias on the backend net). Putting the north object-store on
+      # edge-backend with that alias would collide and shadow the south upstream.
+      ocu-north:
+        aliases: [filestore, ocu-filestore]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ocu-filestored", "-health-check"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # -------------------------------------------------------------------------
+  # web UI (BFF + SPA) — verifies the peer-minted embed token, holds the
+  # first-party session, reaches the object-store north face over F9. Trusts
+  # the object-store leaf via NODE_EXTRA_CA_CERTS (mounted CA, never disabled).
+  # -------------------------------------------------------------------------
+  webui:
+    build:
+      context: ../../../ocu-webui
+      dockerfile: web/Dockerfile
+    image: ocu-webui:fleet
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      filestore:
+        condition: service_healthy
+    environment:
+      OCU_FILESTORE_URL: https://filestore:7080
+      NODE_EXTRA_CA_CERTS: /etc/ocu/ca.pem
+      # Required secrets — replace for any real deployment. The embed-token
+      # verify secret must match the peer/IdP minter; the session secret is
+      # this deployment's own. Both must be >= 32 bytes.
+      OCU_EMBED_VERIFY_SECRET: ${OCU_EMBED_VERIFY_SECRET:?set a >=32-byte embed verify secret}
+      OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
+      OCU_SESSION_SECRET: ${OCU_SESSION_SECRET:?set a >=32-byte session secret}
+      OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-}
+    volumes:
+      - tls-certs:/etc/ocu:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ocu-frontend
+      - ocu-north
+    user: "node"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  # -------------------------------------------------------------------------
+  # control plane — one per deployment. Gateway ingress (service-identity
+  # session create) on 0.0.0.0:9466 for the cross-container MCP caller; the
+  # operator ingress stays a host-owned UDS (kill-switch / mint never reachable
+  # from the gateway — NFR-SEC-52, structural). Creates the sandbox guest per
+  # session through the Docker socket (shared dockerd). A create with no storage
+  # scope skips mint+render and boots a compute-only guest (ADR-0017).
+  # -------------------------------------------------------------------------
+  control:
+    build:
+      context: ../../../ocu-control
+      dockerfile: Dockerfile
+    image: ocu-control:fleet
+    command:
+      - -operator-listen
+      - unix:///run/ocu-control/operator.sock
+      - -gateway-listen
+      - 0.0.0.0:9466
+      - -runtime-tier
+      - ${OCU_RUNTIME_TIER:-runc}
+      - -runtime-provider
+      - docker
+      - -workload-profile
+      - ${OCU_WORKLOAD_PROFILE:-untrusted}
+      - -jwt-signing-key
+      - /run/secrets/storage-jwt-signing.key
+      - -audit-sink
+      - /var/log/ocu-control/audit.ocsf.jsonl
+    volumes:
+      - control-audit:/var/log/ocu-control
+      - control-runtime:/run/ocu-control
+      - ${OCU_JWT_SIGNING_KEY:-./secrets/storage-jwt-signing.key}:/run/secrets/storage-jwt-signing.key:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:9466:9466"
+    networks:
+      - ocu-frontend
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ocu-controld", "-health-check", "-operator-listen", "unix:///run/ocu-control/operator.sock"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # =========================================================================
+  # SOUTH MOUNT LEG — guest -> edge -> south object-store (:8444).
+  #
+  # The validate -> strip -> RFC-8693 exchange -> inject -> route chain runs on
+  # the Go edge (test/harness/cmd/edge + edgeglue), the Phase-E live-proven
+  # realization (PR #38). The stock-Envoy container hop is Phase F (README).
+  #
+  # Phase-E scope: the south leg is the SELF-CONTAINED harness stack — harness
+  # control-plane (JWKS + signing), exchange (RFC-8693), and south-filestore (a
+  # local-volume REST stand-in that validates the injected credential against
+  # the exchange credential-JWKS). It is NOT pointed at the north `filestore`
+  # service: that one takes the injected Bearer as-given and enforces scope (it
+  # does not validate against the exchange credential-JWKS), a different
+  # credential contract. Repointing the edge upstream at the real object-store
+  # south face is a credential-validation-alignment follow-up, not the morning
+  # assembly. Repointing -control-plane-jwks at the real ocu-control JWKS is a
+  # flag-only follow-up (no edge code change).
+  #
+  # Single hop: guest + edge on ocu-mount-facing; edge + control-plane +
+  # exchange + south-filestore on ocu-edge-backend; the guest has NO
+  # ocu-edge-backend membership and no direct route to south-filestore.
+  # =========================================================================
+
+  # harness-init — mints CA + per-service leaf certs + the control-plane signing
+  # key + per-scope weak JWTs, and renders guest-config.json into /shared
+  # (service_url -> https://edge:8450, auth_token -> weak JWT, ca_cert_pem). Runs
+  # once; every south peer waits on it.
+  harness-init:
+    build:
+      context: ../../../ocu-rclone-filestore
+      dockerfile: deploy/compose/peer.Dockerfile
+      args:
+        CMD_PKG: ./test/harness/cmd/harness-init
+    image: ocu-south-harness-init:fleet
+    command:
+      - -out
+      - /shared
+      - -edge-host
+      - edge
+      - -edge-port
+      - "8450"
+      - -fixture-template
+      - /fixtures/guest-config.json
+    volumes:
+      - south-shared:/shared
+      - ../../../ocu-rclone-filestore/deploy/compose/fixtures/guest-config.json:/fixtures/guest-config.json:ro
+    networks:
+      - ocu-edge-backend
+
+  control-plane:
+    build:
+      context: ../../../ocu-rclone-filestore
+      dockerfile: deploy/compose/peer.Dockerfile
+      args:
+        CMD_PKG: ./test/harness/cmd/controlplane
+    image: ocu-south-controlplane:fleet
+    command:
+      - -addr
+      - ":8443"
+      - -cert
+      - /shared/control-plane.cert.pem
+      - -key
+      - /shared/control-plane.key.pem
+      - -signing-key
+      - /shared/control-plane.signing.key.pem
+    depends_on:
+      harness-init:
+        condition: service_completed_successfully
+    volumes:
+      - south-shared:/shared:ro
+    networks:
+      - ocu-edge-backend
+
+  exchange:
+    build:
+      context: ../../../ocu-rclone-filestore
+      dockerfile: deploy/compose/peer.Dockerfile
+      args:
+        CMD_PKG: ./test/harness/cmd/exchange
+    image: ocu-south-exchange:fleet
+    command:
+      - -addr
+      - ":8447"
+      - -cert
+      - /shared/exchange.cert.pem
+      - -key
+      - /shared/exchange.key.pem
+      - -ca
+      - /shared/ca.pem
+      - -control-plane-jwks
+      - https://control-plane:8443/.well-known/jwks.json
+    depends_on:
+      harness-init:
+        condition: service_completed_successfully
+      control-plane:
+        condition: service_started
+    volumes:
+      - south-shared:/shared:ro
+    networks:
+      - ocu-edge-backend
+
+  # south-filestore — the harness REST local-volume stand-in (cmd/filestored),
+  # validates the injected post-exchange credential against the exchange
+  # credential-JWKS. Renamed from the harness's `filestore` to avoid colliding
+  # with the north object-store service in this one compose. edge-backend ONLY.
+  south-filestore:
+    build:
+      context: ../../../ocu-rclone-filestore
+      dockerfile: deploy/compose/peer.Dockerfile
+      args:
+        CMD_PKG: ./test/harness/cmd/filestored
+    image: ocu-south-filestored:fleet
+    command:
+      - -addr
+      - ":8444"
+      - -cert
+      - /shared/filestore.cert.pem
+      - -key
+      - /shared/filestore.key.pem
+      - -ca
+      - /shared/ca.pem
+      - -credential-jwks
+      - https://exchange:8447/credential-jwks
+      - -root
+      - /workspace
+    depends_on:
+      harness-init:
+        condition: service_completed_successfully
+      exchange:
+        condition: service_started
+    volumes:
+      - south-shared:/shared:ro
+      - south-filestore-workspace:/workspace
+    networks:
+      ocu-edge-backend:
+        # The harness fixtures + edge upstream-url dial the name `filestore`;
+        # keep that alias on the backend net so the edge reaches it unchanged.
+        aliases: [filestore]
+
+  # edge — validate -> strip -> keyed RFC-8693 exchange -> inject -> route. The
+  # only dual-homed service: the guest dials it inbound on mount-facing, it
+  # dials its peers on edge-backend. That dual membership is the single hop.
+  edge:
+    build:
+      context: ../../../ocu-rclone-filestore
+      dockerfile: deploy/compose/peer.Dockerfile
+      args:
+        CMD_PKG: ./test/harness/cmd/edge
+    image: ocu-south-edge:fleet
+    command:
+      - -addr
+      - ":8450"
+      - -cert
+      - /shared/edge.cert.pem
+      - -key
+      - /shared/edge.key.pem
+      - -ca
+      - /shared/ca.pem
+      - -control-plane-jwks
+      - https://control-plane:8443/.well-known/jwks.json
+      - -exchange-url
+      - https://exchange:8447/token
+      - -upstream-url
+      - https://filestore:8444
+    depends_on:
+      harness-init:
+        condition: service_completed_successfully
+      control-plane:
+        condition: service_started
+      exchange:
+        condition: service_started
+      south-filestore:
+        condition: service_started
+    volumes:
+      - south-shared:/shared:ro
+    networks:
+      - ocu-mount-facing
+      - ocu-edge-backend
