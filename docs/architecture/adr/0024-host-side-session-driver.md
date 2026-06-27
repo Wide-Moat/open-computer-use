@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
-last-reviewed: 2026-06-23
+status: accepted
+last-reviewed: 2026-06-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -66,4 +66,4 @@ This carries ADR-0017's "thin control driver for [component-02]" (0017:48) to th
 
 ## Status
 
-Proposed (2026-06-23). Amends ADR-0017. Separate from ADR-0018 (control-RPC), ADR-0019 (storage JWT), and ADR-0021 (egress attach).
+Accepted (ratified on merge of #303). Amends ADR-0017. Separate from ADR-0018 (control-RPC), ADR-0019 (storage JWT), and ADR-0021 (egress attach).

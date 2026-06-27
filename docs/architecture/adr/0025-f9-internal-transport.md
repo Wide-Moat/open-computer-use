@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
-last-reviewed: 2026-06-26
+status: accepted
+last-reviewed: 2026-06-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -20,7 +20,7 @@ The F9 hop — how the component-08 BFF reaches component-04 to resolve a durabl
 
 ## Status
 
-`proposed`
+`accepted`
 
 ## Context
 
