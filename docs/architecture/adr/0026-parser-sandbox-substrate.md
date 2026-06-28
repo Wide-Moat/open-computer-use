@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
-last-reviewed: 2026-06-27
+status: accepted
+last-reviewed: 2026-06-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -20,7 +20,7 @@ The isolation substrate for reading an untrusted artifact body is chosen per ren
 
 ## Status
 
-`proposed` — amends [ADR-0015](0015-storage-decomposition-by-trust-plane.md), resolves its Open Question 1 and [component-08](../components/08-web-ui.md) Open Question 1.
+`accepted` — amends [ADR-0015](0015-storage-decomposition-by-trust-plane.md), resolves its Open Question 1 and [component-08](../components/08-web-ui.md) Open Question 1.
 
 ## Context
 

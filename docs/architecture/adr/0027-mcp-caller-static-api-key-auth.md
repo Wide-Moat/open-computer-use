@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2025 Open Computer Use Contributors -->
 
 ---
-status: proposed
-last-reviewed: 2026-06-27
+status: accepted
+last-reviewed: 2026-06-28
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -20,7 +20,7 @@ Names the minimal-shelf MCP-caller credential: a per-caller static `sk-` API key
 
 ## Status
 
-`proposed`
+`accepted`
 
 ## Context
 
