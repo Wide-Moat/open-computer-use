@@ -8,8 +8,8 @@ owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
 threat-model: 06-threat-model.md
-contract: null
-adr: [0004, 0013, 0017, 0023]
+contract: [contracts/openapi/operator-rest.openapi.yaml, contracts/openapi/soar-revoke.openapi.yaml, contracts/proto/ocu/control/session/v1/session_setup.proto]
+adr: [0004, 0013, 0017, 0018, 0023]
 ---
 
 The only door to create or manage a session. Audience: engineers wiring the operator plane or auditing the kill-switch path.
@@ -50,7 +50,7 @@ Custody of each credential ([ADR-0013](../adr/0013-storage-credential-custody.md
 | Weak session JWT (bearer) | relays once into the mount config; keeps no copy | the guest mount config, for its window; presented to the Egress trust-edge, which validates and exchanges it — it does not reach the storage engine ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md)) |
 | Ed25519 control-WS client-auth key (public) | installs into the guest over the control channel | the guest executor uses it to authenticate the host-dialled control-WebSocket client (host dials in; guest verifies the caller) |
 
-Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): Control mints the Session JWT toward the Session sandbox on the host-dialled control channel; the JWT proves session identity and is checked against a separately-supplied expected container name on the same channel, not as a JWT claim (NFR-SEC-43); accepts a Generic internal token from the gateway service identity on session set-up; and accepts an operator credential on the operator ingress ([ADR-0004](../adr/0004-operator-authentication-substrate.md) fixes the substrate). The operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1; their schema files are not yet built ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)), so `contract: null`. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
+Token classes ([`02-trust-boundaries.md`](../02-trust-boundaries.md) §8 owns the taxonomy and TTLs): Control mints the Session JWT toward the Session sandbox on the host-dialled control channel; the JWT proves session identity and is checked against a separately-supplied expected container name on the same channel, not as a JWT claim (NFR-SEC-43); accepts a Generic internal token from the gateway service identity on session set-up; and accepts an operator credential on the operator ingress ([ADR-0004](../adr/0004-operator-authentication-substrate.md) fixes the substrate). The operator REST and SOAR-revoke surfaces (OpenAPI 3.1) and the gateway→Control session set-up RPC (Protobuf/gRPC) are OCU-`define` in [`08-contracts.md`](../08-contracts.md) §1 and frozen in the `contract` files above ([#205](https://github.com/Wide-Moat/open-computer-use/issues/205)). A body-supplied session, tenant, or `container_name` id on any of them is a hint, never the authority; the binding is host-derived from the runtime-attested caller (NFR-SEC-43). The session-setup surface carries the gateway service identity, so force-kill, denylist-edit, and quota-override are not reachable on it (NFR-SEC-26); they exist only on the operator surface. The customer-IdP assertion on ingress is relying-party, not an OCU-defined surface.
 
 ## Invariants
 

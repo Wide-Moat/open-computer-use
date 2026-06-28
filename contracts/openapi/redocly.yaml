@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Redocly lint configuration for the draft OpenAPI 3.1 wire surfaces this repo
+# defines (#205 define-surface). The CI schema job runs `redocly lint` against
+# this config so a malformed edit to operator-rest / soar-revoke fails before
+# the schema can rot. The config starts from the recommended ruleset and turns
+# OFF exactly two recommended-ruleset opinions that conflict with deliberate,
+# sourced design choices in these surfaces — never a real OpenAPI 3.1 spec rule.
+extends:
+  - recommended
+
+rules:
+  # no-empty-servers: OFF. The operator surface (operator-rest.openapi.yaml) is a
+  # host-owned local Unix-domain socket with SO_PEERCRED, not a network origin
+  # (ADR-0004) — it deliberately declares no `servers` block, because there is no
+  # URL a client resolves. The recommended ruleset flags the absent block as an
+  # error; for a local-transport surface that absence is correct, so the rule is
+  # disabled rather than papered over with a fictitious server URL.
+  no-empty-servers: off
+
+  # no-required-schema-properties-undefined: OFF. This fires a false positive on
+  # the filesystem_id XOR memory_store_id mutual-exclusion idiom (a oneOf whose
+  # branches use `not: { required: [...] }` to forbid the other key). Both keys
+  # ARE defined under `properties`; the rule cannot see through the `not` and
+  # reports them undefined. The identical idiom is used in the canon
+  # mount-config.schema.json, so the shape is established, not novel.
+  no-required-schema-properties-undefined: off

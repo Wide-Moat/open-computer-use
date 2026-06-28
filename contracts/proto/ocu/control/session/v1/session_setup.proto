@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: FSL-1.1-Apache-2.0
+// Copyright (c) 2025 Open Computer Use Contributors
+//
+// Session-setup gRPC surface (MCP gateway -> Control plane). SERVICE-identity
+// inbound: the caller is an in-workforce service authenticated by its verified
+// peer identity (mTLS SAN), NOT an operator. Unary Create / Route / Destroy,
+// the v1 lifecycle the gateway drives over the service ingress. NFR-IC-04
+// (additive-only interface evolution), NFR-SEC-43 (host-derived binding, body
+// id is a hint), NFR-SEC-26 / NFR-SEC-52 (this audience cannot reach
+// force-kill / denylist-edit / quota-override), NFR-SEC-38 (runtime tier is
+// deployment-wide, never a per-request field).
+//
+// STATUS: draft (#205, define-surface). This file formalizes the wire shape of
+// the in-process gateway service surface (internal/ingress/gateway). The freeze
+// lands in canon contracts/proto/ via the gatekeeper canon-PR; until then the
+// CreateRequest / CreateResponse shapes below are the proposed wire, and the one
+// known reconciliation point is carried as an open question (see the comment on
+// CreateRequest.image_pin: the in-process gateway CreateRequest carries an
+// `image` ref that is ABSENT from the frozen proto CreateRequest, PIN-PENDING).
+//
+// Additive-only (buf breaking gate, 08-contracts §4): field numbers are stable;
+// a new field takes the next free number, an enum value is only appended, and a
+// removed field is reserved rather than renumbered. No field is renumbered here.
+//
+// NFR-SEC-26 SURFACE INVARIANT: the service audience reachable through this
+// proto CANNOT reach force-kill, denylist-edit, or quota-override. Those verbs
+// are ABSENT from this service by design — the absence is the invariant, not an
+// oversight. They live only on the operator ingress (contracts/openapi/
+// operator-rest.openapi.yaml), which no gateway route reaches. Adding a
+// privileged operator verb to this service would breach NFR-SEC-26; it must
+// never appear here.
+//
+// CUSTODY: no request or response body on this surface ever carries the minted
+// Storage-JWT, the real filestore credential, or any backend secret. Control
+// mints the weak Storage-JWT and pushes it on the separate mount-config plane
+// (contracts/storage/mount-config.schema.json); a create carrying it on the
+// wire would be a custody leak. mount_intent therefore OMITS the auth token.
+
+syntax = "proto3";
+
+package ocu.control.session.v1;
+
+option go_package = "github.com/Wide-Moat/ocu-control/gen/proto/ocu/control/session/v1;sessionv1";
+
+// SessionSetup is the gateway service-identity lifecycle surface. The caller's
+// authority is its host-attested service identity (the verified mTLS peer SAN),
+// established at the transport before any RPC body is read; every id-bearing
+// field in a request body is a HINT the host may seed a derived binding from,
+// never the authority (NFR-SEC-43). The service exposes ONLY Create / Route /
+// Destroy: it is deliberately incapable of force-kill, denylist-edit, and
+// quota-override (NFR-SEC-26 surface invariant).
+service SessionSetup {
+  // Create admits a session and materializes the sandbox after the admission +
+  // quota gate runs fail-closed. The returned session_id is the host-derived
+  // binding; a session/tenant/container_name hint in the request never becomes
+  // that binding (NFR-SEC-43).
+  rpc Create(CreateRequest) returns (CreateResponse);
+
+  // Route resolves a per-session control endpoint for an already-admitted
+  // session the caller owns. Ownership is keyed on the host-attested caller
+  // identity, not the body hint; a foreign session id is indistinguishable from
+  // not-found (NFR-SEC-43).
+  rpc Route(RouteRequest) returns (RouteResponse);
+
+  // Destroy tears the caller's OWN session down through the host-driven
+  // finalizer. It is the cooperative service-side teardown, NOT the operator
+  // force-kill — the privileged force path is absent from this service
+  // (NFR-SEC-26). A foreign or absent session yields not-found, never another
+  // tenant's teardown (NFR-SEC-43).
+  rpc Destroy(DestroyRequest) returns (DestroyResponse);
+}
+
+// WorkloadTrustProfile is the CLOSED set of v1-GA workload trust profiles the
+// admission matrix keys on. It is closed against that matrix: a value lands here
+// only when the matrix names it. This is the WORKLOAD trust axis only; the
+// runtime ISOLATION TIER (runc | gvisor | firecracker) is deployment-wide and
+// is NOT a field on this RPC (NFR-SEC-38) — a request cannot select or downgrade
+// a tier.
+//
+// Additive-only (NFR-IC-04): a new profile is APPENDED with the next number; an
+// existing number is never reused or reassigned. UNSPECIFIED=0 is the required
+// proto3 zero value and is NOT an admissible profile — the server rejects a
+// request that leaves it unset (fail-closed), rather than defaulting to a
+// profile.
+enum WorkloadTrustProfile {
+  // WORKLOAD_TRUST_PROFILE_UNSPECIFIED is the proto3 zero value. It is NOT a
+  // valid profile: an unset profile is a fail-closed rejection at admission, not
+  // a silent default to any real profile.
+  WORKLOAD_TRUST_PROFILE_UNSPECIFIED = 0;
+
+  // WORKLOAD_TRUST_PROFILE_TRUSTED_OPERATOR is the v1-GA profile for an operator-
+  // trusted workload class in the admission matrix.
+  WORKLOAD_TRUST_PROFILE_TRUSTED_OPERATOR = 1;
+
+  // WORKLOAD_TRUST_PROFILE_INTERNAL_WORKFORCE is the v1-GA profile for the
+  // internal-workforce workload class in the admission matrix.
+  WORKLOAD_TRUST_PROFILE_INTERNAL_WORKFORCE = 2;
+}
+
+// BoundedReason is the structured DENY envelope (NFR-SEC-51): a stable machine
+// reason code plus an optional bounded human message that carries no stack trace
+// or internal topology. It is the canon proto-mirror of the JSON BoundedReason
+// ($def in contracts/control/control-rpc.schema.json and
+// contracts/exec/exec-channel.schema.json) — ONE logical shape with IDENTICAL
+// semantics in both representations. Future gRPC DENYs cite THIS message.
+//
+// proto3 has no native string pattern or maxLength, so the wire constraints the
+// JSON schema expresses inline are enforced OUT OF BAND, at the application /
+// validation layer on BOTH the producing and consuming side:
+//   - reason_code MUST match ^[A-Z][A-Z0-9_]{1,63}$ (an OPEN, additive,
+//     pattern-validated code space — deliberately NOT a proto enum, which would
+//     wrongly close it and break additivity).
+//   - message length is capped at 256 bytes. The 256 is an x-ocu-default per
+//     NFR-SEC-51 (a retunable bound that tracks the NFR), not a source-pinned
+//     value.
+// A peer that cannot validate reason_code against the pattern treats the frame
+// as malformed (fail-closed), never silent-accept.
+message BoundedReason {
+  // reason_code is the stable machine code. Pattern ^[A-Z][A-Z0-9_]{1,63}$,
+  // enforced at the application layer (proto3 cannot express it). REQUIRED in
+  // practice: a DENY with an empty reason_code is malformed.
+  string reason_code = 1;
+
+  // message is the optional bounded human-readable detail. Max 256 bytes
+  // (x-ocu-default per NFR-SEC-51, retunable, not source-pinned), enforced at
+  // the application layer. It carries no stack trace or internal topology.
+  string message = 2;
+}
+
+// MountIntent is the substrate-neutral per-session storage-mount description on
+// the wire. It names WHAT the session needs — destination, scope, RW/RO posture,
+// freshness window — but NEVER the credential: the weak Storage-JWT is
+// server-minted and pushed on the mount-config plane, so it is deliberately
+// ABSENT from this request body (custody, see the file header). Exactly one of
+// filesystem_id / memory_store_id identifies the scope (the XOR is enforced at
+// the application layer; proto3 cannot express it as a oneof without changing
+// the two to a single field, and they are kept as distinct named scopes to
+// mirror the in-process MountIntent).
+message MountIntent {
+  // destination is the absolute guest mountpoint (e.g. /workspace/out).
+  string destination = 1;
+
+  // filesystem_id is the per-session logical scope (the isolation unit); egress
+  // binds the connection to this id. Exactly one of filesystem_id /
+  // memory_store_id is set (application-layer XOR).
+  string filesystem_id = 2;
+
+  // memory_store_id is the parallel scope for a memory-backed mount. Exactly one
+  // of filesystem_id / memory_store_id is set (application-layer XOR).
+  string memory_store_id = 3;
+
+  // read_only is the host-enforced posture: true => RO input, false => RW sink.
+  // The agent cannot flip it.
+  bool read_only = 4;
+
+  // cache_duration_s is the per-mount local-VFS freshness window in whole
+  // seconds (short for RO inputs, long for the RW sink). x-ocu-default: the
+  // directional defaults are NFR-derived tunables, not source-pinned values.
+  uint32 cache_duration_s = 5;
+
+  // NOTE: there is NO auth_token field here, and field number 6 is intentionally
+  // left free for a future additive field — NOT reserved against an auth_token,
+  // which must never appear on this surface (custody, see the file header).
+}
+
+// EgressPolicy is the substrate-neutral per-session egress trust-edge policy on
+// the wire: the deny-default posture plus the single allow-listed upstream the
+// session may reach through the trust-edge, keyed to the same filesystem_id as
+// the mount so the edge can scope the credential exchange.
+message EgressPolicy {
+  // default_deny is the posture; it is true on every production path (deny-all
+  // outbound). The server rejects a production spec with default_deny false —
+  // there is no permissive default.
+  bool default_deny = 1;
+
+  // allowed_upstream is the single allow-listed object-store service the mount
+  // client may dial guest-out over the egress hop. Empty means no egress.
+  string allowed_upstream = 2;
+
+  // filesystem_id binds the egress connection to the same scope as the mount so
+  // the trust-edge can key the credential exchange on it.
+  string filesystem_id = 3;
+}
+
+// ResourceCaps are the HARD resource caps stamped on the runtime — ceilings, not
+// shares (CPU is a hard cap, never a relative weight).
+message ResourceCaps {
+  // cpu_cores is the hard CPU ceiling in fractional cores.
+  double cpu_cores = 1;
+
+  // memory_bytes is the hard memory ceiling in bytes.
+  int64 memory_bytes = 2;
+
+  // pids_limit caps the process count. It is OPTIONAL: production always sets it,
+  // and `optional` distinguishes an unset cap from an explicit zero so the server
+  // can fail closed on an unset cap on a production path rather than read 0.
+  optional int64 pids_limit = 3;
+}
+
+// CreateRequest is the FROZEN create body for the gateway service surface. The
+// admissible shape is {workload_trust_profile, mount_intent, egress_policy,
+// resource_caps} plus a session/tenant/container_name HINT — the host derives
+// the real binding from its host-attested caller identity, so session_hint is
+// never the authority (NFR-SEC-43). No tier field (NFR-SEC-38). No auth token /
+// backend credential anywhere in the body (custody, see the file header).
+message CreateRequest {
+  // workload_trust_profile selects the admission-matrix workload class. The
+  // server rejects WORKLOAD_TRUST_PROFILE_UNSPECIFIED fail-closed.
+  WorkloadTrustProfile workload_trust_profile = 1;
+
+  // mount_intent is the per-session storage mount description (auth token
+  // omitted; server-minted on the mount-config plane).
+  MountIntent mount_intent = 2;
+
+  // egress_policy is the per-session egress trust-edge policy.
+  EgressPolicy egress_policy = 3;
+
+  // resource_caps are the hard caps stamped on the runtime.
+  ResourceCaps resource_caps = 4;
+
+  // session_hint is the caller-supplied session/tenant/container_name id. It is
+  // a HINT ONLY: the host seeds a derived binding from it but the authority is
+  // the host-attested caller identity, never this value (NFR-SEC-43). A foreign
+  // hint cannot bind another tenant's session.
+  string session_hint = 5;
+
+  // image_pin is PIN-PENDING and intentionally not yet a populated field on this
+  // FROZEN body. x-ocu-open-questions: the in-process gateway CreateRequest
+  // (internal/ingress/gateway.CreateRequest) carries an `image` sandbox image
+  // ref that is ABSENT from this gatekeeper-frozen CreateRequest shape. It is
+  // NOT silently added and NOT silently dropped — it is flagged for the
+  // gatekeeper to reconcile: likely a deployment-pinned image resolved off the
+  // workload_trust_profile (ADR-0020 image provisioning), OR a create hint that
+  // earns a field. The next free field number (6) is held for it pending that
+  // decision; tracked at the #205 define-surface reconciliation.
+  // x-ocu-tbd: https://github.com/Wide-Moat/open-computer-use/issues/205
+  reserved 6;
+  reserved "image";
+}
+
+// CreateResponse is the FROZEN create reply: the host-derived session binding and
+// the per-session control endpoint the caller routes to. It carries NO credential
+// (custody, see the file header).
+message CreateResponse {
+  // session_id is the HOST-DERIVED session binding (NFR-SEC-43) — the authority,
+  // not an echo of the request hint.
+  string session_id = 1;
+
+  // control_endpoint is the per-session control endpoint the caller subsequently
+  // routes to.
+  string control_endpoint = 2;
+}
+
+// RouteRequest addresses an already-admitted session the caller owns. The
+// session id is a HINT scoping the caller's OWN namespace (NFR-SEC-43); a foreign
+// id is indistinguishable from not-found.
+message RouteRequest {
+  // session_id addresses the caller's own session. A HINT, not authority — the
+  // host-attested caller identity keys ownership (NFR-SEC-43).
+  string session_id = 1;
+}
+
+// RouteResponse returns the resolved per-session control endpoint.
+message RouteResponse {
+  // control_endpoint is the resolved per-session control endpoint.
+  string control_endpoint = 1;
+}
+
+// DestroyRequest tears down the caller's OWN session. The session id is a HINT
+// scoping the caller's own namespace (NFR-SEC-43). This is the cooperative
+// service teardown, NOT the operator force-kill (NFR-SEC-26).
+message DestroyRequest {
+  // session_id addresses the caller's own session for teardown. A HINT, not
+  // authority (NFR-SEC-43).
+  string session_id = 1;
+}
+
+// DestroyResponse acknowledges teardown. It is an explicit empty-bodied ack
+// rather than google.protobuf.Empty so a future additive field (e.g. a teardown
+// disposition) is a number-stable additive bump (NFR-IC-04), not a message-type
+// change.
+message DestroyResponse {}

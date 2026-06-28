@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# buf module for the OCU control-plane proto contracts. The lint + breaking
+# gates enforce additive-only evolution (NFR-IC-04, 08-contracts §4); the DEFAULT
+# lint category matches the canon naming/style conventions.
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - DEFAULT
+  # SessionSetup is the canon-frozen service name for surface C (#205,
+  # define-surface): the gateway service-identity session-setup RPC. The
+  # buf SERVICE_SUFFIX rule wants a "Service" suffix, but the wire
+  # identifier is pinned upstream and renaming it would change the frozen
+  # surface, so the rule is scoped off for this one file rather than renaming a
+  # frozen identifier. Every other DEFAULT rule stays on.
+  except:
+    - SERVICE_SUFFIX
+breaking:
+  use:
+    - FILE

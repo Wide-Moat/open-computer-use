@@ -1,0 +1,336 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# STATUS: draft (#205, define-surface). The freeze lands in canon
+# contracts/openapi/ via the gatekeeper canon-PR; this vendored draft mirrors
+# the in-process SOAR-webhook revoke path (internal/ingress/operator:
+# RevokeOneViaSOAR / RevokeAllViaSOAR) onto an over-the-wire surface and is not
+# yet the frozen source of truth.
+#
+# Surface B: SOAR -> Control inbound revoke. The SOAR platform calls this to
+# kill one session or to engage the deployment-wide DENY-ALL in response to an
+# incident. It rides the operator/lifecycle ingress (the kill-switch lives only
+# here, never on the gateway service-identity ingress — NFR-SEC-52), but its
+# authority model is distinct from the rest of that ingress: the socket peer
+# that delivers the webhook is host-attested transport, while the AUTHORITY for
+# the revoke is the SOAR principal recovered from `soar_signature`. The
+# signature is verified against that principal BEFORE any state changes
+# (verify-then-act, P2-R2); an unverifiable call is rejected and authors no
+# deny entry. The audit actor recorded for the revoke is the SOAR PRINCIPAL,
+# not the socket peer (P2-R2 / NFR-SEC-43).
+#
+# Anchor: NFR-SEC-01 (the kill-switch is a host-initiated stop; an unreachable
+# or unverifiable control path grants no new authority and the revoke fails
+# closed). DENY responses carry the canon-wide BoundedReason envelope
+# (NFR-SEC-51). No credential, no minted Storage-JWT, and no signing key appear
+# in any request or response body on this surface.
+
+openapi: 3.1.0
+
+info:
+  title: OCU Control — SOAR Revoke (inbound)
+  version: 0.1.0-draft
+  summary: SOAR-platform-initiated session revoke (one / all) at the Control operator ingress.
+  description: >-
+    Inbound revoke surface for a SOAR platform reacting to an incident. Two
+    revoke scopes share one endpoint and one frozen body: `one` denylists and
+    force-kills a single named session, `all` engages the deployment-wide
+    DENY-ALL and force-kills every live row. The body is the verify-then-act
+    unit: it carries the revoke scope, the optional target session, the SOAR
+    signature, and the issuance time used for anti-replay. The signature is
+    verified against the SOAR principal before any kill-switch state is touched
+    (P2-R2); the recorded audit actor is that verified principal, never the
+    host-attested socket peer (NFR-SEC-43). Every privileged revoke emits a
+    chain-linked OCSF audit event before acknowledgement, and the revoke is
+    denied if the audit write fails (fail-closed). This is a control-plane
+    machine surface: a human never calls it directly.
+  license:
+    name: FSL-1.1-Apache-2.0
+    url: https://fsl.software/
+
+# The operator/lifecycle ingress is a host-owned endpoint, not a public URL.
+# The token here names that ingress role; the concrete bind (a host-owned UDS
+# or a loopback mTLS listener) is a deployment/component-spec choice and is not
+# pinned by this contract. The kill-switch and force-kill exist ONLY on this
+# operator ingress; no gateway service-identity route reaches it (NFR-SEC-52),
+# and that absence is enforced by the rendered-manifest CI check, not by this
+# document.
+servers:
+  - url: "{operatorIngress}"
+    description: >-
+      The Control operator/lifecycle ingress. The kill-switch surface lives only
+      here (NFR-SEC-52). Transport is host-owned; non-host peers are dropped
+      before any body is parsed (the host-attested transport that delivers the
+      webhook).
+    variables:
+      operatorIngress:
+        default: "http://operator.ingress.local"
+        description: >-
+          x-ocu-design: a carrier placeholder for the host-owned operator
+          ingress. The real bind is a deployment choice (host-owned UDS or
+          loopback mTLS), not pinned here.
+
+paths:
+  /v1/revoke:
+    post:
+      operationId: soarRevoke
+      # Two layers gate this call, declared distinctly. The host-attested
+      # transport (the operator ingress drops a non-host peer before any body is
+      # parsed) is named as the operatorTransport scheme below. The
+      # verify-then-act SOAR-signature check (P2-R2) is NOT an HTTP security
+      # scheme: it is an in-body assertion (`soar_signature`) verified at the
+      # application layer against the SOAR principal, and it — not the transport
+      # — is the authority for the revoke. The scheme here records the transport
+      # gate; the signature gate lives in the body and the response semantics
+      # (401 on an unverifiable signature).
+      security:
+        - operatorTransport: []
+      summary: SOAR-initiated revoke (one session, or deployment-wide DENY-ALL).
+      description: >-
+        Verify-then-act revoke (P2-R2). Control verifies `soar_signature`
+        against the SOAR principal and checks `issued_at` against the
+        anti-replay window BEFORE touching any kill-switch state. On `scope:
+        one` it denylists and force-kills the single `target_session_id`; on
+        `scope: all` it engages the deployment-wide DENY-ALL and force-kills
+        every live row. The body-supplied `target_session_id` is the revoke
+        target, never a caller/tenant authority id — the acting authority is the
+        verified SOAR principal (NFR-SEC-43). A privileged revoke emits a
+        chain-linked OCSF event bound to that principal before this call
+        acknowledges; if the audit write fails the revoke is denied (fail-closed)
+        and a 5xx with a BoundedReason is returned. An unverifiable signature, a
+        stale or future `issued_at`, or a missing `target_session_id` under
+        `scope: one` is rejected and authors no deny entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SoarRevokeRequest"
+      responses:
+        "200":
+          description: >-
+            Revoke accepted and applied. The chain-linked OCSF audit event
+            (actor = the verified SOAR principal) was written before this
+            acknowledgement.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SoarRevokeAccepted"
+        "400":
+          description: >-
+            Malformed body: an unknown field, a missing required field, or
+            `scope: one` without `target_session_id`. No state changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoundedReason"
+        "401":
+          description: >-
+            The SOAR signature did not verify against the SOAR principal
+            (verify-then-act rejected the call, P2-R2). No deny entry authored,
+            no session touched. NFR-SEC-01: an unverifiable control call grants
+            no authority.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoundedReason"
+        "409":
+          description: >-
+            `issued_at` fell outside the anti-replay window (stale, future-dated,
+            or a replay of an already-seen issuance). The revoke is rejected and
+            authors no deny entry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoundedReason"
+        "500":
+          description: >-
+            The revoke could not be completed fail-closed — most load-bearingly,
+            the chain-linked audit write failed, so the privileged action is
+            denied before acknowledgement (audit-before-ack, fail-closed). The
+            body carries a stable reason code only; no internal topology.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoundedReason"
+
+components:
+  securitySchemes:
+    operatorTransport:
+      # The host-attested operator-ingress transport. Mutual peer attestation
+      # (the host-owned UDS peer-cred gate, or loopback mTLS) drops a non-host
+      # peer before any body is parsed (NFR-SEC-52 operator-ingress isolation;
+      # NFR-SEC-43 host-attested identity). It is TRANSPORT only: it proves the
+      # caller reached the operator ingress, not WHO authored the revoke — the
+      # acting authority is the SOAR principal recovered from the in-body
+      # `soar_signature` (verify-then-act, P2-R2), which is enforced at the
+      # application layer, not by this scheme. The concrete mechanism (UDS
+      # peer-cred vs mTLS) is a deployment choice; mutualTLS is the carrier
+      # token for the over-the-wire form.
+      type: mutualTLS
+      description: >-
+        Host-attested operator-ingress transport (NFR-SEC-52 / NFR-SEC-43). A
+        non-host peer is dropped before any body is parsed. Transport identity
+        only; the revoke authority is the in-body SOAR signature (P2-R2),
+        verified at the application layer.
+
+  schemas:
+    BoundedReason:
+      # NFR-SEC-51: bounded error verbosity. ONE logical shape, canon-wide as of
+      # PR #292; mirrored VERBATIM from
+      # contracts/control/control-rpc.schema.json#/$defs/BoundedReason. The
+      # caller gets a stable reason_code; message carries no stack trace and no
+      # internal topology. JSON Schema expresses both the pattern and the length
+      # cap natively, so this is exact wire enforcement on every non-2xx here.
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      description: >-
+        Bounded DENY envelope (NFR-SEC-51). Stable machine-readable reason_code;
+        an optional bounded human message. The same logical shape the gRPC
+        surfaces carry as a proto message and the control-RPC channel carries as
+        a JSON $def — identical semantics, two representations.
+      properties:
+        reason_code:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{1,63}$"
+          description: Stable reason code (SCREAMING_SNAKE_CASE), the machine branch key.
+        message:
+          type: string
+          maxLength: 256
+          description: >-
+            x-ocu-default: maxLength 256 is the NFR-SEC-51 default pending
+            sign-off, not a source-pinned value; retunable per workload tier.
+            Matches the control-RPC and exec-channel BoundedReason. Carries no
+            stack trace or internal topology.
+
+    RevokeScope:
+      # The revoke scope axis. CLOSED enum: the only two SOAR revoke operations
+      # are RevokeOneViaSOAR (one) and RevokeAllViaSOAR (all)
+      # (internal/ingress/operator/operator.go). There is no third scope; an
+      # unknown value is a 400. Adding a scope later is an additive change
+      # (NFR-IC-04), coordinated with the gatekeeper.
+      type: string
+      enum: [one, all]
+      description: >-
+        Revoke scope. `one` denylists and force-kills the single
+        `target_session_id`; `all` engages the deployment-wide DENY-ALL and
+        force-kills every live row.
+
+    SoarRevokeRequest:
+      # FROZEN body shape (surface B): {scope, target_session_id?, soar_signature,
+      # issued_at}. target_session_id is REQUIRED iff scope == one and FORBIDDEN
+      # otherwise (the all path has no single target). No caller/tenant/session
+      # authority id rides here: target_session_id is the revoke TARGET (a hint
+      # to the kill-switch), while the acting authority is the verified SOAR
+      # principal recovered from soar_signature (NFR-SEC-43). No credential, no
+      # minted Storage-JWT, no signing key — none of those ever appear on this
+      # surface.
+      type: object
+      additionalProperties: false
+      required: [scope, soar_signature, issued_at]
+      # target_session_id is REQUIRED iff scope == one and MUST be absent
+      # otherwise. OpenAPI 3.1 is JSON Schema 2020-12, so this conditional is
+      # wire-enforced natively (if/then/else), not left to prose: scope:one
+      # without a target, or scope:all WITH a target, fails validation (a 400).
+      if:
+        properties:
+          scope:
+            const: one
+      then:
+        required: [target_session_id]
+      else:
+        not:
+          required: [target_session_id]
+      description: >-
+        The verify-then-act revoke unit. Control verifies `soar_signature`
+        against the SOAR principal and checks `issued_at` against the anti-replay
+        window before any kill-switch state changes (P2-R2). The audit actor
+        recorded for the resulting revoke is that verified principal, not the
+        socket peer (NFR-SEC-43). `target_session_id` is required exactly when
+        `scope` is `one` and forbidden when `scope` is `all` (wire-enforced
+        below).
+      properties:
+        scope:
+          $ref: "#/components/schemas/RevokeScope"
+        target_session_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            The session to revoke. REQUIRED when `scope` is `one`; MUST be
+            omitted when `scope` is `all`. It is the revoke TARGET, never a
+            caller/tenant authority — the host binds the real session and the
+            SOAR principal is the acting authority (NFR-SEC-43). The
+            length bound is an x-ocu-default (NFR-SEC-51), not a source-pinned
+            value; it matches the session-id bound carried on the storage and
+            audit surfaces.
+        soar_signature:
+          type: string
+          format: byte
+          minLength: 1
+          description: >-
+            The SOAR principal's signature over the canonical revoke payload,
+            base64-encoded on the wire. Control runs the SOARVerifier over the
+            payload + this signature and acts ONLY on a successful verify
+            (verify-then-act, P2-R2); the principal recovered here is the audit
+            actor for the revoke. The exact bytes covered by the signature (the
+            canonical serialization of {scope, target_session_id?, issued_at})
+            are pinned by the verifier the deployment wires; this contract does
+            not re-specify that canonicalization.
+            x-ocu-open-questions: the signed-payload canonicalization (field
+            order, separator, whether issued_at is covered as text or epoch) is
+            a verifier-side decision not yet pinned in canon; flagged for the
+            gatekeeper, not invented here.
+        issued_at:
+          type: string
+          format: date-time
+          description: >-
+            RFC 3339 issuance time of this revoke, the anti-replay anchor.
+            Control rejects an `issued_at` outside the acceptance window (stale,
+            future-dated, or a re-presented issuance) with a 409 before any
+            state changes. The window is host-clock-relative; trusted-time
+            handling is a Control concern, not a SOAR-supplied claim.
+            x-ocu-default: the acceptance window is an NFR-derived tunable
+            (anti-replay per NFR-SEC-01 / P2-R2), not a source-pinned number;
+            its concrete width is a deployment parameter documented at the
+            x-ocu-default below.
+
+    SoarRevokeAccepted:
+      # The success envelope. Carries no authority and no credential — it
+      # confirms the revoke applied and the audit event was chain-linked before
+      # this acknowledgement. It deliberately does NOT echo the SOAR principal,
+      # the session, or any kill-switch internals onto the wire (least-data).
+      type: object
+      additionalProperties: false
+      required: [revoked]
+      description: >-
+        Acknowledgement that the verify-then-act revoke completed and the
+        chain-linked OCSF event was written before this reply (audit-before-ack).
+      properties:
+        revoked:
+          $ref: "#/components/schemas/RevokeScope"
+          description: >-
+            Echo of the applied revoke scope (`one` or `all`). It restates the
+            request scope for the caller's confirmation; it is not a new
+            authority.
+
+  # x-ocu-default: anti-replay window. The acceptance window for issued_at is an
+  # NFR-derived tunable (anti-replay, NFR-SEC-01 / P2-R2), not a source-pinned
+  # value. A small symmetric skew (carrier value: +/- 300 seconds) bounds clock
+  # drift between the SOAR platform and the Control host while keeping the replay
+  # surface narrow; deployments tune it. Replay-suppression beyond the raw window
+  # (remembering already-seen issuances within it) is a Control-side
+  # implementation concern, not a body field.
+  x-ocu-anti-replay-window-seconds-default: 300
+
+  # NFR-SEC-26 surface invariant (mirrored from surface C): this SOAR audience
+  # reaches ONLY the revoke verbs. It CANNOT reach quota-override or denylist-edit
+  # (LiftDeny / OverrideQuota) — those are absent from this contract, and the
+  # absence is the invariant, documented here rather than silently omitted. The
+  # operator-only kill-switch reachability constraint (NFR-SEC-52) is enforced by
+  # the rendered-manifest CI check, not by this document.
+  x-ocu-surface-invariant: >-
+    The SOAR revoke audience reaches revoke (one/all) only. Quota-override and
+    denylist-edit are deliberately ABSENT from this surface; their absence is the
+    invariant, not an omission.
