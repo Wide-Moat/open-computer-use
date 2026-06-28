@@ -21,6 +21,12 @@ description = "Project allowlists for documented placeholders and minified libs"
 regexes = [
   '''sk-yambr-\.\.\.''',
   '''sk-yambr-<.*>''',
+  # `sk-ocu-...` MCP-caller key placeholders in docs/DEMO-WALKTHROUGH.md —
+  # the literal dots / `<32B>` / the word `wrong` mark them as examples, not
+  # real keys (the real shape is `sk-ocu-<base62, 32 bytes>` per ADR-0027).
+  '''sk-ocu-\.\.\.''',
+  '''sk-ocu-<.*>''',
+  '''sk-ocu-wrong''',
 ]
 
 # Minified JavaScript bundles routinely contain substrings that resemble
