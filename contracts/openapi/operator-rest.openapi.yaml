@@ -680,8 +680,11 @@ components:
       description: >-
         Mint an sk-ocu- MCP API key. `tenant`/`deployment` are the operator-chosen scope the
         key binds; the acting operator is host-attested, never a field here (NFR-SEC-43,
-        NFR-SEC-45). `expires_at` is optional (absent => non-expiring, ADR-0027).
-      required: [tenant]
+        NFR-SEC-45). Both are REQUIRED: the published key-set record carries both
+        (ADR-0027 Storage) and neither has a meaningful default — an empty value would
+        render a schema-invalid artifact. `expires_at` is optional (absent =>
+        non-expiring, ADR-0027).
+      required: [tenant, deployment]
       properties:
         tenant:
           type: string
