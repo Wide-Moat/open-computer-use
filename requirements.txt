@@ -55,7 +55,7 @@ grip==4.6.2
 
 # Data processing
 pandas==2.3.3
-numpy==2.3.3
+numpy==2.4.6
 scipy==1.16.2
 scikit-learn==1.7.2
 
