@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-20
+last-reviewed: 2026-07-01
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 ---
@@ -87,6 +87,7 @@ This overview is the map; the schema files under `contracts/` own the field-leve
 Drafted (not merged):
 
 - `contracts/mcp/2025-06-18/ocu-constraints.schema.json` — the MCP conform profile.
+- `contracts/mcp/mcp-key-set.schema.json` — the hashed-key-set boot-set the control plane renders for the MCP gateway (ADR-0027).
 - `contracts/exec/exec-channel.schema.json` — the exec/PTY WebSocket envelope.
 - `contracts/control/control-rpc.schema.json` — the in-guest control-RPC envelope (host-owned UDS; v1 verb set `shutdown` only, the deferred and forbidden verbs carried as `x-ocu-tbd-verbs` absent members). STATUS `partial`.
 - `contracts/storage/mount-config.schema.json` and `contracts/storage/file-ops.schema.json` — the mount-plane mount config and file-op RPC (the file-op message bodies are tbd).
