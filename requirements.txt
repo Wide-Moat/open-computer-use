@@ -76,7 +76,7 @@ jaxlib==0.7.2
 onnxruntime==1.23.1
 ml_dtypes==0.5.3
 mediapipe==0.10.35
-magika==0.6.2
+magika==1.0.3
 
 # Web automation
 playwright==1.57.0
