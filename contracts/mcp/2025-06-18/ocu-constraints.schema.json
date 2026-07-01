@@ -171,15 +171,16 @@
       "unconditional": [
         "Bearer token MUST NOT appear in the URI query.",
         "The caller credential MUST NOT be passed through to upstream or the sandbox; the trust edge injects custody credentials (NFR-SEC-23, NFR-SEC-27). The caller key is never forwarded onto F5 or into the sandbox.",
-        "Origin header MUST be validated (DNS-rebinding); local binds use 127.0.0.1 not 0.0.0.0 (NFR-SEC-43)."
+        "Origin header MUST be validated (DNS-rebinding); local binds use 127.0.0.1 not 0.0.0.0 (NFR-SEC-43).",
+        "A 401 carries a `WWW-Authenticate: Bearer` challenge in BOTH modes (the shipped gateway sets `Bearer realm=\"ocu-mcp-gateway\"`); the oauth2-rs mode additionally points it at the RFC 9728 resource-metadata URL."
       ],
       "static-key": [
         "The presented sk-ocu- bearer MUST resolve to a non-expired, non-revoked record in this gateway's boot-loaded hashed-key set; the gateway hashes the presented key and constant-time-compares. A key not in this deployment's set is refused with HTTP 401 (ADR-0027, NFR-SEC-87).",
-        "Tenant and permitted surface come from the resolved record, never from the request body or a claim in the key."
+        "Tenant and deployment scope come from the resolved record, never from the request body or a claim in the key."
       ],
       "oauth2-rs": [
         "Token MUST name this MCP server in its audience claim (RFC 8707); reject otherwise with HTTP 401.",
-        "On 401, WWW-Authenticate points to the RFC 9728 resource-metadata URL."
+        "On 401, the WWW-Authenticate Bearer challenge additionally points to the RFC 9728 resource-metadata URL."
       ]
     }
   },

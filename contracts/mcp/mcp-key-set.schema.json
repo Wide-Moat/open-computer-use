@@ -1,5 +1,5 @@
 {
-  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | STATUS frozen (Artifact-2, the Control->gateway hashed-key-set). The config-plane boot-set the MCP gateway loads at boot to validate a presented sk-ocu- caller key in-process (ADR-0027). Control mints the key (occ mcp-key create), stores the salted hash, and re-renders this set on every mint/revoke; the gateway hashes the presented bearer and constant-time-compares against these records. This is delivered over the same config plane that carries the gateway's signing material, NEVER a per-request Control lookup (component-01 no-state-that-outlives-a-request invariant is kept: the set is configuration, not request-derived state). FENCED SURFACE: hashes + salts only. No plaintext secret, no sk-ocu- key, no unsalted digest, no signing key ever appears here; additionalProperties:false at both levels forbids smuggling one in. The published subset is fail-closed to the ACTIVE, non-expired records: a revoked or expired key is OMITTED before render, so status is always \"active\" on the wire (a key absent from this set is refused with 401 at the gateway). The \"revoked\" enum value is present for at-rest generality with the single Record type, not because a revoked record is ever published here. This schema validates the SHAPE; the omit-before-render, boot-refresh-within-5-min (NFR-SEC-04), and constant-time comparison are peer invariants, not schema-checkable (NFR-SEC-87, ADR-0027). JSON Schema 2020-12 (json-schema.org).",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | STATUS frozen (Artifact-2, the Control->gateway hashed-key-set). The config-plane boot-set the MCP gateway loads at boot to validate a presented sk-ocu- caller key in-process (ADR-0027). Control mints the key (occ mcp-key create), stores the salted hash, and re-renders this set on every mint/revoke; the gateway hashes the presented bearer and constant-time-compares against these records. This is delivered over the same config plane that carries the gateway's signing material, NEVER a per-request Control lookup (component-01 no-state-that-outlives-a-request invariant is kept: the set is configuration, not request-derived state). FENCED SURFACE: hashes + salts only. No plaintext secret, no sk-ocu- key, no unsalted digest, no signing key ever appears here; additionalProperties:false at both levels forbids smuggling one in. The published subset is fail-closed to the ACTIVE, non-expired records: a revoked or expired key is OMITTED before render, so status is always \"active\" on the wire (a key absent from this set is refused with 401 at the gateway). Status is pinned const \"active\" on this wire (the at-rest record type also carries revoked; it never reaches this artifact), and records has minItems 1 (Control refuses to render an empty active set), so both bad-render classes are schema-detectable. This schema validates the SHAPE; the omit-before-render, boot-refresh-within-5-min (NFR-SEC-04), and constant-time comparison are peer invariants, not schema-checkable (NFR-SEC-87, ADR-0027). JSON Schema 2020-12 (json-schema.org).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.open-computer-use.dev/mcp/mcp-key-set.schema.json",
   "title": "MCP hashed-key-set (Control -> gateway boot-set)",
@@ -48,9 +48,9 @@
     },
 
     "Status": {
-      "description": "Lifecycle state of the at-rest record. A CLOSED enum. On this published boot-set the value is always `active` (revoked/expired records are omitted before render); `revoked` is present for at-rest generality with the single Record type, not because a revoked record is published here.",
+      "description": "Lifecycle state as PUBLISHED on this wire: always `active`. Revoked/expired records are omitted before render (fail-closed), and the const makes a mis-render that leaks a revoked record schema-detectable by the vendored validator instead of silently usable. The at-rest record type also carries a `revoked` state; that state never reaches this artifact.",
       "type": "string",
-      "enum": ["active", "revoked"]
+      "const": "active"
     },
 
     "Timestamp": {
@@ -90,8 +90,9 @@
       "const": 1
     },
     "records": {
-      "description": "The active, non-expired records the gateway boot-loads. May be empty in the schema, but Control refuses to render an empty active set (fail-closed: an empty boot-set would make the gateway reject every presented key, masking a misconfiguration) — the empty-set refusal is a peer invariant, not schema-checkable.",
+      "description": "The active, non-expired records the gateway boot-loads. minItems 1 pins the empty-set refusal schema-side: Control refuses to render an empty active set (fail-closed — an empty boot-set would make the gateway reject every presented key, masking a misconfiguration), so an empty artifact is invalid, not merely unexpected.",
       "type": "array",
+      "minItems": 1,
       "items": { "$ref": "#/$defs/HashedKeyRecord" }
     }
   },
