@@ -26,7 +26,7 @@ opencv-contrib-python==4.11.0.86
 opencv-python-headless==4.11.0.86
 imageio==2.37.0
 imageio-ffmpeg==0.6.0
-scikit-image==0.25.2
+scikit-image==0.26.0
 Wand==0.6.13
 
 # OCR and text extraction
