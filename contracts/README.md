@@ -15,6 +15,7 @@ The wire contracts OCU defines or conforms to, one file per boundary. Read [`doc
 | File | Surface | Format | Validated by |
 |---|---|---|---|
 | `mcp/2025-06-18/ocu-constraints.schema.json` | Agent tool-call ingress (caller → MCP gateway) | JSON Schema 2020-12 (MCP conform profile) | `json-schema` CI job |
+| `mcp/mcp-key-set.schema.json` | MCP hashed-key-set (control plane → MCP gateway boot-set, ADR-0027) | JSON Schema 2020-12 | `json-schema` CI job |
 | `exec/exec-channel.schema.json` | Exec / PTY+CDP (control API → sandbox, machine-to-machine) | JSON Schema 2020-12 | `json-schema` CI job |
 | `control/control-rpc.schema.json` | Control → guest control-RPC (control plane → sandbox, over a host-owned UDS) | JSON Schema 2020-12 | `json-schema` CI job |
 | `storage/mount-config.schema.json` | Mount-plane mount config (control plane → in-guest mount client) | JSON Schema 2020-12 | `json-schema` CI job |

@@ -235,6 +235,77 @@ paths:
         '503':
           $ref: '#/components/responses/Denied'
 
+  /v1alpha/mcp-keys:
+    post:
+      operationId: createMCPKey
+      summary: Mint an sk-ocu- MCP API key (operator scope).
+      description: >-
+        Mint a per-caller static sk-ocu- MCP API key (ADR-0027). This route exists ONLY on
+        this operator ingress; the gateway audience cannot reach it (NFR-SEC-52) — the
+        gateway VALIDATES keys against the boot-loaded hashed-key set, it never mints them.
+        `tenant` and `deployment` are the operator-supplied SCOPE the new key serves — a
+        legitimate operator choice of WHICH tenant/deployment the key binds, distinct from
+        the NFR-SEC-43 rule that a body id never names the acting caller. The acting
+        operator is host-attested from the transport peer credential; the audit actor is
+        that operator, never the `tenant` field. The action is audit-gated: the OCSF event
+        (carrying key_id, NEVER the raw key) is written fail-closed BEFORE the key is
+        persisted (NFR-SEC-45). The raw key is revealed exactly ONCE in this 201 response
+        (shown-once) and is never persisted in plaintext or served again; Control stores
+        only its salted hash. `expires_at` is optional — absent means non-expiring.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPKeyCreateRequest'
+      responses:
+        '201':
+          description: >-
+            Key minted and its salted-hash record persisted; the audit event was recorded
+            first. The body carries the shown-once raw key exactly once — this is the sole
+            surface on which the plaintext sk-ocu- key ever appears (custody: NFR-SEC-87).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPKeyCreateResponse'
+        '401':
+          $ref: '#/components/responses/Denied'
+        '403':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+  /v1alpha/mcp-keys/revoke:
+    post:
+      operationId: revokeMCPKey
+      summary: Revoke an sk-ocu- MCP API key by key_id (operator scope).
+      description: >-
+        Flip an MCP API key's status to revoked by its public `key_id` (ADR-0027). Revoke
+        exists ONLY on this operator ingress (NFR-SEC-52). The audit actor is the
+        host-attested operator; `reason` is operator-supplied audit text. The action is
+        audit-gated fail-closed (NFR-SEC-45). Revoke is IDEMPOTENT: revoking an
+        already-revoked or absent key_id is a satisfied no-op (200), so the surface is not a
+        cross-tenant existence oracle — an unknown id is 200, never 404. After revoke,
+        Control re-renders the hashed-key set and the gateway refreshes within NFR-SEC-04
+        (<= 5 min), after which the key is refused with 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPKeyRevokeRequest'
+      responses:
+        '200':
+          description: >-
+            Revoke applied (or a satisfied no-op for an already-revoked/absent id). Audit
+            event recorded. No body.
+        '401':
+          $ref: '#/components/responses/Denied'
+        '403':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
 components:
   securitySchemes:
     operatorPeerCred:
@@ -590,6 +661,107 @@ components:
           description: >-
             The ceiling the atomic charge checks the post-delta counter against; the cell is
             left unchanged if the delta would carry it past this limit.
+        reason:
+          type: string
+          maxLength: 256
+          description: Operator-supplied justification recorded on the audit event.
+          x-ocu-default: >-
+            maxLength 256 mirrors the NFR-SEC-51 BoundedReason.message default; retunable,
+            not source-pinned.
+
+    # MCPKeyCreateRequest mirrors the in-process MCPKeyCreate(tenant, deployment, expiresAt)
+    # (internal/ingress/operator/mcpkey.go). tenant/deployment are the operator-supplied
+    # SCOPE the new key serves — a legitimate operator input, distinct from the NFR-SEC-43
+    # rule that a body id never names the acting caller. No caller/actor id here — the actor
+    # is the host-attested operator (ADR-0027).
+    MCPKeyCreateRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Mint an sk-ocu- MCP API key. `tenant`/`deployment` are the operator-chosen scope the
+        key binds; the acting operator is host-attested, never a field here (NFR-SEC-43,
+        NFR-SEC-45). Both are REQUIRED: the published key-set record carries both
+        (ADR-0027 Storage) and neither has a meaningful default — an empty value would
+        render a schema-invalid artifact. `expires_at` is optional (absent =>
+        non-expiring, ADR-0027).
+      required: [tenant, deployment]
+      properties:
+        tenant:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            The tenant the new key is scoped to. The operator chooses it; it is the key's
+            binding scope, never the acting caller's identity (NFR-SEC-43).
+        deployment:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            The deployment the new key is scoped to. A key whose deployment does not match
+            the gateway's boot-set fails to resolve and is refused with 401 (ADR-0027).
+        expires_at:
+          type: string
+          format: date-time
+          description: >-
+            Optional RFC 3339 expiry. ABSENT means the key is non-expiring (ADR-0027), so
+            the one-click path is not blocked.
+
+    # MCPKeyCreateResponse mirrors the in-process create render (routes.go
+    # mcpKeyCreateResponse): the SHOWN-ONCE raw key plus its public key_id and bound tenant.
+    # This is the SOLE surface on which the plaintext sk-ocu- key appears — Control persists
+    # only its salted hash and never serves the plaintext again (NFR-SEC-87). This departs
+    # from the SessionHandle no-credential posture BY DESIGN: an sk key is a caller
+    # credential the operator must capture at issuance, unlike the server-minted Storage-JWT
+    # which is pushed on a separate custody plane and is absent from every operator body.
+    MCPKeyCreateResponse:
+      type: object
+      additionalProperties: false
+      description: >-
+        The shown-once create result. `raw_key` is the plaintext sk-ocu- key returned
+        exactly once; the operator captures it now and it is never served again. `key_id` is
+        the public handle for a subsequent revoke; `tenant` echoes the bound scope.
+      required: [raw_key, key_id, tenant]
+      properties:
+        raw_key:
+          type: string
+          pattern: '^sk-ocu-[0-9A-Za-z]{43}$'
+          description: >-
+            The plaintext MCP API key, shown ONCE. Format: `sk-ocu-` + 43 base62 chars
+            (256-bit CSPRNG body). The `sk-ocu-` prefix is a secret-scanner signature. It is
+            never persisted in plaintext and never appears on any other surface (ADR-0027,
+            NFR-SEC-87).
+        key_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            The key's public handle — the id passed to `POST /v1alpha/mcp-keys/revoke` and
+            the audit correlation field. A short random handle, never derived from the
+            secret.
+        tenant:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Echo of the tenant scope the minted key binds.
+
+    # MCPKeyRevokeRequest mirrors the in-process MCPKeyRevoke(keyID, reason) (mcpkey.go).
+    # key_id is the public handle; reason is operator audit text. Revoke is idempotent — an
+    # unknown id is a satisfied no-op (200), not a 404 (no cross-tenant existence oracle).
+    MCPKeyRevokeRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Revoke an sk-ocu- MCP API key by its public `key_id`. The actor is the host-attested
+        operator, never a field here (NFR-SEC-43, NFR-SEC-45). Idempotent: an already-revoked
+        or absent id is a satisfied no-op.
+      required: [key_id]
+      properties:
+        key_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The public handle of the key to revoke (the value from the create response).
         reason:
           type: string
           maxLength: 256
