@@ -35,7 +35,7 @@ tabula-py==2.10.0
 camelot-py==1.0.9
 
 # Web and HTTP
-requests==2.32.5
+requests==2.34.2
 urllib3==2.6.3
 httplib2==0.20.4
 certifi==2025.10.5
