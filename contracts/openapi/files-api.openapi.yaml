@@ -123,10 +123,11 @@ paths:
       operationId: listFiles
       summary: List files in the attested scope (Files-API Read).
       description: >-
-        List the scope's files as a `{data, has_more, first_id, last_id}` envelope with
-        opaque-id cursors. Scope is the `X-OCU-Filesystem-Id` header. The forward cursor is
-        `?after=<last_id>`: pass the previous page's `last_id` to fetch the next page; there
-        is no separate opaque cursor token on the wire. `limit` bounds the page size.
+        List the scope's files as a `{data, has_more, first_id, last_id, next_cursor}`
+        envelope. Scope is the `X-OCU-Filesystem-Id` header. The forward cursor is
+        `?after=<next_cursor>`: pass the previous page's opaque `next_cursor` token to fetch
+        the next page. `first_id`/`last_id` are informational boundary ids, not resume keys —
+        a bare id cannot resume the created-at-primary order. `limit` bounds the page size.
       parameters:
         - $ref: '#/components/parameters/FilesystemIdHeader'
         - $ref: '#/components/parameters/AfterQuery'
@@ -304,12 +305,13 @@ components:
       in: query
       required: false
       description: >-
-        Forward list cursor: the previous page's `last_id`. Its absence lists from the
-        first page. There is no separate opaque cursor token on the wire.
+        Forward list cursor: the previous page's opaque `next_cursor` token (treat as
+        opaque; it carries the created-at/file-id boundary tuple). Its absence lists from
+        the first page. A bare `last_id` is not a valid cursor.
       schema:
         type: string
         minLength: 1
-        maxLength: 256
+        maxLength: 512
 
     LimitQuery:
       name: limit
@@ -528,15 +530,17 @@ components:
           format: date-time
           description: RFC-3339 UTC store-clock creation time from the handle record.
 
-    # FileListEnvelope is the frozen list shape: {data, has_more, first_id, last_id} with
-    # opaque-id cursors. `next_cursor` is NOT on the wire — the forward cursor is
-    # ?after=<last_id>. This matches ADR-0023:36 "opaque-id cursors".
+    # FileListEnvelope is the frozen list shape: {data, has_more, first_id, last_id,
+    # next_cursor}. The forward cursor is the OPAQUE next_cursor token — the durable
+    # store's list order is created-at-primary, so the resume key must carry the
+    # (created_at, file_id) boundary tuple; a bare file_id would repeat or strand a
+    # record when the boundary record is deleted between pages.
     FileListEnvelope:
       type: object
       additionalProperties: false
       description: >-
-        One list page. Opaque-id cursors: the forward cursor is `?after=<last_id>`; there is
-        no separate cursor token on the wire.
+        One list page. The forward cursor is `?after=<next_cursor>` (opaque token);
+        `first_id`/`last_id` are informational boundary ids, not resume keys.
       required: [data, has_more]
       properties:
         data:
@@ -557,8 +561,17 @@ components:
           minLength: 1
           maxLength: 256
           description: >-
-            The `id` of the last item on this page — the value to pass as `?after=` for the
-            next page. Absent on an empty page.
+            The `id` of the last item on this page — an informational boundary marker, NOT
+            the resume key. Absent on an empty page.
+        next_cursor:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: >-
+            The opaque forward resume token for `?after=` (base64url, carries the
+            created-at/file-id boundary tuple; treat as opaque). Present while `has_more`
+            is true; absent on the final page. It survives a deleted boundary record,
+            which a bare `last_id` cannot.
 
 # Freeze-time resolutions recorded for the #304 body freeze (ADR-0028).
 x-ocu-notes:
@@ -572,8 +585,11 @@ x-ocu-notes:
     (attestation-only) are off the wire; `checksum_md5` is deferred for v1 (ADR-0023 Open
     Question 5). ADR-0028 amends the ADR-0023:36 dialect line to match.
   - >-
-    List pagination is opaque-id cursors: `{data, has_more, first_id, last_id}` and a
-    forward `?after=<last_id>`. `next_cursor` is not on the wire (ADR-0028).
+    List pagination: `{data, has_more, first_id, last_id, next_cursor}` and a forward
+    `?after=<next_cursor>` (opaque keyset token). Corrected in ADR-0028: the durable
+    store's created-at-primary keyset walk cannot resume from a bare `last_id` (a deleted
+    boundary record would repeat or strand a record), so the opaque token is the resume
+    key and `first_id`/`last_id` stay informational.
   - >-
     `GET /v1/files/archive` is an additive OCU-extension route, a sibling off `/v1/files`
     and not one of the five frozen verbs; adding it is an additive change, not a break to
