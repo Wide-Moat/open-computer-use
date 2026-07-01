@@ -164,7 +164,13 @@ jobs:
           # default `--results=verified` dials AWS/GitHub/Slack/… from the
           # runner to validate detected patterns. For a bank-targeting CI
           # we accept the higher false-positive rate over outbound calls.
-          extra_args: --no-verification
+          #
+          # `--exclude-paths` lists documented verified-false-positive
+          # fixtures (HTML-encoded diagram/URI strings, an example Helm
+          # values file, a security-test fixture). Every other path still
+          # fails the gate on any unverified finding — this is NOT
+          # verified-only mode.
+          extra_args: --no-verification --exclude-paths=.github/trufflehog-exclude-paths.txt
 
   sast-semgrep:
     name: SAST — semgrep

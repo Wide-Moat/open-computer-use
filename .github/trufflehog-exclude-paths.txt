@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# TruffleHog --exclude-paths for the security.yml `secrets — trufflehog`
+# gate. Each line is an RE2 regex matched against a file path. The gate
+# scans full git history (fetch-depth: 0), so a path is excluded across
+# every commit that ever touched it.
+#
+# Only documented, verified-false-positive fixtures live here. Every
+# entry below was scanned with `--no-verification` and reported
+# verified=0 (no live secret). Unverified findings still fail the gate
+# for every other path in the repo — this file does NOT switch the gate
+# to verified-only mode.
+#
+# HTML-encoded fixture false-positives (verified: 0):
+#   Diagram source with URL-shaped node labels that the Box detector
+#   reads as a token; the label is a rendered diagram string, not a key.
+docs/architecture/diagrams/architecture-overview\.svg
+#   Research note quoting an example URI with HTML entity encoding; the
+#   URI detector reads the encoded query string as credentials.
+docs/future-architecture/research/09-agentbox\.md
+#
+# Example / test fixtures (verified: 0):
+#   Helm example values: a postgresql:// URL whose password is an
+#   unexpanded `$(POSTGRES_PASSWORD)` shell placeholder, not a secret.
+examples/helm/with-open-webui/values-open-webui\.yaml
+#   Path-traversal security test: a hard-coded example Dockerhub-shaped
+#   string used as a test fixture, not a live credential.
+tests/security/test_path_traversal_docker\.py
