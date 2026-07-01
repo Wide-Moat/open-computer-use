@@ -83,7 +83,7 @@ playwright==1.57.0
 pyee==13.0.0
 
 # Office/LibreOffice integration
-unoserver==3.4
+unoserver==3.7
 pyoo==1.4
 
 # CLI and utilities
