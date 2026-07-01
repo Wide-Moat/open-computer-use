@@ -114,7 +114,7 @@ paths:
           $ref: '#/components/responses/Denied'
         '409':
           $ref: '#/components/responses/Denied'
-        '422':
+        '400':
           $ref: '#/components/responses/Denied'
         '503':
           $ref: '#/components/responses/Denied'
@@ -140,7 +140,7 @@ paths:
                 $ref: '#/components/schemas/FileListEnvelope'
         '403':
           $ref: '#/components/responses/Denied'
-        '422':
+        '400':
           $ref: '#/components/responses/Denied'
         '503':
           $ref: '#/components/responses/Denied'
