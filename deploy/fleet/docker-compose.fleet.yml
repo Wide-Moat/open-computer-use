@@ -398,11 +398,15 @@ services:
       - ocu-frontend
       - ocu-state
     user: "65532:65532"
-    # The Docker socket is root:root (gid 0) under Docker Desktop; control runs
-    # as uid 65532 with a read-only rootfs, so it joins gid 0 to read the socket
-    # for the per-session container lifecycle. A hardened deployment replaces
-    # this with a brokered / rootless socket (see the docker.sock mount note).
-    group_add: ["0"]
+    # Control runs as uid 65532 with a read-only rootfs, so it must JOIN the
+    # group that owns the Docker socket to read it for the per-session container
+    # lifecycle. That gid differs by host: it is 0 (root:root) under Docker
+    # Desktop, but a distinct `docker` gid (often 988/999) under a native
+    # Linux/Lima dockerd. OCU_DOCKER_GID selects it (default 0 for Docker
+    # Desktop); set it to the socket's gid on a native host — e.g.
+    # OCU_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock). A hardened deployment
+    # replaces this with a brokered / rootless socket (see the docker.sock note).
+    group_add: ["${OCU_DOCKER_GID:-0}"]
     read_only: true
     cap_drop: [ALL]
     security_opt:

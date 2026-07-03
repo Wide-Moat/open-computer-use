@@ -79,9 +79,17 @@ provide an env file first:
 ```
 cp deploy/fleet/.env.example deploy/fleet/.env
 # set OCU_EMBED_VERIFY_SECRET and OCU_SESSION_SECRET (openssl rand -hex 32 each)
+# on a native Linux / Lima dockerd (not Docker Desktop), also set the socket gid:
+#   echo "OCU_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> deploy/fleet/.env
 docker compose -f deploy/fleet/docker-compose.fleet.yml --env-file deploy/fleet/.env \
   up -d --build --wait
 ```
+
+Control runs as uid 65532 and reads the Docker socket for the per-session
+container lifecycle. Under Docker Desktop the socket is root-owned and the
+default `OCU_DOCKER_GID=0` fits; on a native dockerd the socket has a distinct
+`docker` gid, so set `OCU_DOCKER_GID` to it (the line above) or control cannot
+dial the daemon and fail-closes at boot.
 
 Control also needs a Storage/Exec-JWT signing key and fail-closes at boot
 without one (there is no daemon-default key). The `signing-key-init` one-shot
