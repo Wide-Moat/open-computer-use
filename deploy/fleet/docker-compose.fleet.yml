@@ -48,6 +48,7 @@ volumes:
   webui-audit:
   control-audit:
   control-runtime:
+  control-signing-key:
   tls-certs:
   south-shared:
   south-filestore-workspace:
@@ -87,6 +88,36 @@ services:
         chmod 0644 tls-cert.pem ca.pem tls-key.pem
         chown 65532:65532 tls-key.pem tls-cert.pem 2>/dev/null || true
         echo "minted leaf (SAN filestore,ocu-filestore,localhost) + CA"
+
+  # -------------------------------------------------------------------------
+  # signing-key-init — mints the control plane's Storage/Exec-JWT signing key
+  # (Ed25519, PKCS8 PEM) into a shared volume when the operator did not supply
+  # one. Control fail-closes at boot without a real key at -jwt-signing-key
+  # (there is no daemon-default key), so a documented `up` must provision one
+  # the same way cert-init provisions the TLS leaf. The operator overrides with
+  # a managed key by setting OCU_JWT_SIGNING_KEY to a host path (bind mount);
+  # left unset, this one-shot mints a throwaway local-fleet key. One-shot; the
+  # stack waits on it.
+  # -------------------------------------------------------------------------
+  signing-key-init:
+    image: alpine/openssl:latest
+    volumes:
+      - control-signing-key:/keys
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        cd /keys
+        if [ -f storage-jwt-signing.key ]; then echo "signing key present"; exit 0; fi
+        # Ed25519 private key in PKCS8 PEM — the format control's LoadSignerFromMount
+        # parses. openssl genpkey -algorithm ED25519 emits PKCS8 PEM by default.
+        openssl genpkey -algorithm ED25519 -out storage-jwt-signing.key
+        # Control reads the key as uid 65532 under a read-only rootfs. This is a
+        # throwaway self-signed key for the local fleet only; production supplies a
+        # managed key via OCU_JWT_SIGNING_KEY with tight modes and proper custody.
+        chmod 0640 storage-jwt-signing.key
+        chown 65532:65532 storage-jwt-signing.key 2>/dev/null || true
+        echo "minted Ed25519 PKCS8 storage/exec-JWT signing key"
 
   # -------------------------------------------------------------------------
   # MinIO — the real S3 backend the object-store service writes customer bytes
@@ -348,10 +379,18 @@ services:
     depends_on:
       control-db:
         condition: service_healthy
+      signing-key-init:
+        condition: service_completed_successfully
     volumes:
       - control-audit:/var/log/ocu-control
       - control-runtime:/run/ocu-control
-      - ${OCU_JWT_SIGNING_KEY:-./secrets/storage-jwt-signing.key}:/run/secrets/storage-jwt-signing.key:ro
+      # The Storage/Exec-JWT signing key lives in a shared volume that
+      # signing-key-init populates with a real Ed25519 PKCS8 key on first `up`.
+      # An operator-managed key overrides it: drop your PKCS8 PEM key into this
+      # volume as storage-jwt-signing.key before the first `up` (see README), or
+      # bind it in through a compose override. Control mounts /run/secrets
+      # read-only.
+      - control-signing-key:/run/secrets:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:9466:9466"

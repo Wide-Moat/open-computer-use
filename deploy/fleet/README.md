@@ -83,6 +83,18 @@ docker compose -f deploy/fleet/docker-compose.fleet.yml --env-file deploy/fleet/
   up -d --build --wait
 ```
 
+Control also needs a Storage/Exec-JWT signing key and fail-closes at boot
+without one (there is no daemon-default key). The `signing-key-init` one-shot
+mints a throwaway Ed25519 PKCS8 key into a shared volume on first `up`, so the
+command above works unchanged. For a managed key, write your own PKCS8 PEM key
+into that volume as `storage-jwt-signing.key` before the first `up`:
+
+```
+docker volume create ocu-fleet_control-signing-key
+docker run --rm -v ocu-fleet_control-signing-key:/keys alpine/openssl:latest \
+  sh -c 'openssl genpkey -algorithm ED25519 -out /keys/storage-jwt-signing.key && chown 65532:65532 /keys/storage-jwt-signing.key'
+```
+
 The object-store engine reaches MinIO over a dedicated `ocu-storage-backend`
 network, kept off the credential-bearing south plane. Without it the daemon's
 S3 versioning probe cannot dial `minio` and the process fail-closes at boot.
