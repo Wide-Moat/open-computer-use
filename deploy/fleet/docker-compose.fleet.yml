@@ -157,7 +157,7 @@ services:
       # the feat/f9-storage-seam line, not the default checkout. Until that line
       # merges to next/v1 (the #305 cascade), the build sources the F9 worktree.
       # Production sources the merged F9 line from origin.
-      context: ../../../ocu-filestore/.claude/worktrees/feat+storage-rest-pivot
+      context: ../../../ocu-filestore
       dockerfile: Dockerfile
     image: ocu-filestore:fleet
     depends_on:
