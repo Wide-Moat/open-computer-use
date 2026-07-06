@@ -151,6 +151,13 @@ def _ensure_fleet_storage_session(backend) -> None:
             f"fleet storage session was not created (status={ref.status!r}); "
             "the FUSE-write path cannot be reached without it"
         )
+    # A fleet create returns on row-reservation; the guest's exec listener (the
+    # mount boot-child) binds a couple of seconds later, so an exec fired
+    # immediately is refused (denied). Gate on the marker-echo warmup before the
+    # first FUSE write so B1/B3/B5 drive a warm exec plane, not a just-created
+    # one. The gate loud-skips on a genuine boot failure — never a fabricated
+    # green.
+    await_fleet_exec_ready(backend)
 
 
 def _b64_cmd(backend, args: str) -> str:

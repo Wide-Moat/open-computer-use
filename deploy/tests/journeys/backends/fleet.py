@@ -387,6 +387,38 @@ class FleetBackend(Backend):
             self._hint_by_key[key] = hint
         return SessionRef(key=key, status="active")
 
+    def destroy_all_sessions(self) -> int:
+        """Destroy every session THIS backend created, freeing its slot.
+
+        Per-test teardown. A live session legitimately holds its concurrency
+        slot until it is destroyed (an exec exit does NOT end the session — the
+        guest is a long-lived UDS service), so a suite that creates one session
+        per test and never destroys them accumulates live rows and, after the
+        tier cap, every later create 409s. This drives the REAL destroy verb
+        (POST /v1alpha/sessions/destroy, addressed by the caller's own hint) so
+        each test returns its slot the same way a client's disconnect would —
+        NOT a DB-counter poke. Best-effort: a 404 (already gone) or transport
+        miss is ignored so teardown never fails a test. Returns the count
+        actually destroyed.
+        """
+        destroyed = 0
+        hints = list(self._hint_by_key.values())
+        if self._last_hint and self._last_hint not in hints:
+            hints.append(self._last_hint)
+        for hint in hints:
+            try:
+                status, _ = self._curl(
+                    "POST", "/v1alpha/sessions/destroy", {"session_hint": hint}
+                )
+                if status in (200, 202, 204):
+                    destroyed += 1
+            except BackendUnavailable:
+                continue
+        self._hint_by_key.clear()
+        self._last_hint = None
+        self._last_key = None
+        return destroyed
+
     def get_session(self, key: str) -> SessionRef:
         """Read a session's state over the gateway mTLS plane.
 

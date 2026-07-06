@@ -361,6 +361,11 @@ def test_g3_audit_hash_chain_and_fail_closed(backend, expect):
         # through the FUSE mount (a file-op the gateway audits).
         sess = backend.create_storage_session()
         assert sess.status == "active", f"storage session not active: {sess.status}"
+        # The guest boot-child mounts the FUSE surface asynchronously after the
+        # create returns; an exec issued before the mount is ready is denied
+        # (exit=-1, denied). Wait for the exec plane to be live so the file-op
+        # under test measures the audit path, not a boot race (same gate B uses).
+        await_fleet_exec_ready(backend)
         marker = _unique_marker()
         out_path = f"/mnt/user-data/outputs/{marker}.txt"
         op = backend.exec_sh(f"printf '%s' {marker} > {out_path}")

@@ -52,7 +52,11 @@ from backends.base import (
     PocHoleNotEnforced,
     SessionRef,
 )
-from conftest import _reclaim_fleet_concurrency_leak, real_finding
+from conftest import (
+    _reclaim_fleet_concurrency_leak,
+    await_fleet_exec_ready,
+    real_finding,
+)
 
 # The operator UDS the fleet host mounts (kill-switch / resume ingress). Matches
 # FLEET_OPERATOR_SOCK in backends/fleet.py; overridable for a non-default host.
@@ -868,6 +872,11 @@ def test_e8_session_jwt_expiry_surfaces_cleanly(backend: Backend, expect) -> Non
     # session's exec succeeding, proving the same path is not blanket-401.
     live = backend.create_session()
     assert live.status == "active", f"expected active session, got {live.status}"
+
+    # The guest exec plane comes up asynchronously after create returns; an exec
+    # issued before it is ready is denied (a boot race, not an expiry). Wait for
+    # readiness so the keystone below measures the JWT path, not the race.
+    await_fleet_exec_ready(backend)
 
     # KEYSTONE (within-exp path works): a fresh, currently-valid session exec
     # completes — the edge/exec path is not a blanket 401, so a later expiry-401

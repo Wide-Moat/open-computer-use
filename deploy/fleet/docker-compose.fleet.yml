@@ -37,7 +37,15 @@ networks:
     # takes a fixed IP (172.20.0.2 below): a gVisor guest cannot use docker's
     # embedded DNS, so control injects a static `edge:172.20.0.2` ExtraHosts entry
     # (-edge-host) and a stable IP keeps that mapping valid across restarts.
+    #
+    # internal: true is the L3 single-hop invariant. Without it the guest reaches
+    # arbitrary external hosts (nc 1.1.1.1:443 → rc 0), collapsing the egress
+    # policy to a DNS-scoping convention. With no NAT bridge on this segment the
+    # guest can reach only the edge and no external route exists. The guest<->edge
+    # traffic is in-segment and needs no default route out. Ties the
+    # shared-mount-facing network-model convergence issue.
     driver: bridge
+    internal: true
     ipam:
       config:
         - subnet: 172.20.0.0/24
@@ -320,8 +328,14 @@ services:
       - "1073741824"
       - -granted-intents
       - read,write
+      # Guest-convention path prefixes whose objects resolve downloadable=true
+      # at read (NFR-SEC-73: resolved-at-read via prefix match, never stamped at
+      # write). The mount sends the guest-convention req.path (leading slash) and
+      # the policy matches path==prefix or path under prefix+"/". /outputs is the
+      # agent's writable download surface; /pub is the shared public prefix. An
+      # object outside every prefix is refused read-back with not_downloadable.
       - -downloadable-prefixes
-      - /pub
+      - ${OCU_DOWNLOADABLE_PREFIXES:-/}
       - -profile
       - trusted_operator
       - -tenancy
@@ -576,6 +590,59 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 5s
+
+  # =========================================================================
+  # MCP GATEWAY (component-01) — the north auth edge. MCP callers present an
+  # sk-ocu- key here (ADR-0027); the gateway validates it in-process against the
+  # Control-rendered boot-set (hashes only), then forwards the F5 create/destroy
+  # to control over the gateway mTLS plane. A forged/missing key is refused 401
+  # at ingress before any forward (invariant #9). The 4 mounted materials all
+  # fail closed at boot if absent: boot-set (key hashes), service-credential (the
+  # gateway's own F5 identity token), provisioning-policy (deployment config),
+  # and the mTLS client pair (the same gateway-pki client leaf control already
+  # trusts on its ingress). -listen 0.0.0.0:8080 is safe in-container behind the
+  # compose netns; the DNS-rebinding guard is the -allowed-origin Origin policy,
+  # which still runs (an empty allowlist admits only originless CLI/SDK callers —
+  # the MCP caller). The bind override is declared here (auditable), not baked.
+  # =========================================================================
+  mcp-gateway:
+    build:
+      context: ../../../ocu-mcp-gateway
+      dockerfile: Dockerfile
+    image: mcp-gateway:fleet
+    depends_on:
+      control:
+        condition: service_healthy
+    command:
+      - -listen=0.0.0.0:8080
+      - -deployment=fleet-local
+      - -boot-set=/etc/ocu/boot-set.json
+      - -service-credential-file=/etc/ocu/service-credential.token
+      - -provisioning-policy=/etc/ocu/provisioning-policy.json
+      - -control-url=https://control:9466
+      - -control-ca=/run/gateway-pki/ca.pem
+      - -control-client-cert=/run/gateway-pki/client.pem
+      - -control-client-key=/run/gateway-pki/client.key
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./secrets/gateway/boot-set.json:/etc/ocu/boot-set.json:ro
+      - ./secrets/gateway/service-credential.token:/etc/ocu/service-credential.token:ro
+      - ./secrets/gateway/provisioning-policy.json:/etc/ocu/provisioning-policy.json:ro
+      - ./gateway-pki:/run/gateway-pki:ro
+    networks:
+      - ocu-frontend
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/ocu-mcp-gatewayd", "-health-check"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
       start_period: 5s
 
   # =========================================================================

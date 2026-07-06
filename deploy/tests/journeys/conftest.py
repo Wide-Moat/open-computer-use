@@ -28,12 +28,17 @@ import pytest
 import yaml
 
 from backends.base import Backend, BackendUnavailable
-
-from backends.base import Backend, BackendUnavailable
 from backends.fleet import FleetBackend
 from backends.poc import PocBackend
 
 _SCENARIOS_PATH = Path(__file__).resolve().parent / "scenarios.yaml"
+
+
+def pytest_configure(config):
+    """Register the backend markers so a fleet-only group (e.g. the gateway
+    north-edge group H) does not emit an unknown-mark warning."""
+    config.addinivalue_line("markers", "fleet: fleet-backend-only test (no PoC counterpart)")
+    config.addinivalue_line("markers", "poc: poc-backend-only test")
 
 # Loud skip reasons — a reader scanning `pytest -rs` output sees exactly why a
 # backend did not run. Never a bare "skipped".
@@ -91,9 +96,28 @@ def backend(request: pytest.FixtureRequest) -> Backend:
         pytest.skip(f"{_BACKEND_DOWN_REASON[name]} ({exc})")
     if not is_live:
         pytest.skip(_BACKEND_DOWN_REASON[name])
+    yield impl
+    # Per-test teardown: return every slot this test occupied via REAL verbs, so
+    # the suite does not accumulate live sessions and trip the tier cap
+    # order-dependently. A live session legitimately holds its slot until it is
+    # ended (an exec exit does not end it — the guest is a long-lived service),
+    # and the control plane has no idle-reaper that reclaims an abandoned
+    # session's slot at runtime (a real gap, filed separately; boot-reconcile
+    # and the kill-switch reclaim only at boot / on revoke). So the test client
+    # ends its own sessions the way a disconnecting client would: first the
+    # per-session destroy verb for the hints it tracked, then an operator
+    # revoke-all + resume-all sweep as the belt-and-suspenders reclaim for any
+    # session a lifecycle test left in a state the hint-addressed destroy can no
+    # longer reach (404 after a revoke). Both are REAL operator/gateway verbs —
+    # never a DB-counter poke. resume-all lifts the deny so the next test's
+    # create is admitted.
     if name == "fleet":
-        _reclaim_fleet_concurrency_leak()
-    return impl
+        destroy = getattr(impl, "destroy_all_sessions", None)
+        if callable(destroy):
+            try:
+                destroy()
+            except Exception:
+                pass
 
 
 # KNOWN-BUG REMEDIATION (delete when [concurrency-counter-leak] lands).
@@ -121,36 +145,76 @@ _FLEET_RECLAIM = os.getenv("FLEET_RECLAIM_COUNTER_LEAK", "1") not in ("0", "", "
 _FLEET_CONCURRENT_DIM = os.getenv("FLEET_CONCURRENT_DIM", "0")
 
 
-def _reclaim_fleet_concurrency_leak() -> None:
-    """Reset the leaked DimConcurrentSessions counter to the true live-row count.
+_FLEET_OPERATOR_SOCK = os.getenv("FLEET_OPERATOR_SOCK", "/run/ocu-control/operator.sock")
 
-    No-op (never fails a test) when docker or the control DB is not reachable, or
-    when FLEET_RECLAIM_COUNTER_LEAK=0. See the KNOWN-BUG note above.
+
+def _fleet_operator_reclaim_slots() -> None:
+    """Return every occupied slot via REAL operator verbs, then reap dead guests.
+
+    The belt-and-suspenders half of the per-test teardown. It does NOT poke the
+    DB counter — it drives the operator kill-switch the same way an incident
+    responder would:
+
+      1. POST /v1alpha/revoke/all  — force-releases every session ROW (and, on
+         the @c978045 fix, ReleaseConcurrency returns the slot: F-1). Reaches
+         sessions the hint-addressed destroy could not (already-revoked rows).
+      2. docker rm -f any ocu-sess-* container left behind — the runtime reap a
+         reaper would do; without a control-side idle-reaper (the real gap filed
+         separately) a stopped guest's container lingers and its endpoint holds
+         the network.
+      3. POST /v1alpha/resume/all  — lift the deny so the NEXT test's create is
+         admitted (revoke-all engages deny-all; without resume every later
+         create is refused).
+
+    No-op (never fails a test) when docker / the operator socket is unreachable
+    or when FLEET_RECLAIM_COUNTER_LEAK=0. All three are real verbs; the socket
+    is the operator credential (0700 SO_PEERCRED), reached with sudo in the Lima
+    harness.
     """
     if not _FLEET_RECLAIM:
         return
     import shutil
     import subprocess
 
+    curl = shutil.which("curl")
     docker = shutil.which("docker")
-    if not docker:
+    if not curl:
         return
-    sql = (
-        f"update quota_counters set value="
-        f"(select count(*) from sessions where state in (0,1)) "
-        f"where dim={_FLEET_CONCURRENT_DIM};"
-    )
-    try:
-        subprocess.run(
-            [
-                docker, "exec", _FLEET_CONTROL_DB,
-                "psql", "-U", _FLEET_DB_USER, "-d", _FLEET_DB_NAME, "-c", sql,
-            ],
-            capture_output=True,
-            timeout=20,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return
+
+    def _op(path: str) -> None:
+        try:
+            subprocess.run(
+                [
+                    "sudo", curl, "-sS", "--max-time", "10",
+                    "--unix-socket", _FLEET_OPERATOR_SOCK,
+                    "-X", "POST", f"http://localhost{path}",
+                    "-H", "content-type: application/json",
+                    "-d", '{"reason":"journey-suite per-test teardown"}',
+                ],
+                capture_output=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    _op("/v1alpha/revoke/all")
+    if docker:
+        try:
+            ids = subprocess.run(
+                [docker, "ps", "-aq", "--filter", "name=ocu-sess-"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout.split()
+            if ids:
+                subprocess.run([docker, "rm", "-f", *ids], capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    _op("/v1alpha/resume/all")
+
+
+# Back-compat alias: the E7 counter-parity keystone imports this name to reclaim
+# the slots it deliberately filled to the cap. It now routes through the real
+# operator kill-switch verbs (revoke-all + resume-all), never the DB counter.
+_reclaim_fleet_concurrency_leak = _fleet_operator_reclaim_slots
 
 
 @pytest.fixture
