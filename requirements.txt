@@ -21,7 +21,7 @@ reportlab==4.4.10
 
 # Image processing
 pillow==12.2.0
-opencv-python==4.11.0.86
+opencv-python==4.13.0.92
 opencv-contrib-python==4.11.0.86
 opencv-python-headless==4.11.0.86
 imageio==2.37.0
