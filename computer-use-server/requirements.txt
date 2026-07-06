@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.49.0
 python-multipart==0.0.26
-aiohttp>=3.9.0
+aiohttp>=3.14.1
 
 # MCP (Model Context Protocol) support
 # Pinned: mcp_tools.py and mcp_resources.py touch private API
