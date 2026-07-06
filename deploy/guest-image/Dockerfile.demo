@@ -28,10 +28,14 @@ FROM ${BUSYBOX_IMAGE} AS busybox
 
 FROM ${ASSEMBLED_IMAGE} AS demo
 
-# A single static busybox at a fixed path. The exec argv names it explicitly
-# (/bin/busybox sh -c ...) so the write goes through the real guest FUSE mount.
-# Static (musl) so it needs no libc the distroless substrate lacks.
+# A single static busybox at a fixed path, plus a /bin/sh symlink onto it.
+# Static (musl) so it needs no libc the distroless substrate lacks. The exec
+# argv runs the tool command via /bin/sh -c: an image that supports bash_tool
+# guarantees a POSIX /bin/sh, so the gateway does not need to know the image's
+# internals (busybox here, a real shell in a heavier rung). The FUSE mount is
+# already up by the time the boot-child readies, so a shell write lands on it.
 COPY --from=busybox /bin/busybox /bin/busybox
+RUN ["/bin/busybox", "ln", "-s", "/bin/busybox", "/bin/sh"]
 
 # ENTRYPOINT is inherited from the assembled image (the agent entrypoint the
 # canonical Dockerfile sets); the control plane supplies the full create-time
