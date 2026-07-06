@@ -74,6 +74,11 @@ volumes:
   south-shared:
   south-filestore-workspace:
   control-db-data:
+  # The gateway's durable OCSF audit journal (G7 FileSink) and the OpenWebUI
+  # client's own state + its private Postgres — the UI DB is NEVER control-db.
+  mcp-gateway-audit:
+  open-webui-data:
+  openwebui-db-data:
 
 services:
   # -------------------------------------------------------------------------
@@ -272,6 +277,19 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - chown 1000:1000 /var/audit
+
+  # mcp-gateway-audit-init — same pattern for the gateway's G7 FileSink journal.
+  # The gateway runs non-root (65532) under a read-only rootfs; its one writable
+  # mount (the OCSF audit journal) must be owned by that uid or the FileSink open
+  # fails closed at boot ("open audit file sink: permission denied"). One-shot;
+  # the gateway waits on it.
+  mcp-gateway-audit-init:
+    image: alpine:latest
+    volumes:
+      - mcp-gateway-audit:/var/log/ocu-mcp-gateway
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown 65532:65532 /var/log/ocu-mcp-gateway
 
   # -------------------------------------------------------------------------
   # object-store service — two faces, two planes, one identity (ADR-0025,
@@ -607,13 +625,16 @@ services:
   # the MCP caller). The bind override is declared here (auditable), not baked.
   # =========================================================================
   mcp-gateway:
-    build:
-      context: ../../../ocu-mcp-gateway
-      dockerfile: Dockerfile
-    image: mcp-gateway:fleet
+    # Built firsthand from feat/live-chain-combined @31a53f2 (G4 Dockerfile + G6
+    # readiness /healthz + G7 durable FileSink). The FileSink (-audit-sink) is what
+    # turns a valid keyed create from a fail-closed 500 into a 201 with a durable
+    # OCSF line on disk — the last hop of the north auth edge.
+    image: ocu-mcp-gateway:fleet-combined
     depends_on:
       control:
         condition: service_healthy
+      mcp-gateway-audit-init:
+        condition: service_completed_successfully
     command:
       - -listen=0.0.0.0:8080
       - -deployment=fleet-local
@@ -624,6 +645,10 @@ services:
       - -control-ca=/run/gateway-pki/ca.pem
       - -control-client-cert=/run/gateway-pki/client.pem
       - -control-client-key=/run/gateway-pki/client.key
+      # G7 durable audit sink — the append-only OCSF spine the gateway fsyncs a
+      # tool_call event to before acking (NFR-SEC-03 emit-before-ack). Without it a
+      # valid key fails closed at 500; with it the same call reaches 201.
+      - -audit-sink=/var/log/ocu-mcp-gateway/audit.ocsf.jsonl
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -631,6 +656,8 @@ services:
       - ./secrets/gateway/service-credential.token:/etc/ocu/service-credential.token:ro
       - ./secrets/gateway/provisioning-policy.json:/etc/ocu/provisioning-policy.json:ro
       - ./gateway-pki:/run/gateway-pki:ro
+      # The one writable mount: the durable audit journal the FileSink appends to.
+      - mcp-gateway-audit:/var/log/ocu-mcp-gateway
     networks:
       - ocu-frontend
     user: "65532:65532"
@@ -639,10 +666,13 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "/usr/local/bin/ocu-mcp-gatewayd", "-health-check"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+      # G6 readiness: the probe dials the same listener the server binds, so
+      # healthy means :8080 is accepting AND the boot-set loaded, not just that the
+      # binary runs. The -listen must match the bind address above.
+      test: ["CMD", "/usr/local/bin/ocu-mcp-gatewayd", "-health-check", "-listen", "0.0.0.0:8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 5s
 
   # =========================================================================
@@ -901,3 +931,75 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+
+  # =========================================================================
+  # OPENWEBUI CLIENT LEG — the agent client that drives the fleet through our
+  # MCP gateway. The old PoC integration under openwebui/ already speaks MCP
+  # Streamable HTTP (tools/call); here it is REPOINTED at OUR next/v1 gateway
+  # (mcp-gateway:8080) with an sk-ocu- boot-set key, not the old monolithic
+  # Computer Use Server. A tool-call goes OpenWebUI -> gateway (auth + validate)
+  # -> control (create) -> gVisor guest, and executes behind the gateway. The
+  # session lifecycle (create + auto-disconnect) is the control plane's job; the
+  # tool never destroys. init.sh seeds the tool + filter Valves on first boot.
+  # =========================================================================
+  open-webui:
+    build:
+      context: ../../openwebui
+      dockerfile: Dockerfile
+      args:
+        OPENWEBUI_VERSION: ${OPENWEBUI_VERSION:-0.9.2}
+    depends_on:
+      openwebui-db:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://openwebui:${OPENWEBUI_DB_PASSWORD:-openwebui}@openwebui-db:5432/openwebui
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-fleet-demo-secret}
+      - BYPASS_EMBEDDING_AND_RETRIEVAL=true
+      - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
+      - ENABLE_OPENAI_API_SSL_VERIFY=${ENABLE_OPENAI_API_SSL_VERIFY:-true}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@open-computer-use.dev}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      # OUR MCP gateway is the endpoint the tool hits — a drop-in replacement for
+      # the old Computer Use Server. Service DNS on ocu-frontend; the tool POSTs
+      # tools/call here with MCP-Protocol-Version + the sk-ocu- bearer. Browsers
+      # never see this URL (it is server-side, container-to-container only).
+      - ORCHESTRATOR_URL=http://mcp-gateway:8080
+      # The sk-ocu- boot-set key the gateway validates in-process (ADR-0027). Held
+      # server-side in the OpenWebUI container, seeded into the tool Valve by
+      # init.sh; never reaches the browser.
+      - MCP_API_KEY=${MCP_API_KEY:-}
+      - CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES=200
+      - TOOL_RESULT_MAX_CHARS=${TOOL_RESULT_MAX_CHARS:-50000}
+      - TOOL_RESULT_PREVIEW_CHARS=${TOOL_RESULT_PREVIEW_CHARS:-2000}
+    volumes:
+      - open-webui-data:/app/backend/data
+    ports:
+      # 3000 is taken by the fleet webui BFF; the OpenWebUI client binds 3001.
+      - "127.0.0.1:${OPENWEBUI_PORT:-3001}:8080"
+    networks:
+      - ocu-frontend
+    restart: unless-stopped
+
+  # OpenWebUI's OWN Postgres — its user/chat/tool state. It is a SEPARATE service
+  # from control-db (ocu_control on ocu-state); the UI DB never shares control's
+  # private state network or credentials.
+  openwebui-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openwebui
+      POSTGRES_PASSWORD: ${OPENWEBUI_DB_PASSWORD:-openwebui}
+      POSTGRES_DB: openwebui
+    volumes:
+      - openwebui-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openwebui"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ocu-frontend
+    restart: unless-stopped
