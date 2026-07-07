@@ -64,7 +64,8 @@ Cross-cutting properties (zone membership, in-transit encryption, retention floo
 - Every privileged operator/SOAR action in the NFR-SEC-45 set emits a chain-linked OCSF event before acknowledgement, and the action is denied if the audit write fails (NFR-SEC-45; system-initiated lifecycle transitions owned by NFR-SEC-72).
 - Per-caller create-rate and per-tenant quota are enforced before a session is created; excess is refused, not queued. The create flood cannot starve the operator/revoke route, which sits on a distinct ingress (NFR-COST-06, NFR-SEC-53).
 - The kill-switch and revoke path holds its ≤30 s p99 SLA while the control plane is saturated, including a flood on the operator ingress; the route carries reserved capacity distinct from the create path (NFR-SEC-55, SLA owned by NFR-SEC-01).
-- TTL and revocation windows (Session JWT, denylist propagation) run against a monotonic clock; a wall-clock setback neither extends a token nor defers a revoke (clock-rollback harness, NFR-SEC-48).
+- Every terminal session transition — operator kill, guest exit, reconcile reclaim, or idle expiry (NFR-SEC-40) — releases the session's concurrency slot back to the tier cap before the row goes terminal (NFR-REL-09). Idle expiry is a host-initiated stop (NFR-SEC-01), audited under NFR-SEC-72.
+- TTL, revocation, and idle windows (Session JWT, denylist propagation, session idle per NFR-SEC-40) run against a monotonic clock; a wall-clock jump neither extends a token, defers a revoke, nor mass-reaps live sessions (clock-rollback harness, NFR-SEC-48).
 
 ## Failure modes
 
@@ -85,7 +86,7 @@ Control authors the denylist; the Egress trust-edge reads it and refuses a revok
 
 ## Operational concerns
 
-Config surface: the operator/lifecycle ingress listener and the gateway service-identity listener are distinct network endpoints (the NFR-SEC-52 separation). Per-caller create-rate, per-tenant concurrent-session and calls/min ceilings (NFR-COST-06), and the reserved lifecycle/revoke capacity (NFR-SEC-55) are the principal knobs.
+Config surface: the operator/lifecycle ingress listener and the gateway service-identity listener are distinct network endpoints (the NFR-SEC-52 separation). Per-caller create-rate, per-tenant concurrent-session and calls/min ceilings (NFR-COST-06), and the reserved lifecycle/revoke capacity (NFR-SEC-55) are the principal knobs. The session idle-TTL (NFR-SEC-40) is off on the minimal shelf, on and tunable-down within the ≤15 min ceiling on the full shelf.
 
 Control renders the Storage-JWT JWKS as a static artifact at `-jwks-path` (atomic write, re-rendered on key rotation); the deploy layer serves it over HTTP at the egress edge's `remote_jwks` URI ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md) §35). Control adds no third listener — the two-listener invariant (§39, NFR-SEC-52) is unchanged; the JWKS is a published public-key artifact, not a network endpoint on the signing-key holder.
 
