@@ -407,6 +407,13 @@ services:
     build:
       context: ../../../ocu-webui
       dockerfile: web/Dockerfile
+      args:
+        # NEXT_PUBLIC_* is inlined into the client bundle at `next build` — it
+        # cannot be set at runtime. The pane's bootstrap hook trusts exactly one
+        # parent origin (strict equality); it must be the embed-portal's origin,
+        # the address the owner opens in the browser. Empty here = deny-by-default
+        # = the pane can never receive a token = a dead browser bootstrap.
+        NEXT_PUBLIC_OCU_PARENT_ORIGIN: ${OCU_PARENT_ORIGIN:-http://localhost:3003}
     image: ocu-webui:fleet
     depends_on:
       cert-init:
@@ -424,7 +431,9 @@ services:
       OCU_EMBED_VERIFY_SECRET: ${OCU_EMBED_VERIFY_SECRET:?set a >=32-byte embed verify secret}
       OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
       OCU_SESSION_SECRET: ${OCU_SESSION_SECRET:?set a >=32-byte session secret}
-      OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-}
+      # frame-ancestors default is 'none' (no embedder); the demo portal must be
+      # allow-listed or the pane refuses to render inside the portal iframe.
+      OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-http://localhost:3003}
       # The append-only OCSF audit journal. Deny-by-default: the BFF hard-fails
       # a file-op at request time if this path is unset (NFR-SEC-79 — no file-op
       # serves 2xx without a committed local durable record). The local commit
@@ -441,6 +450,41 @@ services:
       - ocu-frontend
       - ocu-north
     user: "node"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  # -------------------------------------------------------------------------
+  # embed-portal — the demo embedding portal for the File Pane. Stands in for
+  # the customer portal/IdP: production replaces this service with the
+  # customer's own portal minting the same embed token over the same wire.
+  # It iframes the pane, mints a short-lived HS256 embed token server-side
+  # (holding OCU_EMBED_VERIFY_SECRET the pane's BFF verifies against), and
+  # postMessages the token into the iframe at the pane's literal origin — the
+  # real cross-origin bootstrap the pane requires. The owner opens THIS origin
+  # (http://localhost:3003), not the pane directly.
+  # -------------------------------------------------------------------------
+  embed-portal:
+    build:
+      context: ./embed-portal
+      dockerfile: Dockerfile
+    image: ocu-embed-portal:fleet
+    environment:
+      LISTEN: ":3003"
+      # The pane's own origin (what the iframe loads and what postMessage targets).
+      PANE_ORIGIN: ${OCU_PANE_ORIGIN:-http://localhost:3000}
+      # The HMAC key the pane's BFF verifies the embed token against — same secret.
+      OCU_EMBED_VERIFY_SECRET: ${OCU_EMBED_VERIFY_SECRET:?set a >=32-byte embed verify secret}
+      OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
+      # The provisioned filesystem the F9 leg accepts (filestore logs fs-fleet).
+      DEMO_FILESYSTEM_ID: ${OCU_DEMO_FILESYSTEM_ID:-fs-fleet}
+      DEMO_SUBJECT: ${OCU_DEMO_SUBJECT:-demo-user}
+      DEMO_INTENT: ${OCU_DEMO_INTENT:-write}
+    ports:
+      - "127.0.0.1:3003:3003"
+    networks:
+      - ocu-frontend
     read_only: true
     cap_drop: [ALL]
     security_opt:
