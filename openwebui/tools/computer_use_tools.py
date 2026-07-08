@@ -67,6 +67,16 @@ class _MCPClient:
     _HEALTH_TTL_SECONDS = 30.0
     _HEALTH_TIMEOUT_SECONDS = 3.0
 
+    # The MCP protocol version the orchestrator/gateway pins. Streamable-HTTP
+    # servers negotiate the version through the MCP-Protocol-Version HTTP header
+    # (not the JSON-RPC body); a request that omits the header, or carries a
+    # version the server does not accept, is rejected with -32602 "unsupported
+    # or missing protocol version" (HTTP 400) BEFORE auth. The manual preflight
+    # below must send this exact version — both in the header and in the
+    # initialize body — or it 400s and reports the server as broken. The real
+    # tool call goes through the MCP SDK, which sets the header itself.
+    _MCP_PROTOCOL_VERSION = "2025-06-18"
+
     def __init__(self, orchestrator_url: str, mcp_api_key: str = ""):
         base = orchestrator_url.rstrip("/")
         self.base_url = base
@@ -132,15 +142,17 @@ class _MCPClient:
     def _http_probe_mcp_initialize(self) -> tuple[bool, str]:
         """POST /mcp with a minimal initialize. Verifies session_manager is live."""
         body = (
-            b'{"jsonrpc":"2.0","id":1,"method":"initialize",'
-            b'"params":{"protocolVersion":"2024-11-05","capabilities":{},'
-            b'"clientInfo":{"name":"preflight","version":"1.0"}}}'
-        )
+            '{"jsonrpc":"2.0","id":1,"method":"initialize",'
+            '"params":{"protocolVersion":"' + self._MCP_PROTOCOL_VERSION + '",'
+            '"capabilities":{},'
+            '"clientInfo":{"name":"preflight","version":"1.0"}}}'
+        ).encode("utf-8")
         req = urllib.request.Request(
             self.mcp_url, method="POST", data=body,
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": self._MCP_PROTOCOL_VERSION,
                 "X-Chat-Id": "preflight",
             },
         )
