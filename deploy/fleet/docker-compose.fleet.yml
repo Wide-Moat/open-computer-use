@@ -358,9 +358,10 @@ services:
       # single-tenant whole-scope blessing does not apply). NOTE: today F9 objects
       # land at the fs-fleet ROOT (the mount destination is stripped; the pane
       # writes /<filename>), so a deliverable must carry the /outputs/ object
-      # prefix explicitly to match — the demo writes under outputs/. The proper
-      # fix is an optional mount root_path so guest /mnt/user-data/outputs/ maps to
-      # object /outputs/ (task tracked).
+      # prefix explicitly to match — the demo writes under outputs/. A mount
+      # root_path (guest /mnt/user-data/outputs/ -> object /outputs/) was REJECTED
+      # (ocu-control #113); the scope is resolved at the storage engine from the
+      # token intent claim + deploy map instead (ADR-0029, shipped #116/#117/#118).
       - -downloadable-prefixes
       - ${OCU_DOWNLOADABLE_PREFIXES:-/outputs}
       - -profile
