@@ -3,7 +3,7 @@
 
 ---
 status: draft
-last-reviewed: 2026-06-14
+last-reviewed: 2026-07-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 compliance: []
@@ -60,11 +60,13 @@ Cross-cutting properties (zone membership, in-transit encryption, retention floo
 - The host dials the guest. The kill-switch is a host-initiated stop, not a cooperative guest action; an unreachable control channel grants the guest no new authority (NFR-SEC-01).
 - Control verifies no storage scope; the Egress trust-edge validates the guest's weak session JWT and exchanges it for the real filestore credential, and the storage engine enforces scope on that injected credential ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md), [ADR-0013](../adr/0013-storage-credential-custody.md)).
 - A body-supplied session/tenant/`container_name` id is a hint, never the authority. The binding the host acts on is host-derived from the runtime-attested caller identity (hypervisor context id / kernel peer creds / per-session socket path; [`02-trust-boundaries.md`](../02-trust-boundaries.md) host-attested invariant), not from request fields, so a gateway or guest naming another session's id cannot bind or address it (forge-another-session test, NFR-SEC-43).
+- The guest image is deployment configuration, not caller data ([ADR-0020](../adr/0020-sandbox-image-provisioning.md) inject-at-materialize). Control resolves the effective image before admission: an empty body runs the deployment default; a body image is an override admitted only if it is on the deployment allow-list (the default is implicitly allowed), else refused as an invalid argument before any substrate call. An empty allow-list is deny-by-default (only the default runs), so an untrusted caller cannot name an arbitrary image, and the golden one-command install — which names no image — is unaffected (image-allow-list test, NFR-SEC-43).
 - The gateway service identity carries no operator scope. Force-kill, denylist edit, and quota override are unreachable with that audience (audience-to-route map test, NFR-SEC-26).
 - Every privileged operator/SOAR action in the NFR-SEC-45 set emits a chain-linked OCSF event before acknowledgement, and the action is denied if the audit write fails (NFR-SEC-45; system-initiated lifecycle transitions owned by NFR-SEC-72).
 - Per-caller create-rate and per-tenant quota are enforced before a session is created; excess is refused, not queued. The create flood cannot starve the operator/revoke route, which sits on a distinct ingress (NFR-COST-06, NFR-SEC-53).
 - The kill-switch and revoke path holds its ≤30 s p99 SLA while the control plane is saturated, including a flood on the operator ingress; the route carries reserved capacity distinct from the create path (NFR-SEC-55, SLA owned by NFR-SEC-01).
 - TTL and revocation windows (Session JWT, denylist propagation) run against a monotonic clock; a wall-clock setback neither extends a token nor defers a revoke (clock-rollback harness, NFR-SEC-48).
+- Session rows are durable and their substrate containers are ephemeral: the boot reconciler reconciles the two against one pre-sweep snapshot. A non-terminal row (reserved or active) with no live substrate container is reclaimed to the terminal released state and its concurrency slot is returned; a substrate container with no non-terminal row is destroyed. A live container matched to an active row is never killed. So an out-of-band container removal, host crash, or OOM-kill cannot strand a session's concurrency reservation and wedge the deployment at the tier cap. The reclaim is attributable: it emits a system-initiated reconcile-reclaim event carrying the substrate-lost reason, so the operator trail distinguishes it from a normal destroy without a distinct row state (reconcile-orphan-both-sides test, NFR-SEC-72).
 
 ## Failure modes
 
@@ -78,6 +80,7 @@ Each row traces to one P2 STRIDE row in [`06-threat-model.md`](../06-threat-mode
 | P2-R1 | A3, A2 | Operator force-kill / denylist edit / quota override leaves no independent record | The action is denied if its audit event fails to write; it does not take effect un-recorded | NFR-SEC-45 |
 | P2-R2 | A2 | SOAR revoke disputed or replayed | The call is verified by signature against the SOAR principal before acting and emits an OCSF event bound to that principal; an unverifiable call is rejected | NFR-SEC-01 |
 | P2-I1 | A2, A3 | Registry/quota enumeration across tenants | Audience-scoping returns only the caller's own sessions and host-attested binding blocks cross-session reads; the control plane carries no customer payload | NFR-IC-04 |
+| P2-D2 | — (system) | A session's substrate container vanishes out-of-band (host crash, OOM-kill, external removal), stranding its non-terminal row and leaking the concurrency slot until the tier cap wedges every create | The boot reconciler reclaims the container-less row and returns the slot; the leak cannot outlive a control restart | NFR-SEC-72, NFR-REL-01 |
 
 Residual, by [`06-threat-model.md`](../06-threat-model.md) §5 register: the stop-SLA accounting behind P2-T2 assumes a trustworthy host clock — trusted-time theme, [#185](https://github.com/Wide-Moat/open-computer-use/issues/185). Saturation/spill behaviour and a measurable containment target for P2-D1 fold into the resource-exhaustion theme, [#188](https://github.com/Wide-Moat/open-computer-use/issues/188). The mandatorily-audited action set behind P2-R1/P2-R2 is the privileged-operator-audit theme tracked at [#186](https://github.com/Wide-Moat/open-computer-use/issues/186). The no-customer-payload gate behind P2-I1 is not yet a measurable target, [#149](https://github.com/Wide-Moat/open-computer-use/issues/149).
 
@@ -88,6 +91,8 @@ Control authors the denylist; the Egress trust-edge reads it and refuses a revok
 Config surface: the operator/lifecycle ingress listener and the gateway service-identity listener are distinct network endpoints (the NFR-SEC-52 separation). Per-caller create-rate, per-tenant concurrent-session and calls/min ceilings (NFR-COST-06), and the reserved lifecycle/revoke capacity (NFR-SEC-55) are the principal knobs.
 
 Control renders the Storage-JWT JWKS as a static artifact at `-jwks-path` (atomic write, re-rendered on key rotation); the deploy layer serves it over HTTP at the egress edge's `remote_jwks` URI ([ADR-0019](../adr/0019-egress-exchanges-filestore-credential.md) §35). Control adds no third listener — the two-listener invariant (§39, NFR-SEC-52) is unchanged; the JWKS is a published public-key artifact, not a network endpoint on the signing-key holder.
+
+Image provisioning is a role on this plane ([ADR-0020](../adr/0020-sandbox-image-provisioning.md) ruling 1: image given → append the runtime layers → start it). That role — selection, two-signature admission verification, OCI layer-append — is not yet built here, so the deploy layer stands it in at build time: an assembly Dockerfile appends the agent + mount binaries over a base and materialize consumes the assembled image read-only. The stand-in is retired when ADR-0020's in-plane provisioning role is built.
 
 Observability: this container emits OCSF on the audit fan-in for session create/destroy, every enumerated privileged action (NFR-SEC-45), and quota rejections, into the hash-chained pipeline ([`audit/audit-fanin`](../../../contracts/audit/audit-fanin.asyncapi.yaml), NFR-SEC-03). The audit-write is on the critical path of a privileged action (fail-closed), not a side-channel.
 

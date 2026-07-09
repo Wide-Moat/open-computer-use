@@ -3,7 +3,7 @@
 
 ---
 status: proposed
-last-reviewed: 2026-06-20
+last-reviewed: 2026-07-05
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -36,7 +36,7 @@ The per-session bridge stays `Internal: true`; the attach adds no cross-session 
 
 ## Consequences
 
-- The mechanism is tier-identical, preserving [ADR-0008](0008-session-egress-attribution.md)'s cross-tier property: the gateway lives in the host root netns, outside the gVisor network stack, so the transit and the deny decision hold the same under `runc` and `runsc`. The proof runs against both tiers.
+- The mechanism is tier-identical, preserving [ADR-0008](0008-session-egress-attribution.md)'s cross-tier property: the gateway lives in the host root netns, outside the gVisor network stack, so the transit and the deny decision hold the same under `runc` and `runsc`. The proof runs against both tiers. Under `runsc` the Sentry's Netstack runs over the same veth, so a frame to the bridge gateway IP is delivered to the host stack as local **input**, not forwarded: `Internal: true` constrains the `FORWARD` chain only, never host-terminated traffic, so it does not block this path. The guest dials the literal per-session gateway IP — Docker's embedded DNS at `127.0.0.11` is a container-netns NAT redirect the Netstack never traverses, and the seam uses no DNS name, so the gVisor DNS gap does not touch it.
 - A host-root-netns listener holds L3 routes to every bridge, so locally-originated traffic bypasses the `FORWARD` chain — the cross-session-relay risk the gateway-bind introduces. The deny path must therefore prove a real **packet drop on a reachable path**, not absence of forwarding: the proof reaches a sibling session's guest from the host root netns under a positive control (the route is live, the test fails if it is not), then asserts the deny path forwarded zero. Co-tenant isolation (NFR-SEC-22) is shown by a packet that does not pass, not by an unconfigured route.
 - `denyAllEgressNetworkOptions` stays `Internal: true`; the `.Internal == true` posture check survives unchanged. Surviving that check is **not** read as "there is no off-bridge byte sink" — the gateway-bound listener is exactly such a sink, by a different path; the two posture facts are distinct.
 - `Detach` reaps the listener at teardown, advisory and ahead of `DropEgress`; teardown leaves zero orphaned listeners. A recycled gateway address re-binds cleanly.
