@@ -448,3 +448,64 @@ scenarios:
     fleet_expect: "The direct byte route for downloadable=false is refused (mirrors D6 at the API level)."
     bucket: PoC-HOLE
     keystone: "A downloadable=true file via the SAME route -> bytes (no bypass gap between layers)."
+
+  # =====================================================================
+  # GROUP I — MCP tool-surface below-the-exec-contract properties
+  # (the L5 half of mcp_tool_surface.feature; the L4 half lives in the
+  # gateway forward e2e. These prove what only a live guest can: the exit
+  # code is really transported, output is really bounded, and one session's
+  # workspace really persists across tool calls.)
+  # =====================================================================
+  - id: I1
+    group: I
+    story: "As a model I run a command that fails and need to see it failed."
+    proves: "A non-zero guest exit is really transported to isError, not fabricated."
+    poc_expect: "Non-zero exit returned as the tool output string (no isError concept)."
+    fleet_expect: "isError:true reaches the caller for a real failing command through the live gateway."
+    bucket: HARDENED
+    keystone: "A zero-exit command over the SAME path returns isError:false (the flag tracks the real exit, not a constant)."
+
+  - id: I2
+    group: I
+    story: "As a model I run a command that prints far more than fits."
+    proves: "Oversized guest output is bounded by control, not relayed whole."
+    poc_expect: "Truncated at 30000 chars with a middle-omitted marker (mcp_tools.py)."
+    fleet_expect: "The returned content is bounded well below the emitted size (control's ceiling holds)."
+    bucket: HARDENED
+    keystone: "A small command over the SAME path returns its full output un-bounded (the bound fires on size, not always)."
+
+  - id: I3
+    group: I
+    story: "As a model I run a command that hangs past the timeout."
+    proves: "Timeout enforcement kills the command below the exec contract."
+    poc_expect: "GNU timeout kills at COMMAND_TIMEOUT-5; output notes the timeout."
+    fleet_expect: "A command sleeping past the timeout returns bounded in time, not hung; the run is terminated."
+    bucket: HARDENED
+    keystone: "A fast command over the SAME path returns promptly (the kill is the timeout, not a blanket cap)."
+
+  - id: I4
+    group: I
+    story: "As a model I write a file to a path the guest user cannot write."
+    proves: "EACCES is a function of the live guest identity, recorded as a PoC-vs-fleet contrast."
+    poc_expect: "create_file into /home/assistant -> [Errno 13] Permission denied (guest user is not owner)."
+    fleet_expect: "Record the LIVE outcome against the PoC's; the fleet guest identity may differ (root vs assistant)."
+    bucket: HARDENED
+    keystone: "A writable path over the SAME path succeeds (the deny is the identity/perm, not a broken write plane)."
+
+  - id: I5
+    group: I
+    story: "As a user my second command sees the file my first command wrote."
+    proves: "One chat maps to one persistent workspace across tool calls (not a fresh container per exec)."
+    poc_expect: "Per-chat container; files persist across calls in a chat (docker_manager.py)."
+    fleet_expect: "A marker written by call 1 is read back by call 2 in the same session -> the workspace persisted."
+    bucket: IDENTICAL
+    keystone: "A DIFFERENT chat id does NOT see the marker (persistence is per-session, not a shared global fs)."
+
+  - id: I6
+    group: I
+    story: "As a user I create, view, edit, and confirm a file across four tool calls."
+    proves: "The four MCP tools compose over one workspace end-to-end (the owner-shown journey)."
+    poc_expect: "create_file -> view -> str_replace -> bash cat all hit the same per-chat container."
+    fleet_expect: "create ALPHA original -> view shows it -> str_replace to EDITED -> bash cat = ALPHA EDITED; no bash fallback."
+    bucket: IDENTICAL
+    keystone: "Requires a python3-bearing guest (#122); skips loudly on a stripped guest rather than passing vacuously."
