@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install test deps
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip -r deploy/tests/journeys/requirements.txt
       - name: Compile every journey module (syntax)
         run: python -m compileall -q deploy/tests/journeys
       - name: Collect the journey suite (import + fixture health, no run)

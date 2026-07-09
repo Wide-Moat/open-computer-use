@@ -214,6 +214,16 @@ that drove it red before revert.
 The PoC-vs-fleet journeys (`deploy/tests/journeys/`) need `pytest` + `pyyaml`;
 everything else they use is stdlib. From a clean clone with the fleet up:
 
+The gateway auth-edge journeys (group H) + the tool-surface journeys (group I)
+need a minted boot-set + bearer first — render them with the vendored minter:
+
+```bash
+python3 deploy/fleet/scripts/mint_boot_set.py \
+  --out-dir deploy/fleet/secrets/gateway
+```
+
+Then install the test deps and run the suite:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r deploy/tests/journeys/requirements.txt

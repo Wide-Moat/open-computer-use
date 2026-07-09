@@ -147,7 +147,7 @@ legal reply above ~48 KiB raw truncated mid-JSON and became a 502 that lost the 
 result. The fix pins:
 
 - **control** bounds each F5 exec-reply stream at **64 KiB** at the source (`defaultStdioCap`, ocu-control #64 @37d6492) + sets `stdout_truncated`/`stderr_truncated`.
-- **gateway** reads the reply capped at **256 KiB** (`maxReplyBytes`, ocu-mcp-gateway #131 @f7b6e5c); `maxExecContentBytes` (boundContent) ≥ the 64 KiB ceiling so it never fires on a legal reply.
+- **gateway** reads the reply capped at **256 KiB** (`maxReplyBytes`, ocu-mcp-gateway PR #44 @f7b6e5c); `maxExecContentBytes` (boundContent) ≥ the 64 KiB ceiling so it never fires on a legal reply.
 - **Invariant**: `gateway.maxReplyBytes >= 2 × ceil(control.replyCeiling × 4/3) + envelope`. With control ceiling 64 KiB → `2 × ceil(65536 × 4/3) + envelope ≈ 176 KiB ≪ 256 KiB`.
 
 The F5 exec-reply envelope has no shared schema yet (it is Go structs in both repos —

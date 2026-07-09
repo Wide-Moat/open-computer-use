@@ -359,9 +359,9 @@ services:
       # land at the fs-fleet ROOT (the mount destination is stripped; the pane
       # writes /<filename>), so a deliverable must carry the /outputs/ object
       # prefix explicitly to match — the demo writes under outputs/. A mount
-      # root_path (guest /mnt/user-data/outputs/ -> object /outputs/) was REJECTED
-      # (ocu-control #113); the scope is resolved at the storage engine from the
-      # token intent claim + deploy map instead (ADR-0029, shipped #116/#117/#118).
+      # root_path (guest /mnt/user-data/outputs/ -> object /outputs/) was rejected;
+      # the scope is resolved at the storage engine from the token intent claim +
+      # deploy map instead (ocu-filestore north-subtree join, shipped).
       - -downloadable-prefixes
       - ${OCU_DOWNLOADABLE_PREFIXES:-/outputs}
       - -profile
