@@ -180,76 +180,53 @@ def test_i1_nonzero_exit_transports_to_iserror():
 # I2 — oversized output is bounded by control, not relayed whole
 # ---------------------------------------------------------------------------
 
-# The step-2 caller-facing content ceiling (#128): once control bounds each reply
-# stream at 64 KiB at the source, this is the size a caller ever sees. I2c pins it.
+# The caller-facing content ceiling: control bounds each F5 reply stream at 64KiB at
+# the source (#128), so the DATA a caller sees is <= 64KiB. A truncation marker is
+# appended AFTER that bound, so the total text is 64KiB of data + a short marker.
 _CONTENT_CEILING_BYTES = 64 << 10  # 65536
+_MARKER_HEADROOM = 128  # the "[output truncated at N bytes]" marker rides on top of the ceiling
 
-_I2_BIG = 120000  # raw stdout for the oversized probe — well past the old ~48KiB 502 boundary
+_I2_BIG = 120000  # raw stdout for the oversized probe — well past the 64KiB ceiling
 
 
-def test_i2_oversized_output_is_not_dropped():
-    """The #127 step-1 contract (gateway PR #43): oversized output is a BOUNDED TOOL
-    RESULT, not a 502 forward-refusal that loses the whole result. A 120k output that
-    used to 502 now returns HTTP 200 with the output intact.
+def test_i2_oversized_output_bounded_at_ceiling_with_marker():
+    """The merged #127+#128 contract (was I2 nothing-lost XOR I2c ceiling, now one
+    bounded-contract test after the paired flip): an oversized output is a BOUNDED
+    TOOL RESULT — HTTP 200, isError:false, DATA truncated to the 64KiB caller ceiling
+    with a truncation marker appended — NOT a 502 that loses the whole result (#127)
+    and NOT relayed whole (#128 bounds it at the source).
 
-    This asserts nothing-lost STRICTLY (len >= the emitted size). That is a designed
-    paired-flip with I2c: when step 2 (#128, control 64KiB reply ceiling) lands, a
-    120k output comes back bounded at 64KiB, so THIS test reds at the SAME moment
-    I2c strict-xpasses — the step-2 PR must reconcile them into one bounded-contract
-    test. The transitional assert cannot rot silently: the event that retires it is
-    the event that reds it.
-
-    Residual: step 1 moved the 502 boundary, it did not kill the class — an output
-    whose base64-in-JSON exceeds the 24MiB read-cap (~18MiB raw) still truncates
-    mid-JSON and 502s. Step 2 removes the class by bounding at the source."""
+    Live-verified: a 120k output that once 502'd, then came back whole at 8MiB, now
+    returns 64KiB of data + '[output truncated at N bytes]'. The DATA (before the
+    marker) is <= 64KiB; the total is that plus a short marker."""
     status, parsed = _call(_cid("i2-big"), _bash_body(f"yes X | head -c {_I2_BIG}"))
     text, is_error = _result(parsed)
     assert status == 200, (
         f"oversized output must be a bounded tool result (HTTP 200), not a 502 "
-        f"forward-refusal that loses the whole result — got {status} (#127 step 1)"
+        f"forward-refusal that loses the whole result — got {status}"
     )
-    assert is_error is False, f"a large stdout output is not an error, got isError on {parsed}"
-    assert text is not None and len(text) >= _I2_BIG, (
-        f"the whole output must survive (nothing lost, nothing silently cut), got "
-        f"{len(text or '')} bytes for a {_I2_BIG}-byte emit"
+    assert is_error is False, f"a truncated large output is not an error, got isError on {parsed}"
+    assert text is not None, f"oversized output must return content, got {parsed}"
+    assert "truncat" in text.lower(), (
+        f"a bounded large output must carry a truncation marker, got {text[-120:]!r}"
+    )
+    # The DATA (everything before the appended marker) is bounded at the 64KiB ceiling;
+    # the marker rides on top, so the total stays within a small headroom of it.
+    assert len(text) <= _CONTENT_CEILING_BYTES + _MARKER_HEADROOM, (
+        f"oversized output must be bounded at the 64KiB ceiling (+ a short marker), got "
+        f"{len(text)} bytes (ceiling {_CONTENT_CEILING_BYTES} + {_MARKER_HEADROOM} headroom)"
+    )
+    # ...and it is genuinely bounded BELOW the emitted size (nothing silently un-bounded).
+    assert len(text) < _I2_BIG, (
+        f"a {_I2_BIG}-byte emit must come back bounded, got {len(text)} bytes"
     )
 
-    # keystone: a small marker over the SAME path comes back whole.
+    # keystone: a small marker over the SAME path comes back whole, un-truncated.
     marker = "I2_SMALL_" + uuid.uuid4().hex[:8]
     _, parsed = _call(_cid("i2-small"), _bash_body(f"printf %s {marker}"))
     text, _ = _result(parsed)
-    assert text is not None and marker in text, (
-        f"a small output must return whole (keystone), got {text!r}"
-    )
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#128 (step 2): the CALLER-facing content ceiling is not yet 64KiB. Step 1 "
-        "(#127, merged) raised the gateway boundContent to 8MiB, so output up to 8MiB "
-        "comes back whole with no marker. Step 2 bounds each control reply stream at "
-        "64KiB at the source, making 64KiB the caller ceiling + surfacing the "
-        "truncation marker. xfail(strict) XPASSes -> reds the suite when step 2 lands, "
-        "forcing this and I2 to merge into one bounded-contract test."
-    ),
-)
-def test_i2c_oversized_output_bounded_at_caller_ceiling():
-    """The step-2 (#128) contract: oversized output is bounded at the 64KiB
-    caller-facing ceiling with a truncation marker. Fails until control bounds the
-    reply stream at the source (today boundContent is 8MiB, so a 120k output is
-    returned whole and this reds)."""
-    status, parsed = _call(_cid("i2c-big"), _bash_body(f"yes X | head -c {_I2_BIG}"))
-    text, is_error = _result(parsed)
-    assert status == 200 and is_error is False, (
-        f"oversized output must be a bounded tool result, got {status} {parsed}"
-    )
-    assert text is not None and len(text) <= _CONTENT_CEILING_BYTES, (
-        f"oversized output must be bounded at the 64KiB caller ceiling, got "
-        f"{len(text or '')} bytes"
-    )
-    assert "truncat" in text.lower(), (
-        f"a bounded large output must carry a truncation marker, got {text[-120:]!r}"
+    assert text is not None and marker in text and "truncat" not in text.lower(), (
+        f"a small output must return whole and un-truncated (keystone), got {text!r}"
     )
 
 
