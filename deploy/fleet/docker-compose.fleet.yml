@@ -352,8 +352,17 @@ services:
       # the policy matches path==prefix or path under prefix+"/". /outputs is the
       # agent's writable download surface; /pub is the shared public prefix. An
       # object outside every prefix is refused read-back with not_downloadable.
+      # Default /outputs (NOT bare / — a matches-nothing sentinel, NOT * — that
+      # would make an uploaded object downloadable and reopen the exfil round-trip
+      # NFR-SEC-73 blocks; fs-fleet carries both uploads and outputs so the
+      # single-tenant whole-scope blessing does not apply). NOTE: today F9 objects
+      # land at the fs-fleet ROOT (the mount destination is stripped; the pane
+      # writes /<filename>), so a deliverable must carry the /outputs/ object
+      # prefix explicitly to match — the demo writes under outputs/. The proper
+      # fix is an optional mount root_path so guest /mnt/user-data/outputs/ maps to
+      # object /outputs/ (task tracked).
       - -downloadable-prefixes
-      - ${OCU_DOWNLOADABLE_PREFIXES:-/}
+      - ${OCU_DOWNLOADABLE_PREFIXES:-/outputs}
       - -profile
       - trusted_operator
       - -tenancy
@@ -597,6 +606,14 @@ services:
       - /var/log/ocu-control/audit.ocsf.jsonl
       - -state-dsn
       - postgres://${OCU_PG_USER:-ocu}:${OCU_PG_PASSWORD:-ocu-fleet-pg}@control-db:5432/${OCU_PG_DB:-ocu_control}?sslmode=disable
+      # Session idle-TTL (NFR-SEC-40, shelf-split): on the full shelf (state-dsn
+      # set) this is ON and tunable-down within the ≤15 min ceiling; unset would
+      # resolve to the 15 min ceiling. The demo default is a short window so an
+      # abandoned session is reclaimed promptly and visibly; raise toward the
+      # ceiling for a longer-lived stand. An idle ACTIVE session past this is
+      # force-killed and its concurrency slot returned (NFR-REL-09).
+      - -session-idle-ttl
+      - ${OCU_SESSION_IDLE_TTL:-1m}
     depends_on:
       control-db:
         condition: service_healthy
@@ -764,6 +781,13 @@ services:
       - "8450"
       - -fixture-template
       - /fixtures/guest-config.json
+      # 30-day PKI so the stand survives the demo window. The default TTL is 24h
+      # (test-harness hygiene); an unqualified re-up does NOT re-mint (the guard
+      # is expiry-aware after #51 — it re-issues when the leaf is within
+      # -cert-renew-before of expiry, else honours the existing set). Raising the
+      # TTL here means the leaf never enters that window during the demo.
+      - -cert-ttl
+      - 720h
     volumes:
       - south-shared:/shared
       # Fleet-local template (NOT the harness default): 2 mounts, both

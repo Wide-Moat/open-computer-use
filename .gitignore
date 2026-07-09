@@ -143,3 +143,13 @@ docs/future-architecture/research/21-*.md
 docs/future-architecture/research/22-*.md
 docs/future-architecture/research/23-*.md
 docs/future-architecture/research/proof-anthropic-*.md
+
+# Session scratch — live-demo proofs, click logs, ad-hoc compose snippets, agent configs.
+# Not part of the deployable fleet; never committed.
+*-proof.png
+walkthrough-*.png
+owner-live-click.txt
+live-4tools*.yml
+.codex/
+AGENTS.md
+deploy/fleet/BACKLOG-mcp-tools.md
