@@ -100,3 +100,57 @@ Two real deployment fixes landed while unblocking the suite:
 - `control` command gains `-guest-image-allow ocu-guest:assembled-demo` (the
   demo image carries the busybox an in-guest exec needs; the default assembled
   image is distroless). Without it, deny-by-default refused the demo image `400`.
+
+## MCP tool-surface arc — scenario → test traceability (group I + gateway L4)
+
+Source of truth: `mcp_tool_surface.feature` (23 scenarios). `@L4` scenarios are
+proven in the gateway repo's `internal/forward` e2e (a control-mock executes the
+real committed projection scripts); `@L5` scenarios are proven here as live
+journeys against a real Lima fleet. Every scenario maps to a named covering test
+or an explicit deferral — no unmapped rows.
+
+| Scenario (feature) | Level | Covering test |
+|---|---|---|
+| bash_tool first cold call returns stdout | L5 | `test_h_gateway.py::test_h5_cold_bash_tool_first_call_returns_output` |
+| non-zero exit, no output → `[Exit code: N]` | L4 | ocu-mcp-gateway `forward.TestL4BashExitNoOutputSynthesizesMarker` @f7b6e5c |
+| non-zero exit + stderr relays stderr | L4 | gateway `TestL4BashExitWithStderrRelaysStderr` |
+| non-zero exit + stdout-only relays stdout | L4 | gateway `TestL4BashExitWithStdoutOnlyRelaysStdout` |
+| grep no-match is a tool error (contrast) | L4 | gateway `TestL4BashGrepNoMatchIsExitCodeError` |
+| zero exit, no output = silent success | L4 | gateway `TestL4BashZeroExitNoOutputIsSilentSuccess` |
+| real failing command transports non-zero exit | L5 | `test_i_mcp_surface.py::test_i1_nonzero_exit_transports_to_iserror` |
+| stdout/stderr in own fields (3-way probe) | L4 | gateway `TestExecMockSeparatesStdoutStderrAndExit` |
+| oversized output truncated + flagged | L5 | `test_i_mcp_surface.py::test_i2_oversized_output_bounded_at_ceiling_with_marker` (+ `test_i2b_moderate_output_returns_whole`) |
+| command past timeout is killed | L5 | `test_i_mcp_surface.py::test_i3_timeout_is_enforced` (+ `test_i3b_timeout_surfaces_as_tool_result_with_partial_output`) |
+| str_replace single unambiguous replace | L4 | gateway `TestL4StrReplaceHappyEditsFile` |
+| str_replace refuses ambiguous/empty (outline) | L4 | gateway `TestL4StrReplaceErrorsComposeToIsError` (identical/not-found/multi) |
+| create_file writes body + parents | L4 | gateway `TestL4CreateFileWritesWithParents` |
+| create_file overwrites without a guard | L4 | gateway `TestL4CreateFileOverwritesExisting` |
+| create_file read-only dir errors, no partial | L4 | gateway `TestL4CreateFileReadOnlyDirErrors` (+ `file_tool_script_behavior_test.go` L3) |
+| guest identity determines writability | L5 | `test_i_mcp_surface.py::test_i4_write_permission_is_guest_identity_contrast` |
+| view text file with line numbers | L4 | gateway `TestL4ViewNumbersTextLines` |
+| view lists a directory | L4 | gateway `TestL4ViewListsDirectory` |
+| view missing path errors | L4 | gateway `TestL4ViewMissingPathErrors` |
+| view non-text file does not crash | L4 | gateway `TestL4ViewBinaryFileDoesNotCrash` |
+| four tools carry same session identity | L4 | gateway `TestL4SequenceCarriesSameSessionIdentity` |
+| later call sees earlier call's workspace | L5 | `test_i_mcp_surface.py::test_i5_workspace_persists_across_calls_in_one_session` |
+| create→view→edit→confirm over one workspace | L5 | `test_i_mcp_surface.py::test_i6_four_tools_compose_over_one_workspace` |
+
+Total: 23 scenarios, 0 unmapped. The gateway `TestL4*` tests run in ocu-mcp-gateway
+CI (Go test job); the group-I tests run live against a Lima fleet (tier-2, tracked)
+and collect-only in this repo's CI (`journeys-collect.yml`).
+
+## Exec-reply cap invariant (the large-output-502 root cause)
+
+The large-output-502 defect was a cross-component sizing-invariant violation: control
+captured 8 MiB per stream while the gateway read-capped the reply at 64 KiB, so a
+legal reply above ~48 KiB raw truncated mid-JSON and became a 502 that lost the whole
+result. The fix pins:
+
+- **control** bounds each F5 exec-reply stream at **64 KiB** at the source (`defaultStdioCap`, ocu-control #64 @37d6492) + sets `stdout_truncated`/`stderr_truncated`.
+- **gateway** reads the reply capped at **256 KiB** (`maxReplyBytes`, ocu-mcp-gateway #131 @f7b6e5c); `maxExecContentBytes` (boundContent) ≥ the 64 KiB ceiling so it never fires on a legal reply.
+- **Invariant**: `gateway.maxReplyBytes >= 2 × ceil(control.replyCeiling × 4/3) + envelope`. With control ceiling 64 KiB → `2 × ceil(65536 × 4/3) + envelope ≈ 176 KiB ≪ 256 KiB`.
+
+The F5 exec-reply envelope has no shared schema yet (it is Go structs in both repos —
+exactly how the caps diverged); authoring it is tracked in
+[open-computer-use#344](https://github.com/Wide-Moat/open-computer-use/issues/344). Field
+names are frozen de-facto.
