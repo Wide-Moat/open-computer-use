@@ -208,3 +208,20 @@ that drove it red before revert.
 - **sandbox** — the live FUSE/runtime e2e needs `/dev/fuse` + runsc, which live
   on Lima `ocu-linux`, not the Darwin Docker host the fleet runs on. The leg is
   proven through `octl` in Lima (above), not the Darwin stack.
+
+## Running the journey suite
+
+The PoC-vs-fleet journeys (`deploy/tests/journeys/`) need `pytest` + `pyyaml`;
+everything else they use is stdlib. From a clean clone with the fleet up:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r deploy/tests/journeys/requirements.txt
+.venv/bin/pytest deploy/tests/journeys
+```
+
+Groups A–G run against the live fleet or loud-skip when a stand is absent (never
+a silent pass); group H is the MCP gateway auth edge; group I is the MCP
+tool-surface below the exec contract. The file-tool legs (group I) need a
+python3-bearing guest — set `OCU_GUEST_IMAGE=ocu-guest:poc-fat-arm64` in `.env`
+(see `.env.example`); the stripped default runs the bash legs only (see #345).
