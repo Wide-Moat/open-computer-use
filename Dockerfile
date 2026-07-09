@@ -153,6 +153,13 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN useradd -m -s /bin/bash assistant && \
     echo "assistant ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
+# npm network resilience: on emulated or flaky networks npm's default idle
+# timeout (300s) aborts mid-fetch on binary postinstalls (phantomjs/sharp/
+# playwright). Seed the assistant user's npmrc once so every later global
+# install below retries with a longer ceiling instead of failing. Harmless when
+# the network is fast — the retries never trigger.
+RUN sudo -u assistant bash -c "npm config set fetch-retries 6 && npm config set fetch-retry-mintimeout 20000 && npm config set fetch-retry-maxtimeout 120000 && npm config set fetch-timeout 600000"
+
 # Configure npm global directory and sudo to preserve needed ENV variables
 RUN mkdir -p /usr/local/lib/node_modules_global && \
     chown -R assistant:assistant /usr/local/lib/node_modules_global && \
