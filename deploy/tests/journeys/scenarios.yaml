@@ -468,20 +468,20 @@ scenarios:
   - id: I2
     group: I
     story: "As a model I run a command that prints far more than fits."
-    proves: "Oversized guest output is bounded by control, not relayed whole."
+    proves: "Oversized guest output is a bounded tool result, never dropped (the whole result lost to a 502)."
     poc_expect: "Truncated at 30000 chars with a middle-omitted marker (mcp_tools.py)."
-    fleet_expect: "The returned content is bounded well below the emitted size (control's ceiling holds)."
+    fleet_expect: "Step 1 (#127, PR #43): output up to the read-cap is returned whole, not 502'd. Step 2 (#128): bounded at the 64KiB caller ceiling with a truncation marker."
     bucket: HARDENED
-    keystone: "A small command over the SAME path returns its full output un-bounded (the bound fires on size, not always)."
+    keystone: "A DEFECT the journal found: output above ~48KiB used to 502 (whole result lost). I2 pins nothing-lost; I2c (xfail #128) pins the 64KiB ceiling. A small command returns whole."
 
   - id: I3
     group: I
     story: "As a model I run a command that hangs past the timeout."
-    proves: "Timeout enforcement kills the command below the exec contract."
-    poc_expect: "GNU timeout kills at COMMAND_TIMEOUT-5; output notes the timeout."
-    fleet_expect: "A command sleeping past the timeout returns bounded in time, not hung; the run is terminated."
+    proves: "Timeout enforcement kills the command; the killed run should surface as a Tier-2 result, not a 502."
+    poc_expect: "GNU timeout kills at COMMAND_TIMEOUT-5; output notes the timeout and keeps partial output."
+    fleet_expect: "Enforcement holds (the kill happens < wall-clock). Result shaping is a DEFECT (#129): control returns 409 on a timed-out exec -> gateway 502, partial output lost, where the PoC returns a Tier-2 timeout result."
     bucket: HARDENED
-    keystone: "A fast command over the SAME path returns promptly (the kill is the timeout, not a blanket cap)."
+    keystone: "I3 pins the KILL (fast command returns promptly, hung one is terminated). I3b (xfail #129) pins the Tier-2 result-shape the fleet does not yet meet."
 
   - id: I4
     group: I

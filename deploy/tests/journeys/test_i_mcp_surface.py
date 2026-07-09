@@ -180,46 +180,41 @@ def test_i1_nonzero_exit_transports_to_iserror():
 # I2 — oversized output is bounded by control, not relayed whole
 # ---------------------------------------------------------------------------
 
-# The caller-facing content ceiling. Control's per-stream reply ceiling and the
-# gateway's boundContent both bound the caller's view here. The truncation probe
-# MUST exceed this (a probe just under it passes un-truncated and proves nothing).
+# The step-2 caller-facing content ceiling (#128): once control bounds each reply
+# stream at 64 KiB at the source, this is the size a caller ever sees. I2c pins it.
 _CONTENT_CEILING_BYTES = 64 << 10  # 65536
 
+_I2_BIG = 120000  # raw stdout for the oversized probe — well past the old ~48KiB 502 boundary
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT #127: gateway maxReplyBytes=64KiB read-cap truncates control's "
-        "base64 exec reply mid-JSON for stdout above ~48k -> json.Unmarshal fails "
-        "-> ErrForwardFailed -> 502, the ENTIRE result lost. Contract: oversized "
-        "output must be a BOUNDED tool result (isError:false + truncation marker), "
-        "not a 502. xfail(strict) so this XPASSes -> reds the suite the moment the "
-        "fix lands, forcing this marker's removal in the verifying PR."
-    ),
-)
-def test_i2_oversized_output_is_bounded():
-    """A command emitting far more than the ceiling returns a BOUNDED tool result
-    (not a transport failure), while a small command over the SAME path returns its
-    full output. Proves the bound fires on SIZE and truncates rather than dropping
-    the whole result. The probe is >64 KiB so it actually exceeds the ceiling."""
-    # >100k raw stdout, well above the 64 KiB caller-facing ceiling. Under the
-    # target contract this comes back bounded+flagged; today it 502s (the defect).
-    status, parsed = _call(_cid("i2-big"), _bash_body("yes X | head -c 120000"))
+
+def test_i2_oversized_output_is_not_dropped():
+    """The #127 step-1 contract (gateway PR #43): oversized output is a BOUNDED TOOL
+    RESULT, not a 502 forward-refusal that loses the whole result. A 120k output that
+    used to 502 now returns HTTP 200 with the output intact.
+
+    This asserts nothing-lost STRICTLY (len >= the emitted size). That is a designed
+    paired-flip with I2c: when step 2 (#128, control 64KiB reply ceiling) lands, a
+    120k output comes back bounded at 64KiB, so THIS test reds at the SAME moment
+    I2c strict-xpasses — the step-2 PR must reconcile them into one bounded-contract
+    test. The transitional assert cannot rot silently: the event that retires it is
+    the event that reds it.
+
+    Residual: step 1 moved the 502 boundary, it did not kill the class — an output
+    whose base64-in-JSON exceeds the 24MiB read-cap (~18MiB raw) still truncates
+    mid-JSON and 502s. Step 2 removes the class by bounding at the source."""
+    status, parsed = _call(_cid("i2-big"), _bash_body(f"yes X | head -c {_I2_BIG}"))
     text, is_error = _result(parsed)
     assert status == 200, (
         f"oversized output must be a bounded tool result (HTTP 200), not a 502 "
-        f"forward-refusal that loses the whole result — got {status} (DEFECT #127)"
+        f"forward-refusal that loses the whole result — got {status} (#127 step 1)"
     )
-    assert is_error is False, f"a truncated large output is not an error, got isError on {parsed}"
-    assert text is not None and len(text) <= _CONTENT_CEILING_BYTES, (
-        f"oversized output must be bounded at the ceiling, got {len(text or '')} bytes"
-    )
-    assert "truncat" in text.lower(), (
-        f"a bounded large output must carry a truncation marker so the caller knows "
-        f"it was cut, got {text[-120:]!r}"
+    assert is_error is False, f"a large stdout output is not an error, got isError on {parsed}"
+    assert text is not None and len(text) >= _I2_BIG, (
+        f"the whole output must survive (nothing lost, nothing silently cut), got "
+        f"{len(text or '')} bytes for a {_I2_BIG}-byte emit"
     )
 
-    # keystone: a small marker over the SAME path comes back whole, un-bounded.
+    # keystone: a small marker over the SAME path comes back whole.
     marker = "I2_SMALL_" + uuid.uuid4().hex[:8]
     _, parsed = _call(_cid("i2-small"), _bash_body(f"printf %s {marker}"))
     text, _ = _result(parsed)
@@ -228,17 +223,42 @@ def test_i2_oversized_output_is_bounded():
     )
 
 
-def test_i2b_moderate_output_returns_whole():
-    """A moderate output (well within the base64-adjusted budget) returns whole and
-    un-truncated over the live gateway. Non-xfail companion to I2: it proves the
-    large-output path works up to a real, safe size, so the I2 502 is specifically
-    an OVERSIZE defect, not a broken large-output path in general.
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#128 (step 2): the CALLER-facing content ceiling is not yet 64KiB. Step 1 "
+        "(#127, merged) raised the gateway boundContent to 8MiB, so output up to 8MiB "
+        "comes back whole with no marker. Step 2 bounds each control reply stream at "
+        "64KiB at the source, making 64KiB the caller ceiling + surfacing the "
+        "truncation marker. xfail(strict) XPASSes -> reds the suite when step 2 lands, "
+        "forcing this and I2 to merge into one bounded-contract test."
+    ),
+)
+def test_i2c_oversized_output_bounded_at_caller_ceiling():
+    """The step-2 (#128) contract: oversized output is bounded at the 64KiB
+    caller-facing ceiling with a truncation marker. Fails until control bounds the
+    reply stream at the source (today boundContent is 8MiB, so a 120k output is
+    returned whole and this reds)."""
+    status, parsed = _call(_cid("i2c-big"), _bash_body(f"yes X | head -c {_I2_BIG}"))
+    text, is_error = _result(parsed)
+    assert status == 200 and is_error is False, (
+        f"oversized output must be a bounded tool result, got {status} {parsed}"
+    )
+    assert text is not None and len(text) <= _CONTENT_CEILING_BYTES, (
+        f"oversized output must be bounded at the 64KiB caller ceiling, got "
+        f"{len(text or '')} bytes"
+    )
+    assert "truncat" in text.lower(), (
+        f"a bounded large output must carry a truncation marker, got {text[-120:]!r}"
+    )
 
-    NOTE the base64 blowup: the gateway's 64 KiB reply read-cap holds the base64 of
-    stdout inside a JSON envelope, so the RAW stdout that fits is ~48 KiB, not 64
-    KiB (64 KiB / 1.33). 30 KiB is a safe, proven-passing size below that boundary
-    (verified live: 30k -> 200 full, 60k -> 502). Do not raise this toward 48k
-    without re-measuring — it sits deliberately below the base64-adjusted ceiling."""
+
+def test_i2b_moderate_output_returns_whole():
+    """A moderate output returns whole and un-truncated over the live gateway. This
+    is the long-lived whole-return-under-ceiling keystone: n=30000 sits below the
+    FINAL 64KiB caller ceiling (#128), so it returns whole both now (step 1: 8MiB
+    boundContent) and after step 2 lands (64KiB ceiling) — it survives the step-2
+    flip untouched. Kept deliberately below the ceiling; do not raise toward 64KiB."""
     n = 30000
     status, parsed = _call(_cid("i2b"), _bash_body(f"yes X | head -c {n}"))
     text, is_error = _result(parsed)
@@ -290,11 +310,13 @@ def test_i3_timeout_is_enforced():
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "DEFECT #127 (same class): a timed-out command surfaces as a 502 "
-        "forward-refusal, not a Tier-2 tool result. The PoC returns the run with a "
-        "'[Command timed out after N seconds]' notice (isError), a USABLE result. "
-        "The fleet loses it to 502. xfail(strict) reds the suite when the shaping "
-        "fix lands. Enforcement itself (the kill) is proven green in I3."
+        "DEFECT #129 (timeout-shaping, NOT the #127 size class): a timed-out command "
+        "surfaces as a 502 forward-refusal, not a Tier-2 tool result. The PoC returns "
+        "the run with a '[Command timed out after N seconds]' notice (isError), a "
+        "USABLE result. sleep 600 emits zero stdout, so #127's maxReplyBytes raise "
+        "could not have touched this path — it's control's exec-timeout shaped into "
+        "ErrForwardFailed. xfail(strict) reds the suite when the timeout-shaping fix "
+        "lands. Enforcement itself (the kill) is proven green in I3."
     ),
 )
 def test_i3b_timeout_surfaces_as_tool_result_not_502():
