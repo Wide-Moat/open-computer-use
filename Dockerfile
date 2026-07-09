@@ -195,9 +195,15 @@ RUN REPORTLAB_INIT=$(python3 -c "import reportlab; print(reportlab.__file__)") &
 #   Volume mounts on /home/assistant → /home/node_modules stays in image layer, shared
 #   Node.js resolves: /home/assistant/node_modules (volume) → /home/node_modules (image)
 COPY package.json /tmp/package.json
+# Install the global CLI tools listed in package.json. On arm64, markdown-pdf is
+# excluded: it pulls phantomjs-prebuilt, which ships x86_64 binaries only (the
+# package is abandoned and predates arm64 Linux), so its postinstall hard-fails
+# under a native arm64 build. The markdown→PDF skill helper is therefore
+# unavailable on arm64 (a documented host-ISA gap, like extract-text), while
+# every other global installs on both arches. TARGETARCH drives the filter.
 RUN chown assistant:assistant /tmp/package.json && \
     cd /tmp && \
-    sudo -u assistant bash -c "npm config set prefix '/usr/local/lib/node_modules_global' && npm install -g \$(node -pe \"Object.entries(require('./package.json').dependencies).map(([pkg, ver]) => pkg + '@' + ver).join(' ')\")"
+    sudo -u assistant TARGETARCH="${TARGETARCH}" bash -c "npm config set prefix '/usr/local/lib/node_modules_global' && npm install -g \$(node -pe \"Object.entries(require('./package.json').dependencies).filter(([pkg]) => !(process.env.TARGETARCH === 'arm64' && pkg === 'markdown-pdf')).map(([pkg, ver]) => pkg + '@' + ver).join(' ')\")"
 
 # Install packages in /home/node_modules for ES modules import support
 # This is OUTSIDE /home/assistant (volume mount point), so it stays in image layer
