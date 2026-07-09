@@ -278,9 +278,9 @@ def test_i3_timeout_is_enforced():
     """A command that would sleep far past the exec-timeout is KILLED (does not run
     to completion), while a fast command over the SAME path returns promptly. This
     proves timeout ENFORCEMENT — the load-bearing property — holds on the live
-    stand. It does NOT assert the result shape (that is I3b): today control's
-    exec-timeout (execTimeoutDefaultSeconds=30) kills the command and the leg
-    surfaces as a 502; enforcement is proven by the wall-clock, not the status."""
+    stand. It does NOT assert the result shape (that is I3b): control's exec-timeout
+    (execTimeoutDefaultSeconds=30) kills the command; enforcement is proven by the
+    wall-clock, not the status."""
     # sleep 600 would hang for 10 minutes if unbounded; the exec-timeout kills it
     # far sooner. We assert it did NOT run to completion, whatever the result shape.
     start = time.monotonic()
@@ -307,30 +307,33 @@ def test_i3_timeout_is_enforced():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT #129 (timeout-shaping, NOT the #127 size class): a timed-out command "
-        "surfaces as a 502 forward-refusal, not a Tier-2 tool result. The PoC returns "
-        "the run with a '[Command timed out after N seconds]' notice (isError), a "
-        "USABLE result. sleep 600 emits zero stdout, so #127's maxReplyBytes raise "
-        "could not have touched this path — it's control's exec-timeout shaped into "
-        "ErrForwardFailed. xfail(strict) reds the suite when the timeout-shaping fix "
-        "lands. Enforcement itself (the kill) is proven green in I3."
-    ),
-)
-def test_i3b_timeout_surfaces_as_tool_result_not_502():
-    """A timed-out command should be a bounded Tier-2 tool result (isError:true with
-    a timeout notice), the way the PoC returns it — not a 502 that loses the result.
-    Companion to I3: I3 proves the KILL happens; I3b pins the RESULT-SHAPE contract
-    the fleet does not yet meet."""
-    status, parsed = _call(_cid("i3b"), _bash_body("sleep 600"), timeout=120)
+def test_i3b_timeout_surfaces_as_tool_result_with_partial_output():
+    """#129 (FIXED, control PR #63): a timed-out command is a Tier-2 tool result
+    (HTTP 200 + isError) carrying its PARTIAL output and a timeout notice, the way
+    the PoC returns it — not a 502 that loses the whole result. Companion to I3: I3
+    proves the KILL; I3b pins the RESULT SHAPE (exit-124 reply, partial output
+    preserved, notice appended).
+
+    Live-verified: control shapes a host exec-timeout into a valid exit-124 reply
+    with the pre-kill stdout + '[Command timed out after Ns]' in the SAME stream the
+    gateway relays on isError (stdout AND non-empty stderr), so the partial output
+    survives the gateway's stderr-wins relay."""
+    # A command that writes a marker BEFORE it hangs past the exec-timeout.
+    marker = "I3B_PARTIAL_" + uuid.uuid4().hex[:8]
+    status, parsed = _call(_cid("i3b"), _bash_body(f"echo {marker}; sleep 600"), timeout=120)
     text, is_error = _result(parsed)
     assert status == 200, (
-        f"a timed-out command must be a tool result (HTTP 200 + isError), not a 502 "
-        f"forward-refusal — got {status} (DEFECT #127)"
+        f"a timed-out command must be a Tier-2 tool result (HTTP 200 + isError), not "
+        f"a 502 forward-refusal that loses the result — got {status}"
     )
-    assert is_error, f"a timed-out command must be a tool error, got {parsed}"
+    assert is_error, f"a timed-out command must be a tool error (exit 124), got {parsed}"
+    assert text is not None and marker in text, (
+        f"the PARTIAL output written before the kill must survive to the caller "
+        f"(#129: it used to be lost to the 502), got {text!r}"
+    )
+    assert "timed out" in text.lower(), (
+        f"a timed-out result must carry the timeout notice, got {text!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
