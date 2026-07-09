@@ -253,43 +253,106 @@ else
     echo "[init] WARNING: Could not POST DEFAULT_MODEL_PARAMS (endpoint may differ on this Open WebUI version)."
 fi
 
-# Also try setting via workspace model (fallback for v0.8.11–0.8.12)
-# Get first available model and create a workspace model with native FC
-FIRST_MODEL=$(curl -sf "$WEBUI_URL/api/models" -H "$AUTH" 2>/dev/null | python3 -c "
-import sys,json
-data = json.load(sys.stdin).get('data',[])
-for m in data:
-    if m.get('id','') != 'arena-model':
-        print(m['id'])
-        break
-" 2>/dev/null || echo "")
+# Model surface for the demo: keep ONLY the Qwen family + DeepSeek "flash"
+# (owner directive) out of the ~350-model OpenRouter catalog, bind the Computer
+# Use tool + native function-calling onto EVERY surviving model so any chat a
+# user opens has the tool live (all Qwen/DeepSeek-flash models advertise
+# function-calling), and default a fresh chat to DeepSeek flash.
+#
+# OCU_DEMO_ALLOW_REGEX selects the base models to keep (default: qwen* or a
+# deepseek *flash*). OCU_DEMO_DEFAULT_MODEL is the fresh-chat default.
+OCU_DEMO_ALLOW_REGEX="${OCU_DEMO_ALLOW_REGEX:-^qwen/|^deepseek/.*flash}"
+OCU_DEMO_DEFAULT_MODEL="${OCU_DEMO_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}"
 
-if [ -n "$FIRST_MODEL" ]; then
-    echo "[init] Creating workspace model for $FIRST_MODEL with native FC..."
-    MODEL_PAYLOAD=$(python3 -c "
-import json
-model_id = '$FIRST_MODEL'
-safe_id = model_id.replace('/', '-')
+echo "[init] Filtering model catalog to /$OCU_DEMO_ALLOW_REGEX/ and binding Computer Use + native FC to each..."
+CATALOG=$(curl -sf "$WEBUI_URL/api/models" -H "$AUTH" 2>/dev/null || echo '{"data":[]}')
+
+# 1) Restrict the OpenRouter connection's visible catalog to the allow-set via
+#    OPENAI_API_CONFIGS[<idx>].model_ids (OpenWebUI hides everything else).
+OAI_CFG=$(curl -sf "$WEBUI_URL/openai/config" -H "$AUTH" 2>/dev/null || echo "{}")
+FILTER_PAYLOAD=$(printf '%s\n---SPLIT---\n%s' "$CATALOG" "$OAI_CFG" | python3 -c "
+import sys, json, re
+cat_raw, oai_raw = sys.stdin.read().split('---SPLIT---')
+allow = re.compile('$OCU_DEMO_ALLOW_REGEX')
+ids = [m['id'] for m in json.loads(cat_raw).get('data', []) if allow.search(m.get('id',''))]
+oai = json.loads(oai_raw)
+cfgs = oai.get('OPENAI_API_CONFIGS') or {}
+# one OpenRouter connection at idx '0'; pin its visible model_ids to the allow-set
+cfgs.setdefault('0', {})
+cfgs['0']['model_ids'] = ids
+oai['OPENAI_API_CONFIGS'] = cfgs
+print(json.dumps({'kept': ids, 'oai': oai}))
+" 2>/dev/null)
+KEPT_IDS=$(printf '%s' "$FILTER_PAYLOAD" | python3 -c "import sys,json;print('\n'.join(json.load(sys.stdin)['kept']))" 2>/dev/null)
+OAI_NEW=$(printf '%s' "$FILTER_PAYLOAD" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['oai']))" 2>/dev/null)
+if [ -n "$OAI_NEW" ]; then
+    curl -sf -X POST "$WEBUI_URL/openai/config/update" \
+        -H "$AUTH" -H "Content-Type: application/json" -d "$OAI_NEW" >/dev/null 2>&1 \
+        && echo "[init] Catalog filtered to $(printf '%s' "$KEPT_IDS" | grep -c . ) models (Qwen + DeepSeek flash)." \
+        || echo "[init] WARNING: catalog filter POST failed (endpoint may differ)."
+fi
+
+# 2) Bind Computer Use tool + native FC onto EVERY surviving base model, so the
+#    tool is live in every chat regardless of which model the user picks.
+#
+#    CRITICAL: base_model_id MUST be null (not the model's own id). Open WebUI's
+#    get_all_models merge has two paths (utils/models.py): a workspace record
+#    with base_model_id=None is applied as a DIRECT OVERRIDE onto the base model
+#    that shares its id (so meta.toolIds surfaces into the resolved catalog the
+#    chat reads); a record whose base_model_id is set is treated as a DERIVED
+#    model, and if its id already exists as a base model the merge hits
+#    `continue` and SKIPS it entirely — meta.toolIds never attaches and the tool
+#    never reaches the model in chat. A self-referential base_model_id==id lands
+#    on that skip path, which is why the tool was absent in a fresh default chat.
+if [ -n "$KEPT_IDS" ]; then
+    printf '%s\n' "$KEPT_IDS" | while IFS= read -r model_id; do
+        [ -z "$model_id" ] && continue
+        MODEL_PAYLOAD=$(model_id="$model_id" python3 -c "
+import json, os
+mid = os.environ['model_id']
 print(json.dumps({
-    'id': safe_id,
-    'name': model_id.split('/')[-1] + ' (Computer Use)',
-    'base_model_id': model_id,
+    'id': mid,
+    'name': mid,
+    'base_model_id': None,
     'meta': {
-        'description': 'Model with Computer Use tools enabled and Native Function Calling',
+        'description': 'Computer Use tools enabled (native function calling).',
         'toolIds': ['ai_computer_use'],
         'filterIds': ['computer_use_filter']
     },
-    'params': {
-        'function_calling': 'native',
-        'stream_response': True
-    }
+    'params': {'function_calling': 'native', 'stream_response': True},
+    # Public read grants, mirroring the tool's own grants above. A seeded model
+    # record with empty access_grants is dropped by get_filtered_models for any
+    # non-admin user (they would see zero models), so grant read to all users
+    # and groups — the model catalog is meant to be visible to everyone here.
+    'access_grants': [
+        {'principal_type': 'group', 'principal_id': '*', 'permission': 'read'},
+        {'principal_type': 'user', 'principal_id': '*', 'permission': 'read'}
+    ]
 }))
 ")
-    curl -sf -X POST "$WEBUI_URL/api/v1/models/create" \
-        -H "$AUTH" -H "Content-Type: application/json" \
-        -d "$MODEL_PAYLOAD" >/dev/null 2>&1 && \
-        echo "[init] Workspace model created: $FIRST_MODEL (Computer Use)" || \
-        echo "[init] Workspace model creation skipped (may already exist)"
+        # create, or update if it already exists (idempotent re-seed). The create
+        # endpoint rejects an already-registered id, so fall through to update.
+        curl -sf -X POST "$WEBUI_URL/api/v1/models/create" \
+            -H "$AUTH" -H "Content-Type: application/json" -d "$MODEL_PAYLOAD" >/dev/null 2>&1 \
+        || curl -sf -X POST "$WEBUI_URL/api/v1/models/model/update?id=$model_id" \
+            -H "$AUTH" -H "Content-Type: application/json" -d "$MODEL_PAYLOAD" >/dev/null 2>&1
+    done
+    echo "[init] Computer Use tool + native FC bound to every kept model."
+fi
+
+# 3) Default a fresh chat to DeepSeek flash (with the tool already bound).
+DEFAULT_CFG=$(curl -sf "$WEBUI_URL/api/v1/configs/models" -H "$AUTH" 2>/dev/null || echo "{}")
+DEFAULT_NEW=$(DM="$OCU_DEMO_DEFAULT_MODEL" printf '%s' "$DEFAULT_CFG" | DM="$OCU_DEMO_DEFAULT_MODEL" python3 -c "
+import sys, json, os
+cfg = json.loads(sys.stdin.read() or '{}')
+cfg['DEFAULT_MODELS'] = os.environ['DM']
+print(json.dumps(cfg))
+" 2>/dev/null)
+if [ -n "$DEFAULT_NEW" ]; then
+    curl -sf -X POST "$WEBUI_URL/api/v1/configs/models" \
+        -H "$AUTH" -H "Content-Type: application/json" -d "$DEFAULT_NEW" >/dev/null 2>&1 \
+        && echo "[init] Default model set to $OCU_DEMO_DEFAULT_MODEL." \
+        || echo "[init] WARNING: could not set DEFAULT_MODELS."
 fi
 
 # Mark as initialized — only if every required step succeeded. If INIT_FAILED=1,
