@@ -221,12 +221,56 @@ RUN sudo -u assistant bash -c "cd /tmp && npm install -g /tmp/html2pptx.tgz" && 
     ln -s /usr/local/lib/node_modules_global/lib/node_modules/@ant /home/node_modules/@ant
 
 # Install glab CLI for GitLab operations
+#
+# The config below is WRITTEN as a file rather than produced by running
+# `glab config set check_update false --global`. glab is a pure-Go binary, and
+# executing it at build time crashes under qemu-user emulation (the Go-runtime
+# lfstack packing assertion — qemu-user can return addresses above the 48-bit
+# space Go's lock-free stack assumes). Building this x86_64 image with
+# `--platform linux/amd64` on an arm64 host runs that step under emulation. The
+# config.yml/aliases.yml below are the exact artifacts that `glab config set`
+# writes (check_update:false is the only non-default line the step set); shipping
+# the artifact instead of running the producer is byte-identical on both the
+# emulated and native build paths — no image drift, nothing guarded away.
 RUN curl -fsSL https://gitlab.com/gitlab-org/cli/-/releases/v1.52.0/downloads/glab_1.52.0_linux_amd64.tar.gz \
     | tar -xzf - -C /tmp && \
     mv /tmp/bin/glab /usr/local/bin/glab && \
     chmod +x /usr/local/bin/glab && \
     rm -rf /tmp/bin /tmp/LICENSE && \
-    sudo -u assistant glab config set check_update false --global
+    mkdir -p /home/assistant/.config/glab-cli && \
+    printf '%s\n' \
+      '# What protocol to use when performing Git operations. Supported values: ssh, https.' \
+      'git_protocol: ssh' \
+      '# What editor glab should run when creating issues, merge requests, etc. This global config cannot be overridden by hostname.' \
+      'editor:' \
+      '# What browser glab should run when opening links. This global config cannot be overridden by hostname.' \
+      'browser:' \
+      '# Set your desired Markdown renderer style. Available options are [dark, light, notty]. To set a custom style, refer to https://github.com/charmbracelet/glamour#styles' \
+      'glamour_style: dark' \
+      '# Allow glab to automatically check for updates and notify you when there are new updates.' \
+      'check_update: false' \
+      '# Whether or not to display hyperlink escape characters when listing items like issues or merge requests. Set to TRUE to display hyperlinks in TTYs only. Force hyperlinks by setting FORCE_HYPERLINKS=1 as an environment variable.' \
+      'display_hyperlinks: false' \
+      '# Default GitLab hostname to use.' \
+      'host: gitlab.com' \
+      '# Set to true (1) to disable prompts, or false (0) to enable them.' \
+      'no_prompt: false' \
+      '# Configuration specific for GitLab instances.' \
+      'hosts:' \
+      '    gitlab.com:' \
+      '        # What protocol to use to access the API endpoint. Supported values: http, https.' \
+      '        api_protocol: https' \
+      '        # Configure host for API endpoint. Defaults to the host itself.' \
+      '        api_host: gitlab.com' \
+      '        # Your GitLab access token. To get one, read https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html' \
+      '        token:' \
+      > /home/assistant/.config/glab-cli/config.yml && \
+    printf '%s\n' \
+      'ci: pipeline ci' \
+      'co: mr checkout' \
+      > /home/assistant/.config/glab-cli/aliases.yml && \
+    chmod 0600 /home/assistant/.config/glab-cli/config.yml /home/assistant/.config/glab-cli/aliases.yml && \
+    chown -R assistant:assistant /home/assistant/.config/glab-cli
 
 # xdg-open wrapper: routes browser-open through playwright-cli (CDP 9222)
 RUN printf '#!/bin/bash\nplaywright-cli open "$1" 2>/dev/null &\n' > /usr/local/bin/xdg-open && \
