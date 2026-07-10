@@ -21,10 +21,6 @@ through the guest mount are ASYNC (VFS write-back, seconds); assertions poll
 with a bounded deadline instead of sleeping blind. Skips loudly when a wire is
 unreachable - never a fabricated green.
 
-J2 is pinned as strict xfail while the south read path denies uploads bytes as
-not_downloadable (#143): today it fails AS EXPECTED; once the fix lands the
-XPASS turns into an error, forcing this pin to flip to a plain green assertion.
-
 No poc counterpart: the PoC shares one docker volume both ways with no
 engine/panel spine; the contrast lives in scenarios.yaml (J1..J3).
 """
@@ -177,19 +173,14 @@ def test_j1_agent_write_reaches_pane_download(tmp_path):
     assert body == payload, "downloaded bytes differ from what the agent wrote"
 
 
-# --- J2: user upload reaches the agent (strict xfail until #143) -------------
+# --- J2: user upload reaches the agent ---------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="#143: south read path denies uploads bytes as not_downloadable - "
-    "guest sees the file (stat) but reads 0 bytes; flip to plain green when the "
-    "filestore fix lands",
-    strict=True,
-)
 def test_j2_pane_upload_readable_by_guest(tmp_path):
     """User uploads via the pane -> a FRESH guest reads the exact bytes at
     /mnt/user-data/<name>. Byte equality is the assertion; a stat-visible but
-    empty read (today's #143 failure mode) must FAIL here, never pass."""
+    empty read (the retired #143 failure mode, once pinned here as a strict
+    xfail) must FAIL, never pass."""
     _require_gateway()
     jar, csrf = _pane_session(tmp_path)
 

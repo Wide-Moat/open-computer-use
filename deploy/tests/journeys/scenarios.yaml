@@ -529,7 +529,7 @@ scenarios:
     story: "As a user I attach a file and the agent reads it."
     proves: "A pane upload is readable byte-exact from a fresh guest at /mnt/user-data (F9 create -> uploads/ -> south mount read)."
     poc_expect: "Upload sync copies into the chat container; cat reads it."
-    fleet_expect: "Pinned strict-xfail on #143: south read path denies uploads bytes as not_downloadable -> stat-visible but 0-byte read. Flips to plain green when the filestore fix lands."
+    fleet_expect: "A fresh guest cats the exact uploaded bytes at /mnt/user-data/<name> (the #143 south downloadable-misroute is fixed; downloadable gates only the north content egress)."
     bucket: HARDENED
     keystone: "Byte EQUALITY is asserted, never presence: the stat-visible-but-empty failure mode must fail, not pass."
 
