@@ -232,6 +232,18 @@ tail -1 /tmp/mint.out > "$out/bearer.txt"   # the printed bearer is the last lin
 The gateway loads the boot-set at boot, so after (re-)minting, recreate it to
 pick up the new set: `docker compose up -d --force-recreate --no-deps mcp-gateway`.
 
+The Open WebUI chat leg holds the SAME bearer in its tool Valve (seeded from
+`MCP_API_KEY` in `.env` on first boot). After a re-mint, update it too or every
+chat tool-call dies 401 behind the MCP SDK's opaque transport error while the
+journey suite stays green:
+
+```bash
+sed -i "s|^MCP_API_KEY=.*|MCP_API_KEY=$(cat "$out/bearer.txt")|" deploy/fleet/.env
+docker compose up -d --force-recreate --no-deps open-webui
+docker compose exec open-webui rm -f /app/backend/data/.computer-use-initialized
+docker compose restart open-webui   # init re-runs and re-seeds the Valve
+```
+
 Then install the test deps and run the suite:
 
 ```bash
