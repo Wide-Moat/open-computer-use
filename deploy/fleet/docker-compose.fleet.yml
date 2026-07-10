@@ -552,10 +552,14 @@ services:
       # names none (ADR-0020 inject-at-materialize). A create body may still name an
       # allow-listed override; an empty body with no default here is refused 400.
       - -guest-image
-      - ${OCU_GUEST_IMAGE:-ocu-guest:assembled}
-      # The default (assembled) is distroless and carries no shell; the demo
-      # image layers a static busybox over it so an in-guest exec can drive the
-      # FUSE write path. A caller naming a non-default image is refused 400
+      - ${OCU_GUEST_IMAGE:-ocu-guest:poc-fat}
+      # The default is the python3-bearing FAT guest (build recipe in the README
+      # "Running the journey suite" section): the chat file tools project onto
+      # python3, and the system prompt promises a usable workspace — a stripped
+      # guest yields a dead first chat input. The stripped tags stay one env var
+      # away: ocu-guest:assembled (distroless, no shell) for the minimal rung,
+      # ocu-guest:assembled-demo (static busybox layered on) for the storage
+      # chain demo scripts. A caller naming a non-default image is refused 400
       # unless it is on this allow-list (deny-by-default, #94b).
       - -guest-image-allow
       - ${OCU_GUEST_IMAGE_ALLOW:-ocu-guest:assembled-demo}
