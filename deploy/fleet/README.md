@@ -257,8 +257,9 @@ repo-root `Dockerfile`, an Ubuntu 24.04 image with python3), then point `.env`
 at it:
 
 ```bash
-# 1. the fat userland base (repo root); on Lima arm64 drop --platform
-docker build -t ocu-poc-fat:local .
+# 1. the fat userland base (repo root); --platform per repo policy, drop it
+#    when building natively on Lima arm64
+docker build --platform linux/amd64 -t ocu-poc-fat:local .
 # 2. layer the guest agent + co-located mount over that base
 docker build \
   --build-arg AGENT_IMAGE=<guest-agent-image> \
