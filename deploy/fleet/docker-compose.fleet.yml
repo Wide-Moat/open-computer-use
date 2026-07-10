@@ -1050,13 +1050,29 @@ services:
       - CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES=200
       - TOOL_RESULT_MAX_CHARS=${TOOL_RESULT_MAX_CHARS:-50000}
       - TOOL_RESULT_PREVIEW_CHARS=${TOOL_RESULT_PREVIEW_CHARS:-2000}
+      # Chat attachments are written to the guest over the F9 north Files-API
+      # (object-store service), NOT the MCP gateway — the gateway has no file
+      # endpoints. filestore is on ocu-north, served over TLS with the fleet CA
+      # (verified via FILESTORE_CA_CERT, mirroring the pane BFF's
+      # NODE_EXTRA_CA_CERTS trust). OCU_FILESYSTEM_ID is the single deploy-pinned
+      # scope on this stand (same fixtured value control/guest-mount use).
+      - FILESTORE_URL=${FILESTORE_URL:-https://filestore:7080}
+      - OCU_FILESYSTEM_ID=${OCU_FILESYSTEM_ID:-fs-fleet}
+      - FILESTORE_CA_CERT=${FILESTORE_CA_CERT:-/etc/ocu/ca.pem}
     volumes:
       - open-webui-data:/app/backend/data
+      # The fleet CA that signs filestore's TLS leaf; the attachment sync path
+      # verifies https://filestore:7080 against /etc/ocu/ca.pem (read-only).
+      - tls-certs:/etc/ocu:ro
     ports:
       # 3000 is taken by the fleet webui BFF; the OpenWebUI client binds 3001.
       - "127.0.0.1:${OPENWEBUI_PORT:-3001}:8080"
     networks:
+      # ocu-frontend reaches the MCP gateway (bash/create_file); ocu-north reaches
+      # the object-store service's F9 Files-API so chat attachments appear in the
+      # guest's flat /mnt/user-data view (engine key uploads/<name>).
       - ocu-frontend
+      - ocu-north
     restart: unless-stopped
 
   # OpenWebUI's OWN Postgres — its user/chat/tool state. It is a SEPARATE service

@@ -475,6 +475,18 @@ class Tools:
             default="",
             description="Bearer token for computer-use-orchestrator /mcp endpoint authentication"
         )
+        FILESTORE_URL: str = Field(
+            default="https://filestore:7080",
+            description="Internal URL of the object-store service's F9 north Files-API, reached over the ocu-north network. Chat attachments are created here (multipart POST /v1/files) so they appear in the guest's flat /mnt/user-data view (engine key uploads/<name>). NOT the MCP gateway."
+        )
+        OCU_FILESYSTEM_ID: str = Field(
+            default="fs-fleet",
+            description="The attested filesystem scope attachments are written under (X-OCU-Filesystem-Id). Single-tenant demo: one deploy-pinned scope (fs-fleet), so uploads are shared across chats — a consequence of one scope, not a bug. Per-chat scope is a future control-plane feature."
+        )
+        FILESTORE_CA_CERT: str = Field(
+            default="/etc/ocu/ca.pem",
+            description="Path to the fleet CA that signs the filestore TLS leaf. requests verifies https://filestore:7080 against it (never verify=False). Empty falls back to system trust."
+        )
         DEBUG_LOGGING: bool = Field(
             default=False,
             description="Enable verbose debug logging"
@@ -533,8 +545,12 @@ class Tools:
         if __files__:
             try:
                 sync_result = await asyncio.to_thread(
-                    _sync_uploaded_files, self.valves.ORCHESTRATOR_URL, chat_id, __files__,
-                    debug=self.valves.DEBUG_LOGGING
+                    _sync_uploaded_files,
+                    self.valves.FILESTORE_URL,
+                    self.valves.OCU_FILESYSTEM_ID,
+                    __files__,
+                    ca_cert_path=self.valves.FILESTORE_CA_CERT,
+                    debug=self.valves.DEBUG_LOGGING,
                 )
                 if sync_result.get("synced", 0) > 0:
                     print(f"Synced {sync_result['synced']} file(s)")
@@ -769,29 +785,85 @@ class Tools:
 # File sync helper (HTTP — no SSH needed)
 # ============================================================================
 
-def _sync_uploaded_files(orchestrator_url: str, chat_id: str, files: list, debug: bool = False) -> dict:
-    """Sync uploaded files from OpenWebUI to computer-use-orchestrator via HTTP."""
+# The F9 north Files-API wire is transport-pinned (ADR-0028 / ADR-0025). The
+# create route is multipart/form-data with TWO ordered parts read by the
+# object-store service's STAGE-0 gate: the "params" JSON FIELD FIRST, then the
+# "file" part (filename "upload") streaming the raw bytes. A body whose first
+# part is not "params" — or a JSON body — is refused. The scope rides
+# authoritatively in the X-OCU-Filesystem-Id header on EVERY request; the
+# filesystem_id inside "params" is design-level create-meta only. This mirrors
+# the pane BFF F9 client (web/src/lib/objectstore/f9.ts) byte-for-intent.
+_F9_FILES_ROUTE = "/v1/files"
+_F9_SCOPE_HEADER = "X-OCU-Filesystem-Id"
+_F9_MULTIPART_PARAMS_FIELD = "params"
+_F9_MULTIPART_FILE_FIELD = "file"
+_F9_MULTIPART_FILE_FILENAME = "upload"
+
+
+def _sync_uploaded_files(
+    filestore_url: str,
+    filesystem_id: str,
+    files: list,
+    ca_cert_path: str = "",
+    debug: bool = False,
+) -> dict:
+    """Sync OpenWebUI chat attachments into the guest via the F9 north Files-API.
+
+    Each attachment is created under the attested filesystem scope with a flat
+    uploads path ("/<filename>"), so it appears in the guest's flat
+    /mnt/user-data view (F9 north-create joins the uploads/ engine subtree). Idempotent
+    across turns: an F9 list is fetched once and a file whose filename + size
+    already match a stored object is skipped (F9 exposes no md5, so dedup is by
+    name + size, not a content hash).
+
+    NOTE (single-tenant demo): the whole stand shares one deploy-pinned scope
+    (fs-fleet), so uploads are visible across chats. That is a consequence of a
+    single filesystem_id, not a bug here; per-chat scope is a future
+    control-plane feature.
+    """
     import requests
-    import hashlib
 
     if not files:
         return {"synced": 0, "skipped": 0, "errors": 0}
 
+    base_url = filestore_url.rstrip("/")
+    # https://filestore:7080 is served with the fleet CA-signed leaf; verify
+    # against the mounted CA (never verify=False). Falls back to system trust
+    # only when no CA path is configured.
+    verify = ca_cert_path if ca_cert_path else True
+    scope_headers = {_F9_SCOPE_HEADER: filesystem_id}
+
+    # Fetch the current object list ONCE for name+size dedup (F9 GET /v1/files).
+    remote_by_name: dict = {}
     try:
-        manifest_url = f"{orchestrator_url}/api/uploads/{chat_id}/manifest"
-        response = requests.get(manifest_url, timeout=5)
-        response.raise_for_status()
-        remote_manifest = response.json()
-    except Exception:
-        remote_manifest = {}
+        resp = requests.get(
+            f"{base_url}{_F9_FILES_ROUTE}",
+            headers=scope_headers,
+            timeout=5,
+            verify=verify,
+        )
+        resp.raise_for_status()
+        for obj in resp.json().get("data", []):
+            name = obj.get("filename")
+            if name:
+                remote_by_name[name] = obj.get("size_bytes")
+    except Exception as e:
+        if debug:
+            print(f"[SYNC] F9 list (dedup) unavailable, will upload all: {e}")
 
     synced, skipped, errors = 0, 0, 0
 
     for file_info in files:
         temp_file_path = None
         try:
-            source_path = file_info.get("file", {}).get("path") if isinstance(file_info.get("file"), dict) else file_info.get("path")
-            filename = file_info.get("name") or (os.path.basename(source_path) if source_path else "unknown")
+            source_path = (
+                file_info.get("file", {}).get("path")
+                if isinstance(file_info.get("file"), dict)
+                else file_info.get("path")
+            )
+            filename = file_info.get("name") or (
+                os.path.basename(source_path) if source_path else "unknown"
+            )
             filename = os.path.basename(filename)
 
             if not source_path:
@@ -812,23 +884,57 @@ def _sync_uploaded_files(orchestrator_url: str, chat_id: str, files: list, debug
                 errors += 1
                 continue
 
-            md5_hash = hashlib.md5()
-            with open(source_path, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    md5_hash.update(chunk)
-            local_md5 = md5_hash.hexdigest()
+            size_bytes = os.path.getsize(source_path)
 
-            if remote_manifest.get(filename) == local_md5:
+            # Dedup by name + size (F9 has no md5). Same name AND same size → the
+            # object is already present for this scope; skip the re-upload.
+            if remote_by_name.get(filename) == size_bytes:
                 skipped += 1
                 continue
 
-            upload_url = f"{orchestrator_url}/api/uploads/{chat_id}/{filename}"
+            mime_type = (
+                file_info.get("file", {}).get("meta", {}).get("content_type")
+                if isinstance(file_info.get("file"), dict)
+                else None
+            ) or "application/octet-stream"
+
+            # Part 1: the "params" JSON FIELD (must be the FIRST multipart part).
+            # filesystem_id here is design-level create-meta; the authoritative
+            # scope is the X-OCU-Filesystem-Id header. media_type (not mime_type)
+            # is the request MIME field name (ADR-0028, strict-decoded).
+            params = {
+                "filesystem_id": filesystem_id,
+                "path": f"/{filename}",
+                "declared_size_bytes": size_bytes,
+                "authorization_metadata": {"intent": "write", "downloadable": True},
+                "filename": filename,
+                "media_type": mime_type,
+            }
+
             with open(source_path, "rb") as f:
-                files_data = {"file": (filename, f, "application/octet-stream")}
-                resp = requests.post(upload_url, files=files_data, timeout=30)
+                # requests preserves insertion order, so the "params" field is
+                # emitted before the "file" part — the STAGE-0 ordering the
+                # service requires. No content-type is hand-set: requests
+                # generates the multipart boundary itself.
+                multipart = [
+                    (_F9_MULTIPART_PARAMS_FIELD, (None, json.dumps(params), "application/json")),
+                    (
+                        _F9_MULTIPART_FILE_FIELD,
+                        (_F9_MULTIPART_FILE_FILENAME, f, "application/octet-stream"),
+                    ),
+                ]
+                resp = requests.post(
+                    f"{base_url}{_F9_FILES_ROUTE}",
+                    headers=scope_headers,
+                    files=multipart,
+                    timeout=30,
+                    verify=verify,
+                )
                 resp.raise_for_status()
             synced += 1
-        except Exception:
+        except Exception as e:
+            if debug:
+                print(f"[SYNC] F9 create failed for one file: {e}")
             errors += 1
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
