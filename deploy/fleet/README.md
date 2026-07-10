@@ -232,7 +232,8 @@ tail -1 /tmp/mint.out > "$out/bearer.txt"   # the printed bearer is the last lin
 The gateway also bind-mounts a provisioning policy from the same directory.
 It carries no secrets (it lives there only to share the mount root); a clean
 clone copies the tracked fixture, which pins `exec_timeout_seconds: 120`
-(the PoC command budget - the gateway's built-in default is 30s):
+(the PoC command budget - the gateway's built-in default is 30s). The
+fixture's `cpu_cores: 2` is intentional headroom over the PoC's 1.0:
 
 ```bash
 cp deploy/fleet/fixtures/provisioning-policy.json "$out/provisioning-policy.json"
