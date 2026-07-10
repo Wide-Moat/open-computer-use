@@ -385,23 +385,38 @@ print(json.dumps({
     #     of a kept base). The loop above never touches them because it walks
     #     base-catalog ids only, so such a record keeps stale params forever —
     #     and if it is the fresh-chat default, every new chat runs with NO
-    #     system prompt while all directly-seeded models carry one. Walk the
-    #     workspace records and re-bind tool + FC + prompt onto every record
-    #     whose base_model_id is in the kept set, preserving its id/base pair.
+    #     system prompt while all directly-seeded models carry one.
+    #
+    #     The list endpoint returns the RESOLVED catalog, which reports
+    #     base_model_id as null even for derived records — only the raw
+    #     single-record GET (/api/v1/models/model?id=) exposes the stored
+    #     base_model_id. So: take list ids outside the kept set, fetch each
+    #     raw record, and re-bind tool + FC + prompt onto every record whose
+    #     base points into the kept set, preserving its id/base pair.
     WORKSPACE=$(curl -sf "$WEBUI_URL/api/v1/models" -H "$AUTH" 2>/dev/null || echo '[]')
-    LEGACY_PAIRS=$(printf '%s\n---SPLIT---\n%s' "$WORKSPACE" "$KEPT_IDS" | python3 -c "
+    CANDIDATE_IDS=$(printf '%s\n---SPLIT---\n%s' "$WORKSPACE" "$KEPT_IDS" | python3 -c "
 import sys, json
 raw, kept_raw = sys.stdin.read().split('---SPLIT---')
 kept = set(l.strip() for l in kept_raw.splitlines() if l.strip())
 recs = json.loads(raw)
 if isinstance(recs, dict): recs = recs.get('data', [])
 for r in recs:
-    if r.get('id') not in kept and r.get('base_model_id') in kept:
-        print(r['id'] + '\t' + r['base_model_id'])
+    if r.get('id') and r['id'] not in kept:
+        print(r['id'])
 " 2>/dev/null)
-    if [ -n "$LEGACY_PAIRS" ]; then
-        printf '%s\n' "$LEGACY_PAIRS" | while IFS="$(printf '\t')" read -r legacy_id legacy_base; do
+    if [ -n "$CANDIDATE_IDS" ]; then
+        printf '%s\n' "$CANDIDATE_IDS" | while IFS= read -r legacy_id; do
             [ -z "$legacy_id" ] && continue
+            ENC_ID=$(legacy_id="$legacy_id" python3 -c "import os,urllib.parse;print(urllib.parse.quote(os.environ['legacy_id'], safe=''))")
+            RAW_RECORD=$(curl -sf "$WEBUI_URL/api/v1/models/model?id=$ENC_ID" -H "$AUTH" 2>/dev/null || echo '{}')
+            legacy_base=$(printf '%s\n---SPLIT---\n%s' "$RAW_RECORD" "$KEPT_IDS" | python3 -c "
+import sys, json
+raw, kept_raw = sys.stdin.read().split('---SPLIT---')
+kept = set(l.strip() for l in kept_raw.splitlines() if l.strip())
+base = (json.loads(raw) or {}).get('base_model_id')
+print(base if base in kept else '')
+" 2>/dev/null)
+            [ -z "$legacy_base" ] && continue
             LEGACY_PAYLOAD=$(model_id="$legacy_id" base_id="$legacy_base" python3 -c "
 import json, os
 print(json.dumps({
@@ -424,7 +439,6 @@ print(json.dumps({
     ]
 }))
 ")
-            ENC_ID=$(legacy_id="$legacy_id" python3 -c "import os,urllib.parse;print(urllib.parse.quote(os.environ['legacy_id'], safe=''))")
             curl -sf -X POST "$WEBUI_URL/api/v1/models/model/update?id=$ENC_ID" \
                 -H "$AUTH" -H "Content-Type: application/json" -d "$LEGACY_PAYLOAD" >/dev/null 2>&1 \
                 && echo "[init] Repaired legacy model record: $legacy_id (base $legacy_base)." \
