@@ -311,34 +311,23 @@ fi
 #    `continue` and SKIPS it entirely — meta.toolIds never attaches and the tool
 #    never reaches the model in chat. A self-referential base_model_id==id lands
 #    on that skip path, which is why the tool was absent in a fresh default chat.
-# The sandbox system prompt every bound model gets (params.system). Fleet-true:
-# these are the real mount semantics of the session guest (RO rootfs, tmpfs
-# scratch home, two FUSE-mounted user-storage views: uploads RO + outputs RW).
-read -r -d '' OCU_SYSTEM_PROMPT <<'PROMPT_EOF' || true
-You are a computer-use assistant operating a sandboxed Linux computer through
-tools (bash_tool, create_file, view, str_replace). The computer belongs to this
-chat and is isolated.
-
-Filesystem map:
-- /home/assistant - your writable working directory. Build, edit, and run
-  things here. Per-session scratch: wiped when the session ends.
-- /mnt/user-data/uploads - files the user shared (chat attachments and Files
-  panel uploads). Read-only: read them in place, list it to see what is there.
-- /mnt/user-data/outputs - deliverables. Save or copy every final file here:
-  it appears in the user's Files panel for download. This is the only way the
-  user receives a file - work left anywhere else never reaches them. List it
-  to verify what you delivered.
-- /tmp - ephemeral scratch, mounted noexec: run scripts as `bash /tmp/x.sh` or
-  `python3 /tmp/x.py`, never `./x.sh`.
-- Everything else is read-only.
-
-An idle session is reclaimed after several minutes: /home/assistant and /tmp
-are wiped then; /mnt/user-data persists.
-
-Work style: do the task with the tools; verify your own work by running it and
-showing real output. If a command fails, read the error and fix the cause -
-do not give up after the first failure. Reply in the user's language.
-PROMPT_EOF
+# The sandbox system prompt every bound model gets (params.system). It is a data
+# artifact shipped next to this script (COPY system_prompt.txt in the Dockerfile)
+# and read verbatim - it carries the skills-first protocol, the <available_skills>
+# block, the filesystem map (uploads RO + outputs RW), the self-verify and
+# file-sharing instructions. Kept out-of-line so its content never has to survive
+# heredoc/JSON quoting and so the contract test can load the exact same bytes.
+#
+# Fail loud: if the file is missing, seeding a blank system prompt would leave
+# every model with ZERO path guidance (the failure mode this whole step exists to
+# prevent). Abort the run instead of shipping an empty prompt.
+PROMPT_FILE="$(dirname "$0")/system_prompt.txt"
+if [ ! -s "$PROMPT_FILE" ]; then
+    echo "[init] FATAL: system prompt file missing or empty: $PROMPT_FILE" >&2
+    echo "[init]        refusing to seed models with an empty params.system." >&2
+    exit 1
+fi
+OCU_SYSTEM_PROMPT="$(cat "$PROMPT_FILE")"
 export OCU_SYSTEM_PROMPT
 
 if [ -n "$KEPT_IDS" ]; then

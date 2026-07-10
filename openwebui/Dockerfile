@@ -40,10 +40,13 @@ RUN python3 /tmp/patches/fix_skip_rag_files_native_fc.py
 
 RUN rm -rf /tmp/patches/
 
-# Copy Computer Use tool, function, and init script into the image
+# Copy Computer Use tool, function, init script, and the system prompt into the
+# image. system_prompt.txt sits next to init.sh (dirname "$0") so init.sh reads
+# it and seeds it verbatim as every model's params.system.
 COPY tools/ /app/init/tools/
 COPY functions/ /app/init/functions/
 COPY init.sh /app/init/init.sh
+COPY system_prompt.txt /app/init/system_prompt.txt
 RUN chmod +x /app/init/init.sh
 
 # Wrap the original entrypoint to run init in the background after startup
