@@ -322,8 +322,12 @@ chat and is isolated.
 Filesystem map:
 - /home/assistant - your writable working directory. Build, edit, and run
   things here. Per-session scratch: wiped when the session ends.
-- /mnt/user-data - persistent user storage. Every file you save here appears
-  in the user's Files panel and can be downloaded. Save final deliverables here.
+- /mnt/user-data - the user's file exchange. Files the user uploaded appear
+  here: read them directly. Save final deliverables here too: every file you
+  write lands in the user's Files panel and can be downloaded. A file you
+  saved may drop out of your own directory listing afterwards; that is
+  expected (write-through to the user's storage), so remember what you saved
+  by name instead of re-listing.
 - /tmp - ephemeral scratch, mounted noexec: run scripts as `bash /tmp/x.sh` or
   `python3 /tmp/x.py`, never `./x.sh`.
 - Everything else is read-only.
@@ -375,6 +379,58 @@ print(json.dumps({
             -H "$AUTH" -H "Content-Type: application/json" -d "$MODEL_PAYLOAD" >/dev/null 2>&1
     done
     echo "[init] Computer Use tool + native FC bound to every kept model."
+
+    # 2b) Repair LEGACY workspace records. Earlier seeder generations left
+    #     derived records (unique id, base_model_id set — e.g. an "ocu-*" alias
+    #     of a kept base). The loop above never touches them because it walks
+    #     base-catalog ids only, so such a record keeps stale params forever —
+    #     and if it is the fresh-chat default, every new chat runs with NO
+    #     system prompt while all directly-seeded models carry one. Walk the
+    #     workspace records and re-bind tool + FC + prompt onto every record
+    #     whose base_model_id is in the kept set, preserving its id/base pair.
+    WORKSPACE=$(curl -sf "$WEBUI_URL/api/v1/models" -H "$AUTH" 2>/dev/null || echo '[]')
+    LEGACY_PAIRS=$(printf '%s\n---SPLIT---\n%s' "$WORKSPACE" "$KEPT_IDS" | python3 -c "
+import sys, json
+raw, kept_raw = sys.stdin.read().split('---SPLIT---')
+kept = set(l.strip() for l in kept_raw.splitlines() if l.strip())
+recs = json.loads(raw)
+if isinstance(recs, dict): recs = recs.get('data', [])
+for r in recs:
+    if r.get('id') not in kept and r.get('base_model_id') in kept:
+        print(r['id'] + '\t' + r['base_model_id'])
+" 2>/dev/null)
+    if [ -n "$LEGACY_PAIRS" ]; then
+        printf '%s\n' "$LEGACY_PAIRS" | while IFS="$(printf '\t')" read -r legacy_id legacy_base; do
+            [ -z "$legacy_id" ] && continue
+            LEGACY_PAYLOAD=$(model_id="$legacy_id" base_id="$legacy_base" python3 -c "
+import json, os
+print(json.dumps({
+    'id': os.environ['model_id'],
+    'name': os.environ['model_id'],
+    'base_model_id': os.environ['base_id'],
+    'meta': {
+        'description': 'Computer Use tools enabled (native function calling).',
+        'toolIds': ['ai_computer_use'],
+        'filterIds': ['computer_use_filter']
+    },
+    'params': {
+        'function_calling': 'native',
+        'stream_response': True,
+        'system': os.environ.get('OCU_SYSTEM_PROMPT', '')
+    },
+    'access_grants': [
+        {'principal_type': 'group', 'principal_id': '*', 'permission': 'read'},
+        {'principal_type': 'user', 'principal_id': '*', 'permission': 'read'}
+    ]
+}))
+")
+            ENC_ID=$(legacy_id="$legacy_id" python3 -c "import os,urllib.parse;print(urllib.parse.quote(os.environ['legacy_id'], safe=''))")
+            curl -sf -X POST "$WEBUI_URL/api/v1/models/model/update?id=$ENC_ID" \
+                -H "$AUTH" -H "Content-Type: application/json" -d "$LEGACY_PAYLOAD" >/dev/null 2>&1 \
+                && echo "[init] Repaired legacy model record: $legacy_id (base $legacy_base)." \
+                || echo "[init] WARNING: could not repair legacy record $legacy_id."
+        done
+    fi
 fi
 
 # 3) Default a fresh chat to DeepSeek flash (with the tool already bound).
