@@ -29,7 +29,6 @@ from pydantic import BaseModel, Field
 
 # Client HTTP timeouts (server controls actual command timeout)
 CLIENT_HTTP_TIMEOUT = 660       # 11 min > server's 600s COMMAND_TIMEOUT
-SUB_AGENT_CLIENT_TIMEOUT = 3660 # 61 min > server's 3600s SUB_AGENT_TIMEOUT
 
 
 # Every error string the wrapper produces starts with one of these prefixes.
@@ -310,6 +309,22 @@ class _MCPClient:
                     progress_callback=on_progress,
                     read_timeout_seconds=timedelta(seconds=timeout + 30),
                 )
+                # D4 image hop: a "view image" surfaces image_url content blocks.
+                # Push each rendered image into the chat via the event emitter (a
+                # markdown "message" event - the OpenWebUI way to append content
+                # to the assistant turn) and keep ONLY a short text marker in the
+                # returned string. The raw base64 data URL never enters the model
+                # context (it would blow the context window).
+                images = self._extract_images(result)
+                if images and event_emitter:
+                    for data_url in images:
+                        try:
+                            await event_emitter({
+                                "type": "message",
+                                "data": {"content": f"\n![image]({data_url})\n"},
+                            })
+                        except Exception:
+                            pass
                 return self._extract_text(result)
 
         try:
@@ -369,6 +384,12 @@ class _MCPClient:
         The phrasing of case 3 is deliberate: an AI reading "[No output]"
         often concludes the tool is broken. "[Command produced no output.
         Exit was successful — this is not an error.]" blocks that misread.
+
+        D4 image hop: image_url content blocks (a "view image") are surfaced to
+        the chat separately via the event emitter. This method NEVER returns the
+        raw base64 data URL - an image block collapses to a short text marker
+        ("[Image: <path> (displayed)]") so the model sees that an image was
+        shown without the payload consuming the context window.
         """
         if result is None:
             return (
@@ -394,9 +415,17 @@ class _MCPClient:
             )
 
         parts = []
+        image_count = 0
         for item in content:
             if hasattr(item, "text"):
                 parts.append(item.text)
+                continue
+            # An image_url block collapses to a text marker; the raw data URL is
+            # deliberately dropped here (it is surfaced via the event emitter).
+            marker = _MCPClient._image_marker(item)
+            if marker is not None:
+                image_count += 1
+                parts.append(marker)
 
         if not parts:
             return (
@@ -412,6 +441,77 @@ class _MCPClient:
             # exception.
             return f"[TOOL ERROR] {joined}"
         return joined
+
+    @staticmethod
+    def _block_image_data_url(item):
+        """Return the data URL of an image content block, else None.
+
+        Handles two shapes without importing either SDK's model:
+          - OpenAI-style: {"type": "image_url", "image_url": {"url": "data:..."}}
+          - MCP-native:   {"type": "image", "data": "<base64>", "mimeType": "..."}
+        Accepts both attribute-style (SDK-deserialised objects) and dict-style
+        blocks. Any block that is not an image returns None.
+        """
+        def _get(obj, key):
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        block_type = _get(item, "type")
+
+        # OpenAI-style image_url block.
+        image_url = _get(item, "image_url")
+        if image_url is not None:
+            url = _get(image_url, "url")
+            if isinstance(url, str) and url:
+                return url
+
+        # MCP-native image block: reconstruct the data URL from data + mimeType.
+        if block_type == "image":
+            data = _get(item, "data")
+            if isinstance(data, str) and data:
+                mime = _get(item, "mimeType") or "image/png"
+                return f"data:{mime};base64,{data}"
+
+        return None
+
+    @staticmethod
+    def _image_marker(item):
+        """Return a short text marker for an image block, else None.
+
+        Never includes the base64 payload. If the block carries a filesystem
+        path hint (some tools attach one) it is shown, otherwise a generic
+        "(displayed)" marker is emitted.
+        """
+        if _MCPClient._block_image_data_url(item) is None:
+            return None
+        path = None
+        if isinstance(item, dict):
+            path = item.get("path") or item.get("filename")
+        else:
+            path = getattr(item, "path", None) or getattr(item, "filename", None)
+        if path:
+            return f"[Image: {path} (displayed)]"
+        return "[Image (displayed)]"
+
+    @staticmethod
+    def _extract_images(result) -> list:
+        """Return the data URLs of all image content blocks, in order.
+
+        Used by the emitter path in call_tool; the returned URLs are pushed to
+        the chat as markdown, never into the model-facing return string.
+        """
+        if result is None:
+            return []
+        content = getattr(result, "content", None)
+        if not content:
+            return []
+        urls = []
+        for item in content:
+            url = _MCPClient._block_image_data_url(item)
+            if url:
+                urls.append(url)
+        return urls
 
 
 def _get_user_mcp_server_names(request, user_id: str = "") -> list:
@@ -572,7 +672,7 @@ class Tools:
     ) -> str:
         """One transport-aware MCP call with consistent SSE status events.
 
-        Every per-tool wrapper (bash_tool/str_replace/create_file/view/sub_agent)
+        Every per-tool wrapper (bash_tool/str_replace/create_file/view)
         funnels through here. Without this helper each wrapper duplicated:
           - the in_progress emit before the call
           - the try/except + final emit
@@ -736,50 +836,6 @@ class Tools:
             ok_desc="Read complete", err_desc="Read failed",
         )
 
-    async def sub_agent(
-        self,
-        task: str,
-        description: str,
-        model: str = "sonnet",
-        max_turns: int = 25,
-        mode: str = "act",
-        working_directory: str = "/home/assistant",
-        resume_session_id: str = "",
-        __event_emitter__: Callable[[dict], Awaitable[None]] = None,
-        __metadata__: dict = None,
-        __user__: dict = None,
-        __files__: Optional[List[dict]] = None,
-        __request__=None,
-    ) -> str:
-        """
-        Delegate complex, multi-step tasks to an autonomous sub-agent.
-
-        :param task: Structured task description
-        :param description: Why you are delegating this task
-        :param model: AI model - "sonnet" (fast, default) or "opus" (powerful)
-        :param max_turns: Max iterations, default 25 (raise to 50-80 for large multi-file refactors)
-        :param mode: "act" (execute) or "plan" (plan only)
-        :param working_directory: Work dir, default /home/assistant
-        :param resume_session_id: Session ID to resume (from previous result)
-        :return: Sub-agent's response with results, cost, turn count, session_id
-        """
-        chat_id = (__metadata__.get("chat_id") if __metadata__ else None) or "default"
-        if __files__:
-            await self._sync_files_if_needed(chat_id, "/mnt/user-data/uploads", __files__)
-        args = {
-            "task": task, "description": description, "model": model,
-            "max_turns": max_turns, "working_directory": working_directory,
-        }
-        if resume_session_id:
-            args["resume_session_id"] = resume_session_id
-        return await self._run_tool(
-            "sub_agent", args,
-            chat_id, __event_emitter__, __request__, __user__,
-            in_progress_desc=description or f"Starting sub-agent ({model})...",
-            ok_desc="Sub-agent completed", err_desc="Sub-agent failed",
-            timeout=SUB_AGENT_CLIENT_TIMEOUT,
-        )
-
 
 # ============================================================================
 # File sync helper (HTTP — no SSH needed)
@@ -812,15 +868,24 @@ def _sync_uploaded_files(
     Each attachment is created under the attested filesystem scope with a flat
     uploads path ("/<filename>"), so it appears in the guest's flat
     /mnt/user-data view (F9 north-create joins the uploads/ engine subtree). Idempotent
-    across turns: an F9 list is fetched once and a file whose filename + size
-    already match a stored object is skipped (F9 exposes no md5, so dedup is by
-    name + size, not a content hash).
+    across turns: an F9 list is fetched once and each candidate is deduped against it.
+
+    Dedup precedence (D6): the F9 FileObject now carries an OPTIONAL "sha256"
+    hex field (the engine-computed content digest). When the stored object
+    exposes a sha256, an upload is skipped ONLY if the local content sha256
+    (streamed in 8192-byte chunks) matches it exactly - so a same-name,
+    same-size edit is re-uploaded rather than silently dropped. When the stored
+    object has NO sha256 (an older filestore, or a reconcile-minted handle that
+    never captured a create-time digest), the client falls back to the legacy
+    name + size skip. This is the compat window: correctness improves the moment
+    the server surfaces the field, with no client flag day.
 
     NOTE (single-tenant demo): the whole stand shares one deploy-pinned scope
     (fs-fleet), so uploads are visible across chats. That is a consequence of a
     single filesystem_id, not a bug here; per-chat scope is a future
     control-plane feature.
     """
+    import hashlib
     import requests
 
     if not files:
@@ -833,7 +898,10 @@ def _sync_uploaded_files(
     verify = ca_cert_path if ca_cert_path else True
     scope_headers = {_F9_SCOPE_HEADER: filesystem_id}
 
-    # Fetch the current object list ONCE for name+size dedup (F9 GET /v1/files).
+    # Fetch the current object list ONCE for dedup (F9 GET /v1/files). Each entry
+    # keeps both the size and the OPTIONAL sha256 so the loop below can prefer a
+    # content-digest match and fall back to name+size only when the digest is
+    # absent (older server / reconcile-minted handle).
     remote_by_name: dict = {}
     try:
         resp = requests.get(
@@ -846,7 +914,12 @@ def _sync_uploaded_files(
         for obj in resp.json().get("data", []):
             name = obj.get("filename")
             if name:
-                remote_by_name[name] = obj.get("size_bytes")
+                remote_by_name[name] = {
+                    "size": obj.get("size_bytes"),
+                    # Absent on pre-D6 objects; normalise "" to None so the
+                    # skip decision below never matches an empty digest.
+                    "sha256": obj.get("sha256") or None,
+                }
     except Exception as e:
         if debug:
             print(f"[SYNC] F9 list (dedup) unavailable, will upload all: {e}")
@@ -886,11 +959,28 @@ def _sync_uploaded_files(
 
             size_bytes = os.path.getsize(source_path)
 
-            # Dedup by name + size (F9 has no md5). Same name AND same size → the
-            # object is already present for this scope; skip the re-upload.
-            if remote_by_name.get(filename) == size_bytes:
-                skipped += 1
-                continue
+            # Dedup decision (D6). Prefer the content sha256 the server now
+            # surfaces; fall back to name+size only when it is absent.
+            remote = remote_by_name.get(filename)
+            if remote is not None:
+                remote_sha256 = remote.get("sha256")
+                if remote_sha256:
+                    # Server exposes a digest: skip ONLY on an exact content
+                    # match. A same-name, same-size EDIT differs here and is
+                    # re-uploaded (the defect the old name+size dedup hid).
+                    sha256_hash = hashlib.sha256()
+                    with open(source_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(8192), b""):
+                            sha256_hash.update(chunk)
+                    local_sha256 = sha256_hash.hexdigest()
+                    if remote_sha256 == local_sha256:
+                        skipped += 1
+                        continue
+                elif remote.get("size") == size_bytes:
+                    # Compat window: no server digest, so the best signal is the
+                    # legacy name+size match.
+                    skipped += 1
+                    continue
 
             mime_type = (
                 file_info.get("file", {}).get("meta", {}).get("content_type")
