@@ -1,10 +1,17 @@
 {
   "workload_trust_profile": "internal_workforce",
-  "mount_intent": {
-    "destination": "/mnt/user-data",
-    "filesystem_id": "fs-fleet",
-    "read_only": false
-  },
+  "mount_intents": [
+    {
+      "destination": "/mnt/user-data/uploads",
+      "filesystem_id": "fs-fleet",
+      "read_only": true
+    },
+    {
+      "destination": "/mnt/user-data/outputs",
+      "filesystem_id": "fs-fleet",
+      "read_only": false
+    }
+  ],
   "egress_policy": {
     "default_deny": true
   },

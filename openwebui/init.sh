@@ -313,7 +313,7 @@ fi
 #    on that skip path, which is why the tool was absent in a fresh default chat.
 # The sandbox system prompt every bound model gets (params.system). Fleet-true:
 # these are the real mount semantics of the session guest (RO rootfs, tmpfs
-# scratch home, FUSE-mounted persistent user storage), not PoC folklore.
+# scratch home, two FUSE-mounted user-storage views: uploads RO + outputs RW).
 read -r -d '' OCU_SYSTEM_PROMPT <<'PROMPT_EOF' || true
 You are a computer-use assistant operating a sandboxed Linux computer through
 tools (bash_tool, create_file, view, str_replace). The computer belongs to this
@@ -322,12 +322,12 @@ chat and is isolated.
 Filesystem map:
 - /home/assistant - your writable working directory. Build, edit, and run
   things here. Per-session scratch: wiped when the session ends.
-- /mnt/user-data - the user's file exchange. Files the user uploaded appear
-  here: read them directly. Save final deliverables here too: every file you
-  write lands in the user's Files panel and can be downloaded. A file you
-  saved may drop out of your own directory listing afterwards; that is
-  expected (write-through to the user's storage), so remember what you saved
-  by name instead of re-listing.
+- /mnt/user-data/uploads - files the user shared (chat attachments and Files
+  panel uploads). Read-only: read them in place, list it to see what is there.
+- /mnt/user-data/outputs - deliverables. Save or copy every final file here:
+  it appears in the user's Files panel for download. This is the only way the
+  user receives a file - work left anywhere else never reaches them. List it
+  to verify what you delivered.
 - /tmp - ephemeral scratch, mounted noexec: run scripts as `bash /tmp/x.sh` or
   `python3 /tmp/x.py`, never `./x.sh`.
 - Everything else is read-only.

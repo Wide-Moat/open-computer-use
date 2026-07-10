@@ -477,7 +477,7 @@ class Tools:
         )
         FILESTORE_URL: str = Field(
             default="https://filestore:7080",
-            description="Internal URL of the object-store service's F9 north Files-API, reached over the ocu-north network. Chat attachments are created here (multipart POST /v1/files) so they appear in the guest's flat /mnt/user-data view (engine key uploads/<name>). NOT the MCP gateway."
+            description="Internal URL of the object-store service's F9 north Files-API, reached over the ocu-north network. Chat attachments are created here (multipart POST /v1/files) so they appear in the guest's read-only /mnt/user-data/uploads view (engine key uploads/<name>). NOT the MCP gateway."
         )
         OCU_FILESYSTEM_ID: str = Field(
             default="fs-fleet",

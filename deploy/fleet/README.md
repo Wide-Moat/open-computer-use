@@ -236,7 +236,15 @@ gateway's built-in default is 30s; the exec channel drops any command silent
 for 60s (a host-side idle-read window, tracked in issue #145), so 55 is the
 honest ceiling until that lands - a longer value lets a silent command past
 60s lose its result to a 502. The fixture's `cpu_cores: 2` is intentional
-headroom over the PoC's 1.0:
+headroom over the PoC's 1.0.
+
+The fixture provisions TWO storage mounts (`mount_intents`): the guest sees
+`/mnt/user-data/uploads` (read-only; chat attachments and Files-panel uploads)
+and `/mnt/user-data/outputs` (read-write; agent deliverables, listable by the
+writer, served for download). Each mount's credential carries its own intent
+claim; the engine (`-claims-bind` on the `filestore` service) joins every op
+under the claim's subtree - `read -> uploads/`, `write -> outputs/` (ADR-0029).
+This is the PoC guest contract (`docker_manager.py` binds the same two paths):
 
 ```bash
 cp deploy/fleet/fixtures/provisioning-policy.json "$out/provisioning-policy.json"

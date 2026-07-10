@@ -518,7 +518,7 @@ scenarios:
   - id: J1
     group: J
     story: "As a user I download the file the agent just saved for me."
-    proves: "An agent write to /mnt/user-data reaches the Files panel and downloads byte-exact (guest -> engine outputs/ -> F9 north -> content 200)."
+    proves: "An agent write to /mnt/user-data/outputs reaches the Files panel and downloads byte-exact (guest -> outputs/ -> F9 north -> content 200)."
     poc_expect: "Shared volume: the file simply appears under the chat's files listing."
     fleet_expect: "Pane lists the deliverable within the VFS write-back window and /content serves the exact bytes."
     bucket: HARDENED
@@ -527,9 +527,9 @@ scenarios:
   - id: J2
     group: J
     story: "As a user I attach a file and the agent reads it."
-    proves: "A pane upload is readable byte-exact from a fresh guest at /mnt/user-data (F9 create -> uploads/ -> south mount read)."
+    proves: "A pane upload is readable byte-exact from a fresh guest at /mnt/user-data/uploads (F9 create -> uploads/ -> south mount read)."
     poc_expect: "Upload sync copies into the chat container; cat reads it."
-    fleet_expect: "A fresh guest cats the exact uploaded bytes at /mnt/user-data/<name> (the #143 south downloadable-misroute is fixed; downloadable gates only the north content egress)."
+    fleet_expect: "A fresh guest cats the exact uploaded bytes at /mnt/user-data/uploads/<name> (the #143 south downloadable-misroute is fixed; downloadable gates only the north content egress)."
     bucket: HARDENED
     keystone: "Byte EQUALITY is asserted, never presence: the stat-visible-but-empty failure mode must fail, not pass."
 
@@ -541,3 +541,21 @@ scenarios:
     fleet_expect: "Uploads-side object refuses /content with 403; the agent's outputs-side deliverable serves 200 byte-exact."
     bucket: HARDENED
     keystone: "The ASYMMETRY is the control: loosening the north gate reddens the 403 half; a broken outputs leg reddens the 200 half."
+
+  - id: J4
+    group: J
+    story: "As the agent I verify the deliverable I just saved is really there."
+    proves: "The guest LISTS and re-reads its own outputs write (two-mount layout: the write-intent credential joins ALL its ops under outputs/, so the writer sees its own subtree - PoC parity, ADR-0029 credential-claim join)."
+    poc_expect: "outputs is a plain rw bind mount: ls shows the file immediately."
+    fleet_expect: "ls /mnt/user-data/outputs shows the just-written name in the SAME session; cat returns the exact bytes."
+    bucket: HARDENED
+    keystone: "A ghost sibling stays absent from the listing; under the flat-era route-op join this test REDDENS (reads resolved to uploads/, the writer never saw its own file)."
+
+  - id: J5
+    group: J
+    story: "As the platform I refuse agent writes into the user's uploads."
+    proves: "The uploads view is read-only end-to-end: the mount posture refuses the write AND the engine grants the read credential no write lease (NFR-SEC-49, ADR-0029)."
+    poc_expect: "uploads is a ro bind mount: the write fails with EROFS."
+    fleet_expect: "The guest write into /mnt/user-data/uploads fails; the attempted name never appears in the pane list."
+    bucket: HARDENED
+    keystone: "Two independent refusals asserted (guest-side failure + spine-side absence): a cosmetic :ro that the backend still accepts reddens the second half."

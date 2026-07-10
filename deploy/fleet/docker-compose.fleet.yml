@@ -346,6 +346,12 @@ services:
       - "1073741824"
       - -granted-intents
       - read,write
+      # Bind each request's scope from the edge-validated credential CLAIMS
+      # (filesystem_id + intent), not the static single-tenant default. With the
+      # intent-carrying exchange this gives every mount a single-intent grant:
+      # the uploads mount (read) joins uploads/, the outputs mount (write) joins
+      # outputs/ for ALL its ops - the two-mount guest layout (ADR-0029).
+      - -claims-bind
       # Guest-convention path prefixes whose objects resolve downloadable=true
       # at read (NFR-SEC-73: resolved-at-read via prefix match, never stamped at
       # write). The mount sends the guest-convention req.path (leading slash) and
@@ -1070,7 +1076,7 @@ services:
     networks:
       # ocu-frontend reaches the MCP gateway (bash/create_file); ocu-north reaches
       # the object-store service's F9 Files-API so chat attachments appear in the
-      # guest's flat /mnt/user-data view (engine key uploads/<name>).
+      # guest's read-only /mnt/user-data/uploads view (engine key uploads/<name>).
       - ocu-frontend
       - ocu-north
     restart: unless-stopped

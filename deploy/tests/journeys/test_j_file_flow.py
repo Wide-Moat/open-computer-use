@@ -3,16 +3,23 @@
 """GROUP J — two-way user<->agent file flow across the storage spine, fleet-only.
 
 The finale proved the chat tool cycle; this group pins the FILE cycle between
-the chat guest and the user's Files panel, the two legs no other group covers:
+the chat guest and the user's Files panel under the TWO-MOUNT guest layout
+(PoC parity + ADR-0029: /mnt/user-data/uploads RO + /mnt/user-data/outputs RW):
 
-  J1  agent-written /mnt/user-data file reaches the user: pane lists it and
-      serves its exact bytes (agent -> engine outputs/ -> F9 north -> download)
+  J1  agent-written /mnt/user-data/outputs file reaches the user: pane lists
+      it and serves its exact bytes (agent -> outputs/ -> F9 north -> download)
   J2  user-uploaded file reaches the agent: a pane upload is readable, byte
-      exact, from a fresh guest at /mnt/user-data (F9 create -> uploads/ ->
-      south mount read)
+      exact, from a fresh guest at /mnt/user-data/uploads (F9 create ->
+      uploads/ -> south mount read)
   J3  the north egress gate survives both legs: an uploads-side object is
       still refused for download (not-downloadable), while the agent's
       outputs-side deliverable serves 200 - the asymmetry IS the control
+  J4  the agent LISTS its own deliverable: a file written to outputs/ shows
+      in the guest's own `ls /mnt/user-data/outputs` and cats back byte-exact
+      (the list-own-writes keystone the flat single-mount era broke)
+  J5  the uploads view refuses writes: a guest write into
+      /mnt/user-data/uploads fails AND never surfaces in the pane list (the
+      RO keystone - mount posture and engine lease agree)
 
 It drives the REAL wires end to end: the gateway on 127.0.0.1:8080 with the
 minted bearer (like groups H/I) for the guest side, and the embed-portal
@@ -21,8 +28,9 @@ through the guest mount are ASYNC (VFS write-back, seconds); assertions poll
 with a bounded deadline instead of sleeping blind. Skips loudly when a wire is
 unreachable - never a fabricated green.
 
-No poc counterpart: the PoC shares one docker volume both ways with no
-engine/panel spine; the contrast lives in scenarios.yaml (J1..J3).
+PoC counterpart: docker_manager.py binds /mnt/user-data/uploads (ro) +
+/mnt/user-data/outputs (rw); this group pins the same guest contract on the
+fleet spine. Scenario rows live in scenarios.yaml (J1..J5).
 """
 
 import json
@@ -146,10 +154,10 @@ def _guest_bash(chat_id, command, timeout=60):
 
 
 def test_j1_agent_write_reaches_pane_download(tmp_path):
-    """Agent writes /mnt/user-data/<unique> -> pane lists it -> download 200
-    serves the exact bytes. Keystone: a never-written sibling name stays
-    absent from the same listing window, so the green cannot come from a
-    stale or over-matching list."""
+    """Agent writes /mnt/user-data/outputs/<unique> -> pane lists it ->
+    download 200 serves the exact bytes. Keystone: a never-written sibling
+    name stays absent from the same listing window, so the green cannot come
+    from a stale or over-matching list."""
     _require_gateway()
     jar, _csrf = _pane_session(tmp_path)
 
@@ -159,7 +167,7 @@ def test_j1_agent_write_reaches_pane_download(tmp_path):
 
     is_err, text = _guest_bash(
         f"j1-{uuid.uuid4().hex[:8]}",
-        f"printf %s '{payload}' > /mnt/user-data/{name} && echo WROTE",
+        f"printf %s '{payload}' > /mnt/user-data/outputs/{name} && echo WROTE",
     )
     assert not is_err and "WROTE" in text, f"guest write failed: {text[:200]}"
 
@@ -178,9 +186,9 @@ def test_j1_agent_write_reaches_pane_download(tmp_path):
 
 def test_j2_pane_upload_readable_by_guest(tmp_path):
     """User uploads via the pane -> a FRESH guest reads the exact bytes at
-    /mnt/user-data/<name>. Byte equality is the assertion; a stat-visible but
-    empty read (the retired #143 failure mode, once pinned here as a strict
-    xfail) must FAIL, never pass."""
+    /mnt/user-data/uploads/<name>. Byte equality is the assertion; a
+    stat-visible but empty read (the retired #143 failure mode, once pinned
+    here as a strict xfail) must FAIL, never pass."""
     _require_gateway()
     jar, csrf = _pane_session(tmp_path)
 
@@ -190,7 +198,7 @@ def test_j2_pane_upload_readable_by_guest(tmp_path):
 
     is_err, text = _guest_bash(
         f"j2-{uuid.uuid4().hex[:8]}",
-        f"cat /mnt/user-data/{name}",
+        f"cat /mnt/user-data/uploads/{name}",
     )
     assert not is_err, f"guest read errored: {text[:200]}"
     assert text.strip() == payload, (
@@ -221,7 +229,7 @@ def test_j3_download_gate_asymmetry(tmp_path):
     out_name = f"j3-out-{uuid.uuid4().hex[:10]}.txt"
     is_err, text = _guest_bash(
         f"j3-{uuid.uuid4().hex[:8]}",
-        f"printf %s J3-OUTPUT-SIDE > /mnt/user-data/{out_name} && echo WROTE",
+        f"printf %s J3-OUTPUT-SIDE > /mnt/user-data/outputs/{out_name} && echo WROTE",
     )
     assert not is_err and "WROTE" in text
     obj = _pane_find(jar, out_name)
@@ -230,3 +238,69 @@ def test_j3_download_gate_asymmetry(tmp_path):
     assert status == 200 and body == "J3-OUTPUT-SIDE", (
         f"outputs-side deliverable download = {status}, want 200 byte-exact"
     )
+
+
+# --- J4: the agent lists its own deliverable ---------------------------------
+
+
+def test_j4_guest_lists_own_written_output():
+    """Guest writes /mnt/user-data/outputs/<unique>, then the SAME session
+    lists outputs/ and sees the name, and cats it back byte-exact. This is the
+    list-own-writes keystone: under the flat single-mount era every read-class
+    op resolved to the uploads subtree, so a written file vanished from the
+    writer's own view. Ghost negative keeps the listing assertion non-vacuous."""
+    _require_gateway()
+
+    name = f"j4-{uuid.uuid4().hex[:10]}.txt"
+    ghost = f"j4-ghost-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J4-SELF-VIEW-{uuid.uuid4().hex}"
+    chat = f"j4-{uuid.uuid4().hex[:8]}"
+
+    is_err, text = _guest_bash(
+        chat,
+        f"printf %s '{payload}' > /mnt/user-data/outputs/{name} && echo WROTE",
+    )
+    assert not is_err and "WROTE" in text, f"guest write failed: {text[:200]}"
+
+    is_err, listing = _guest_bash(chat, "ls /mnt/user-data/outputs")
+    assert not is_err, f"guest ls of outputs errored: {listing[:200]}"
+    assert name in listing, (
+        "written file absent from the writer's own outputs listing - "
+        "the flat-era list-own-writes defect"
+    )
+    assert ghost not in listing, "ghost name present - listing is not real"
+
+    is_err, back = _guest_bash(chat, f"cat /mnt/user-data/outputs/{name}")
+    assert not is_err and back.strip() == payload, (
+        "written file does not cat back byte-exact through the outputs mount"
+    )
+
+
+# --- J5: the uploads view refuses writes --------------------------------------
+
+
+def test_j5_uploads_mount_refuses_guest_write(tmp_path):
+    """A guest write into /mnt/user-data/uploads FAILS (RO mount posture +
+    engine-enforced read lease, NFR-SEC-49/ADR-0029), and the attempted name
+    never surfaces in the pane list - so the refusal is real on both the
+    mount and the spine, not a cosmetic mount option."""
+    _require_gateway()
+    jar, _csrf = _pane_session(tmp_path)
+
+    name = f"j5-{uuid.uuid4().hex[:10]}.txt"
+
+    is_err, text = _guest_bash(
+        f"j5-{uuid.uuid4().hex[:8]}",
+        f"printf %s J5-MUST-NOT-LAND > /mnt/user-data/uploads/{name} && echo WROTE",
+    )
+    assert is_err or "WROTE" not in text, (
+        f"write into the uploads view SUCCEEDED - RO is a mirage: {text[:200]}"
+    )
+
+    # The refused name must not appear on the spine either (bounded window).
+    end = time.monotonic() + 12
+    while time.monotonic() < end:
+        assert not [f for f in _pane_list(jar) if f.get("filename") == name], (
+            "refused uploads-write surfaced in the pane list - engine accepted it"
+        )
+        time.sleep(3)
