@@ -609,12 +609,14 @@ services:
       - postgres://${OCU_PG_USER:-ocu}:${OCU_PG_PASSWORD:-ocu-fleet-pg}@control-db:5432/${OCU_PG_DB:-ocu_control}?sslmode=disable
       # Session idle-TTL (NFR-SEC-40, shelf-split): on the full shelf (state-dsn
       # set) this is ON and tunable-down within the ≤15 min ceiling; unset would
-      # resolve to the 15 min ceiling. The demo default is a short window so an
-      # abandoned session is reclaimed promptly and visibly; raise toward the
-      # ceiling for a longer-lived stand. An idle ACTIVE session past this is
+      # resolve to the 15 min ceiling. The default sits AT the ceiling: a chat
+      # session's scratch (/tmp and the home tmpfs) dies with the container, and
+      # a 1m window reaped the guest while the user was still reading the reply,
+      # wiping work mid-conversation. Set a short value (e.g. 1m) via env to
+      # demo the reaper visibly. An idle ACTIVE session past this is
       # force-killed and its concurrency slot returned (NFR-REL-09).
       - -session-idle-ttl
-      - ${OCU_SESSION_IDLE_TTL:-1m}
+      - ${OCU_SESSION_IDLE_TTL:-15m}
     depends_on:
       control-db:
         condition: service_healthy

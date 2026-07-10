@@ -292,8 +292,15 @@ if [ -n "$OAI_NEW" ]; then
         || echo "[init] WARNING: catalog filter POST failed (endpoint may differ)."
 fi
 
-# 2) Bind Computer Use tool + native FC onto EVERY surviving base model, so the
-#    tool is live in every chat regardless of which model the user picks.
+# 2) Bind Computer Use tool + native FC + the sandbox system prompt onto EVERY
+#    surviving base model, so the tool is live and the model knows the filesystem
+#    map in every chat regardless of which model the user picks.
+#
+#    The system prompt rides params.system on the model record. The
+#    computer_use_filter's /system-prompt fetch degrades silently here: its
+#    ORCHESTRATOR_URL points at the MCP gateway, which (correctly) serves no
+#    such route - the gateway fronts tools/call only. Without params.system the
+#    model gets ZERO path guidance and writes to read-only paths blind.
 #
 #    CRITICAL: base_model_id MUST be null (not the model's own id). Open WebUI's
 #    get_all_models merge has two paths (utils/models.py): a workspace record
@@ -304,6 +311,32 @@ fi
 #    `continue` and SKIPS it entirely — meta.toolIds never attaches and the tool
 #    never reaches the model in chat. A self-referential base_model_id==id lands
 #    on that skip path, which is why the tool was absent in a fresh default chat.
+# The sandbox system prompt every bound model gets (params.system). Fleet-true:
+# these are the real mount semantics of the session guest (RO rootfs, tmpfs
+# scratch home, FUSE-mounted persistent user storage), not PoC folklore.
+read -r -d '' OCU_SYSTEM_PROMPT <<'PROMPT_EOF' || true
+You are a computer-use assistant operating a sandboxed Linux computer through
+tools (bash_tool, create_file, view, str_replace). The computer belongs to this
+chat and is isolated.
+
+Filesystem map:
+- /home/assistant - your writable working directory. Build, edit, and run
+  things here. Per-session scratch: wiped when the session ends.
+- /mnt/user-data - persistent user storage. Every file you save here appears
+  in the user's Files panel and can be downloaded. Save final deliverables here.
+- /tmp - ephemeral scratch, mounted noexec: run scripts as `bash /tmp/x.sh` or
+  `python3 /tmp/x.py`, never `./x.sh`.
+- Everything else is read-only.
+
+An idle session is reclaimed after several minutes: /home/assistant and /tmp
+are wiped then; /mnt/user-data persists.
+
+Work style: do the task with the tools; verify your own work by running it and
+showing real output. If a command fails, read the error and fix the cause -
+do not give up after the first failure. Reply in the user's language.
+PROMPT_EOF
+export OCU_SYSTEM_PROMPT
+
 if [ -n "$KEPT_IDS" ]; then
     printf '%s\n' "$KEPT_IDS" | while IFS= read -r model_id; do
         [ -z "$model_id" ] && continue
@@ -319,7 +352,11 @@ print(json.dumps({
         'toolIds': ['ai_computer_use'],
         'filterIds': ['computer_use_filter']
     },
-    'params': {'function_calling': 'native', 'stream_response': True},
+    'params': {
+        'function_calling': 'native',
+        'stream_response': True,
+        'system': os.environ.get('OCU_SYSTEM_PROMPT', '')
+    },
     # Public read grants, mirroring the tool's own grants above. A seeded model
     # record with empty access_grants is dropped by get_filtered_models for any
     # non-admin user (they would see zero models), so grant read to all users
