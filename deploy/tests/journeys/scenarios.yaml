@@ -509,3 +509,35 @@ scenarios:
     fleet_expect: "create ALPHA original -> view shows it -> str_replace to EDITED -> bash cat = ALPHA EDITED; no bash fallback."
     bucket: IDENTICAL
     keystone: "Requires a python3-bearing guest (#122); skips loudly on a stripped guest rather than passing vacuously."
+
+  # =====================================================================
+  # GROUP J -- two-way user<->agent file flow across the storage spine
+  # (fleet-only; the PoC shares one docker volume both ways with no
+  # engine/panel spine, so every J contrast is structural.)
+  # =====================================================================
+  - id: J1
+    group: J
+    story: "As a user I download the file the agent just saved for me."
+    proves: "An agent write to /mnt/user-data reaches the Files panel and downloads byte-exact (guest -> engine outputs/ -> F9 north -> content 200)."
+    poc_expect: "Shared volume: the file simply appears under the chat's files listing."
+    fleet_expect: "Pane lists the deliverable within the VFS write-back window and /content serves the exact bytes."
+    bucket: HARDENED
+    keystone: "A never-written ghost name stays absent from the same listing window (the list is real, not echoed)."
+
+  - id: J2
+    group: J
+    story: "As a user I attach a file and the agent reads it."
+    proves: "A pane upload is readable byte-exact from a fresh guest at /mnt/user-data (F9 create -> uploads/ -> south mount read)."
+    poc_expect: "Upload sync copies into the chat container; cat reads it."
+    fleet_expect: "Pinned strict-xfail on #143: south read path denies uploads bytes as not_downloadable -> stat-visible but 0-byte read. Flips to plain green when the filestore fix lands."
+    bucket: HARDENED
+    keystone: "Byte EQUALITY is asserted, never presence: the stat-visible-but-empty failure mode must fail, not pass."
+
+  - id: J3
+    group: J
+    story: "As the platform I keep 'agent may read it' separate from 'user may carry it out'."
+    proves: "The north content-egress gate survives both file-flow legs (NFR-SEC-73 stored-tag; egress-not-provenance)."
+    poc_expect: "No downloadable concept; every file in the volume is servable."
+    fleet_expect: "Uploads-side object refuses /content with 403; the agent's outputs-side deliverable serves 200 byte-exact."
+    bucket: HARDENED
+    keystone: "The ASYMMETRY is the control: loosening the north gate reddens the 403 half; a broken outputs leg reddens the 200 half."
