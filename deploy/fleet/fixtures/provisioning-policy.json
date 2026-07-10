@@ -1,0 +1,17 @@
+{
+  "workload_trust_profile": "internal_workforce",
+  "mount_intent": {
+    "destination": "/mnt/user-data",
+    "filesystem_id": "fs-fleet",
+    "read_only": false
+  },
+  "egress_policy": {
+    "default_deny": true
+  },
+  "resource_caps": {
+    "cpu_cores": 2,
+    "memory_bytes": 2147483648,
+    "pids_limit": 512
+  },
+  "exec_timeout_seconds": 120
+}

@@ -229,6 +229,15 @@ python3 deploy/fleet/scripts/mint_boot_set.py \
 tail -1 /tmp/mint.out > "$out/bearer.txt"   # the printed bearer is the last line
 ```
 
+The gateway also bind-mounts a provisioning policy from the same directory.
+It carries no secrets (it lives there only to share the mount root); a clean
+clone copies the tracked fixture, which pins `exec_timeout_seconds: 120`
+(the PoC command budget - the gateway's built-in default is 30s):
+
+```bash
+cp deploy/fleet/fixtures/provisioning-policy.json "$out/provisioning-policy.json"
+```
+
 The gateway loads the boot-set at boot, so after (re-)minting, recreate it to
 pick up the new set: `docker compose up -d --force-recreate --no-deps mcp-gateway`.
 
