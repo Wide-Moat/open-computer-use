@@ -222,10 +222,11 @@ plaintext bearer to stdout; the tests read it from a sibling `bearer.txt`, so
 capture the last printed line there:
 
 ```bash
+out=deploy/fleet/secrets/gateway
+mkdir -p "$out"
 python3 deploy/fleet/scripts/mint_boot_set.py \
-  --deployment fleet-local \
-  --out-dir deploy/fleet/secrets/gateway \
-  | tail -1 > deploy/fleet/secrets/gateway/bearer.txt
+  --deployment fleet-local --out-dir "$out" > /tmp/mint.out
+tail -1 /tmp/mint.out > "$out/bearer.txt"   # the printed bearer is the last line
 ```
 
 The gateway loads the boot-set at boot, so after (re-)minting, recreate it to
