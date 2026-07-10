@@ -215,12 +215,21 @@ The PoC-vs-fleet journeys (`deploy/tests/journeys/`) need `pytest` + `pyyaml`;
 everything else they use is stdlib. From a clean clone with the fleet up:
 
 The gateway auth-edge journeys (group H) + the tool-surface journeys (group I)
-need a minted boot-set + bearer first — render them with the vendored minter:
+need a minted boot-set + bearer first — render them with the vendored minter.
+`--deployment` MUST equal the gateway's `-deployment` (the fleet compose runs
+`fleet-local`; a foreign-deployment record 401s, ADR-0027). The minter prints the
+plaintext bearer to stdout; the tests read it from a sibling `bearer.txt`, so
+capture the last printed line there:
 
 ```bash
 python3 deploy/fleet/scripts/mint_boot_set.py \
-  --out-dir deploy/fleet/secrets/gateway
+  --deployment fleet-local \
+  --out-dir deploy/fleet/secrets/gateway \
+  | tail -1 > deploy/fleet/secrets/gateway/bearer.txt
 ```
+
+The gateway loads the boot-set at boot, so after (re-)minting, recreate it to
+pick up the new set: `docker compose up -d --force-recreate --no-deps mcp-gateway`.
 
 Then install the test deps and run the suite:
 
