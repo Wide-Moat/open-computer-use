@@ -13,5 +13,5 @@
     "memory_bytes": 2147483648,
     "pids_limit": 512
   },
-  "exec_timeout_seconds": 120
+  "exec_timeout_seconds": 55
 }
