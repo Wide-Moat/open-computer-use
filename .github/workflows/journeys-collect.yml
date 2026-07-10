@@ -29,6 +29,16 @@ jobs:
         run: python -m pip install --upgrade pip -r deploy/tests/journeys/requirements.txt
       - name: Compile every journey module (syntax)
         run: python -m compileall -q deploy/tests/journeys
+      - name: Smoke the boot-set minter (H/I fixtures render from a clean tree)
+        # --collect-only never executes the minter, so a missing vendored schema
+        # or a broken minter would skip H/I green rather than red. Run the minter
+        # against a throwaway deployment + out-dir here: it is stdlib-only (no live
+        # stand, no pip) and reds if scripts/mint_boot_set.py cannot render a
+        # boot-set — e.g. if its vendored contracts/mcp schema drifts or vanishes.
+        run: |
+          out="$(mktemp -d)"
+          python3 deploy/fleet/scripts/mint_boot_set.py --deployment ci --out-dir "$out"
+          test -s "$out/boot-set.json"
       - name: Collect the journey suite (import + fixture health, no run)
         # --collect-only imports every test module and resolves fixtures without
         # executing them; a broken import, a missing helper, or a renamed fixture

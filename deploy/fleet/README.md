@@ -242,6 +242,32 @@ python3 -m venv .venv
 
 Groups A–G run against the live fleet or loud-skip when a stand is absent (never
 a silent pass); group H is the MCP gateway auth edge; group I is the MCP
-tool-surface below the exec contract. The file-tool legs (group I) need a
-python3-bearing guest — set `OCU_GUEST_IMAGE=ocu-guest:poc-fat-arm64` in `.env`
-(see `.env.example`); the stripped default runs the bash legs only (see #345).
+tool-surface below the exec contract.
+
+Expected outcome (so honest-green is distinguishable from green-by-skip): with a
+python3-bearing guest, H + I = **13 passed, 0 skipped**; with the stripped
+default guest, I4/I5/I6 loud-skip and the total is **10 passed + 3 skipped**. A
+skip on H (or on I1/I2/I3) means the boot-set or the stand is not wired, not a
+pass.
+
+The file-tool legs (I4/I5/I6) need a guest that bears python3, `sh`, and `cat`.
+The stripped default (`ocu-guest:assembled`) runs the bash legs only. Build a
+fat guest by layering the assembly Dockerfile over the PoC userland base (the
+repo-root `Dockerfile`, an Ubuntu 24.04 image with python3), then point `.env`
+at it:
+
+```bash
+# 1. the fat userland base (repo root); on Lima arm64 drop --platform
+docker build -t ocu-poc-fat:local .
+# 2. layer the guest agent + co-located mount over that base
+docker build \
+  --build-arg AGENT_IMAGE=<guest-agent-image> \
+  --build-arg MOUNT_IMAGE=<rclone-filestore-image> \
+  --build-arg BASE_IMAGE=ocu-poc-fat:local \
+  -f deploy/guest-image/Dockerfile -t ocu-guest:poc-fat deploy/guest-image
+# 3. select it for the demo stand
+echo 'OCU_GUEST_IMAGE=ocu-guest:poc-fat' >> deploy/fleet/.env
+```
+
+The demo default guest bearing python3 is tracked as #345; until it lands, the
+build above is the documented path to the full group-I run.
