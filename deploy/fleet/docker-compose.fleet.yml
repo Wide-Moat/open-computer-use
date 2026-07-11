@@ -168,6 +168,48 @@ services:
     read_only: false
 
   # -------------------------------------------------------------------------
+  # jwks-gate - one-shot boot barrier for the filestore Storage-JWT verifier.
+  # Control renders /run/jwks/jwks.json ASYNCHRONOUSLY after its own boot; the
+  # filestore verifier (-verify-storage-jwt) reads that file ONCE at boot and
+  # fail-closes on an absent/empty/key-less artifact. This gate blocks the
+  # filestore start until the artifact is rendered, so the boot race cannot
+  # leave the enforcement flag dark. It gates ONLY the race: a genuinely-missing
+  # JWKS still hard-fails filestore's own boot validation, and this gate itself
+  # hard-fails at 60s so a control boot failure surfaces as a red service, not a
+  # hung stack. Mirrors the read-once-at-boot latch pattern harness-init uses for
+  # control's -ca-cert. One-shot; filestore waits on it.
+  # -------------------------------------------------------------------------
+  jwks-gate:
+    image: alpine/openssl:latest
+    depends_on:
+      control:
+        condition: service_started
+    volumes:
+      - control-jwks:/run/jwks:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        i=0
+        # The doubled dollar escapes compose interpolation so the shell sees a
+        # literal variable (an un-escaped one renders empty, unbounding the loop).
+        while [ $$i -lt 60 ]; do
+          # -s (non-empty) plus a structural "kty" check: guard a torn read if
+          # the render is not temp+rename atomic, and a rendered-but-key-less
+          # artifact - matching the verifier's own empty/key-less fail-close one
+          # poll-tick earlier.
+          if [ -s /run/jwks/jwks.json ] && grep -q '"kty"' /run/jwks/jwks.json; then
+            echo "jwks.json rendered ($$(wc -c < /run/jwks/jwks.json) bytes)"
+            exit 0
+          fi
+          i=$$((i+1)); sleep 1
+        done
+        echo "jwks.json not rendered within 60s" >&2
+        exit 1
+    networks:
+      - ocu-edge-backend
+
+  # -------------------------------------------------------------------------
   # signing-key-init — mints the control plane's Storage/Exec-JWT signing key
   # (Ed25519, PKCS8 PEM) into a shared volume when the operator did not supply
   # one. Control fail-closes at boot without a real key at -jwt-signing-key
@@ -313,6 +355,11 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      # The Storage-JWT verifier reads control's rendered JWKS once at boot and
+      # fail-closes on an empty/absent artifact; the gate sequences this start
+      # after control has rendered it (transitively also after control:started).
+      jwks-gate:
+        condition: service_completed_successfully
     command:
       - -engine
       - s3
@@ -352,6 +399,23 @@ services:
       # the uploads mount (read) joins uploads/, the outputs mount (write) joins
       # outputs/ for ALL its ops - the two-mount guest layout (ADR-0029).
       - -claims-bind
+      # JWKS-verify the weak Storage-JWT before any filesystem_id/intent claim is
+      # trusted: signature, kid-pinned alg (control mints ES256), iss/aud, exp
+      # (ADR-0013/0019 custody, the enforceable engine-side half of ADR-0029
+      # path-b). The JWKS is control's rendered artifact, pinned as a read-only
+      # file (the same control-jwks volume the `jwks` nginx serves); a rotation
+      # is a redeploy. issuer/audience are byte-identical to control's
+      # -storage-issuer/-storage-audience. Without this flag the daemon trusts an
+      # unverified bearer's claims (the pre-verification interim seam) - the flag
+      # closes that hole. FAIL-CLOSED: an empty jwks-path/issuer/audience, or an
+      # empty/key-less JWKS, aborts boot.
+      - -verify-storage-jwt
+      - -storage-jwks-path
+      - /run/jwks/jwks.json
+      - -storage-jwt-issuer
+      - https://control-plane.test
+      - -storage-jwt-audience
+      - filestore-edge
       # Guest-convention path prefixes whose objects resolve downloadable=true
       # at read (NFR-SEC-73: resolved-at-read via prefix match, never stamped at
       # write). The mount sends the guest-convention req.path (leading slash) and
@@ -381,6 +445,11 @@ services:
       OCU_S3_SECRET_ACCESS_KEY: ${OCU_S3_SECRET_ACCESS_KEY:-ocu-fleet-secret-key}
     volumes:
       - tls-certs:/etc/ocu-filestore/tls:ro
+      # Control's rendered Storage-JWT JWKS, read-only. The -verify-storage-jwt
+      # verifier reads this once at boot; the jwks-gate one-shot ensures it is
+      # rendered first. Same control-jwks volume control renders into and the
+      # `jwks` nginx serves - single writer (control), multiple read-only readers.
+      - control-jwks:/run/jwks:ro
       # Mounted on engine-root (pre-owned 65532 in the image) so the named
       # volume inherits that ownership; the handle-store lives under it.
       - filestore-handles:/var/lib/ocu-filestore/engine-root
