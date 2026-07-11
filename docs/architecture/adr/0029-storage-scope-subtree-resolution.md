@@ -22,6 +22,8 @@ The backend source subtree of a storage mount is resolved at the storage engine 
 
 `proposed` — amends [ADR-0019](0019-egress-exchanges-filestore-credential.md) (itself `proposed`, so the amendment lands before ratification: the exchange key gains the intent claim) and closes the namespace-split half of [ADR-0023](0023-files-api-north-contract.md) Open Question 5 (ADR-0023:79); the content-hash-manifest tail of that question stays open with the deferred `checksum_md5` ([ADR-0028](0028-files-api-body-freeze.md)). The two backend defects it resolves are stated in the Context below.
 
+The engine-side half — scope/subtree resolution and Storage-JWT verification at the engine — is implemented and enforced; the edge-exchange half follows the wave split in the Decision below. The status stays `proposed` until [ADR-0019](0019-egress-exchanges-filestore-credential.md) ratifies, since this ADR amends it and cannot outrank its target.
+
 ## Context
 
 A session is provisioned two storage mounts over one `filesystem_id`: an `uploads` mount, `readonly: true`, and an `outputs` sink, `readonly: false` ([mount-config.schema.json](../../../contracts/storage/mount-config.schema.json)). Two live defects show the split holds only in the guest:
