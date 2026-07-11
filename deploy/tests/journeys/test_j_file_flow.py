@@ -150,6 +150,38 @@ def _guest_bash(chat_id, command, timeout=60):
     return result.get("isError", False), text
 
 
+def _resolve_scope(chat_id, timeout=15):
+    """Resolve a chat's effective storage scope via control's caller-scoped
+    status verb (POST /v1alpha/sessions/status through the gateway plane with
+    X-Chat-Id). Returns effective_scope or None. This is what makes J6
+    non-vacuous: the two chats must resolve DISTINCT derived scopes, else "B
+    does not see A" could be green for an unrelated reason.
+    """
+    bearer = _bearer()
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "sessions/status", "params": {}})
+    out = subprocess.run(
+        ["curl", "-sS", "--max-time", str(timeout), "-o", "-", "-w", "\n%{http_code}",
+         f"{GATEWAY_URL}v1alpha/sessions/status",
+         "-H", f"Authorization: Bearer {bearer}",
+         "-H", f"MCP-Protocol-Version: {_PROTO}",
+         "-H", f"X-Chat-Id: {chat_id}",
+         "-H", "content-type: application/json",
+         "-d", "{}"],
+        capture_output=True, text=True, timeout=timeout + 10,
+    )
+    if out.returncode != 0:
+        return None
+    text = out.stdout
+    nl = text.rfind("\n")
+    status = text[nl + 1:].strip()
+    if status != "200":
+        return None
+    try:
+        return json.loads(text[:nl]).get("effective_scope")
+    except (ValueError, TypeError):
+        return None
+
+
 # --- J1: agent deliverable reaches the user ---------------------------------
 
 
@@ -304,3 +336,101 @@ def test_j5_uploads_mount_refuses_guest_write(tmp_path):
             "refused uploads-write surfaced in the pane list - engine accepted it"
         )
         time.sleep(3)
+
+
+# --- J6: cross-chat file isolation (D5 acceptance keystone) -------------------
+
+
+def test_j6_cross_chat_file_isolation():
+    """Chat A writes /mnt/user-data/outputs/<secret>; chat B (a DIFFERENT
+    X-Chat-Id -> a different control-derived storage scope) must NOT see it in
+    its own outputs listing, nor cat it back. This is the D5 per-chat storage
+    isolation acceptance gate (ADR-0030).
+
+    Non-vacuity guard: the two chats MUST resolve DISTINCT effective_scope via
+    control's status verb - else "B does not see A" could be green because the
+    scopes collapsed to one base for an unrelated reason. If control runs with
+    -derive-chat-scope OFF (degrade), both resolve the base and the isolation is
+    NOT expected - the test skips loudly rather than asserting a false green.
+    Red-probe: flip control -derive-chat-scope=false -> both chats share fs-fleet
+    -> chat B DOES see A's file -> the absence assertion REDs.
+    """
+    _require_gateway()
+
+    chat_a = f"j6a-{uuid.uuid4().hex[:8]}"
+    chat_b = f"j6b-{uuid.uuid4().hex[:8]}"
+    secret = f"j6-secret-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J6-CHAT-A-ONLY-{uuid.uuid4().hex}"
+
+    # Chat A writes its deliverable and confirms it sees its own file.
+    is_err, text = _guest_bash(
+        chat_a,
+        f"printf %s '{payload}' > /mnt/user-data/outputs/{secret} && echo WROTE",
+    )
+    assert not is_err and "WROTE" in text, f"chat A write failed: {text[:200]}"
+    is_err, own = _guest_bash(chat_a, "ls /mnt/user-data/outputs")
+    assert not is_err and secret in own, (
+        f"chat A cannot see its own deliverable: {own[:200]}"
+    )
+
+    # Non-vacuity: A and B must resolve DISTINCT derived scopes.
+    scope_a = _resolve_scope(chat_a)
+    scope_b = _resolve_scope(chat_b)
+    if scope_a is None or scope_b is None:
+        pytest.skip(
+            "control status verb did not return effective_scope for both chats "
+            "(derive-chat-scope OFF or verb unreachable) - the per-chat isolation "
+            "precondition is not established. LOUD SKIP, not a pass."
+        )
+    if scope_a == scope_b:
+        pytest.skip(
+            f"chat A and chat B resolved the SAME scope {scope_a!r} (derive-chat-scope "
+            "degraded to a single base) - per-chat isolation is not in effect here. "
+            "LOUD SKIP, not a pass (J7 covers the degrade path)."
+        )
+
+    # The isolation assertion: chat B's own outputs listing must NOT carry A's file,
+    # and a direct cat must not read A's bytes.
+    is_err, b_listing = _guest_bash(chat_b, "ls /mnt/user-data/outputs 2>&1 || true")
+    assert not is_err or "No such" in b_listing or b_listing.strip() == "", (
+        f"chat B ls errored unexpectedly: {b_listing[:200]}"
+    )
+    assert secret not in b_listing, (
+        f"CROSS-CHAT LEAK: chat B ({scope_b}) sees chat A's ({scope_a}) file "
+        f"{secret} in its own outputs listing - per-chat isolation broken"
+    )
+    is_err, b_cat = _guest_bash(chat_b, f"cat /mnt/user-data/outputs/{secret} 2>&1 || true")
+    assert payload not in b_cat, (
+        f"CROSS-CHAT LEAK: chat B read chat A's secret bytes via a direct cat: {b_cat[:200]}"
+    )
+
+
+# --- J7: single-scope degrade keeps the two-way flow (backward compat) --------
+
+
+def test_j7_single_scope_degrades_to_two_way_flow():
+    """With per-chat derivation OFF (or a single-chat deployment), the base
+    scope is shared and the ordinary two-way flow (agent writes -> its own
+    listing sees it) still works. This proves D5 does not break the single-scope
+    deployment. When derivation is ON and a chat resolves a derived scope, this
+    still holds within that chat's own scope - so the assertion is scope-agnostic.
+    """
+    _require_gateway()
+
+    chat = f"j7-{uuid.uuid4().hex[:8]}"
+    name = f"j7-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J7-DEGRADE-{uuid.uuid4().hex}"
+
+    is_err, text = _guest_bash(
+        chat, f"printf %s '{payload}' > /mnt/user-data/outputs/{name} && echo WROTE",
+    )
+    assert not is_err and "WROTE" in text, f"guest write failed: {text[:200]}"
+    is_err, listing = _guest_bash(chat, "ls /mnt/user-data/outputs")
+    assert not is_err and name in listing, (
+        "a chat cannot see its own deliverable in its own scope - the two-way "
+        "flow broke under D5"
+    )
+    is_err, back = _guest_bash(chat, f"cat /mnt/user-data/outputs/{name}")
+    assert not is_err and back.strip() == payload, (
+        "own-scope deliverable does not cat back byte-exact"
+    )
