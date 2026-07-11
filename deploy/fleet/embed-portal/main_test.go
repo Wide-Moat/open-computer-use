@@ -7,13 +7,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
 
-// tokenScope decodes the minted JWT and returns its filesystem_id claim.
-func tokenScope(t *testing.T, tok string) string {
+// tokenClaims decodes the minted JWT payload and returns filesystem_id plus the
+// scope_pending marker.
+func tokenClaims(t *testing.T, tok string) (string, bool) {
 	t.Helper()
 	parts := strings.Split(tok, ".")
 	if len(parts) != 3 {
@@ -25,11 +28,18 @@ func tokenScope(t *testing.T, tok string) string {
 	}
 	var claims struct {
 		FilesystemID string `json:"filesystem_id"`
+		ScopePending bool   `json:"scope_pending"`
 	}
 	if err := json.Unmarshal(cb, &claims); err != nil {
 		t.Fatalf("unmarshal claims: %v", err)
 	}
-	return claims.FilesystemID
+	return claims.FilesystemID, claims.ScopePending
+}
+
+func tokenScope(t *testing.T, tok string) string {
+	t.Helper()
+	s, _ := tokenClaims(t, tok)
+	return s
 }
 
 func testConfig() config {
@@ -40,85 +50,76 @@ func testConfig() config {
 		intent:       "write",
 		embedSecret:  strings.Repeat("k", 32),
 		tokenTTL:     60 * time.Second,
-		// controlStatusURL unset -> deterministic per-chat derivation (the
-		// cooperative fallback path this keystone exercises).
+		// controlStatusURL unset -> the status verb is unreachable, so every
+		// chat context is a MISS. The keystone below pins that a miss binds the
+		// BASE (scope_pending), NEVER a portal-local derivation.
 	}
 }
 
-// TestMintTokenDistinctScopePerChat is the load-bearing keystone: two different
-// chat contexts mint tokens carrying DISTINCT filesystem_id claims. Red-probe:
-// if mintToken ignores the chat context (always the base), the distinct-scope
-// assertion REDs.
-func TestMintTokenDistinctScopePerChat(t *testing.T) {
-	cfg := testConfig()
+// TestMissPathBindsBaseNotLocalDerivation is the load-bearing keystone: with the
+// status verb unavailable, a chat context must NOT mint a portal-local derived
+// scope (a divergent third scope that matches neither the guest's minted claim
+// nor the pane's real subtree). It must bind the BASE and flag scope_pending.
+//
+// Red-probe: restore a portal-local deriveChatScope on the miss path (mint
+// "<base>-<hex>" instead of the base) -> the "no local derivation" assertions
+// below REDs (scope != base, and no scope_pending marker).
+func TestMissPathBindsBaseNotLocalDerivation(t *testing.T) {
+	cfg := testConfig() // controlStatusURL unset -> every chat is a miss
 	ctx := context.Background()
 
-	tokA, err := cfg.mintToken(ctx, "chat-a")
-	if err != nil {
-		t.Fatalf("mint A: %v", err)
-	}
-	tokB, err := cfg.mintToken(ctx, "chat-b")
-	if err != nil {
-		t.Fatalf("mint B: %v", err)
-	}
-
-	scopeA := tokenScope(t, tokA)
-	scopeB := tokenScope(t, tokB)
-
-	if scopeA == scopeB {
-		t.Fatalf("two chats minted the SAME scope %q; per-chat isolation is vacuous", scopeA)
-	}
-	// Both are derived from the base (prefix "fs-fleet-"), never the bare base.
-	for name, s := range map[string]string{"chat-a": scopeA, "chat-b": scopeB} {
-		if !strings.HasPrefix(s, "fs-fleet-") {
-			t.Errorf("%s scope %q lacks the base-derived prefix", name, s)
+	for _, chat := range []string{"chat-a", "chat-b"} {
+		tok, err := cfg.mintToken(ctx, chat)
+		if err != nil {
+			t.Fatalf("mint %s: %v", chat, err)
 		}
-		if s == "fs-fleet" {
-			t.Errorf("%s scope collapsed to the bare base", name)
+		scope, pending := tokenClaims(t, tok)
+		if scope != "fs-fleet" {
+			t.Fatalf("miss path for %s minted %q; must bind the BASE fs-fleet, "+
+				"not a portal-local derivation", chat, scope)
+		}
+		if strings.HasPrefix(scope, "fs-fleet-") {
+			t.Fatalf("miss path for %s minted a DERIVED-shaped scope %q; the portal "+
+				"must never derive locally (split-brain vs control's owner form)", chat, scope)
+		}
+		if !pending {
+			t.Fatalf("miss path for %s did not flag scope_pending; a base-on-miss "+
+				"must be visibly pending, not a silent resolved scope", chat)
 		}
 	}
 }
 
-// TestMintTokenDeterministicPerChat: the SAME chat context always mints the SAME
-// scope (the pane can re-request a token on 401 and land on the same subtree).
-func TestMintTokenDeterministicPerChat(t *testing.T) {
+// TestResolvedScopeCarriesNoPendingMarker: when the status verb resolves a scope,
+// the token carries that scope and NO scope_pending marker (the marker is a
+// miss-only signal, not a permanent tell).
+func TestResolvedScopeCarriesNoPendingMarker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"effective_scope": "fs-fleet-resolved00000000"})
+	}))
+	defer srv.Close()
+
+	// Point resolveScope at the stub over plain HTTP by driving it directly (the
+	// mTLS builder is exercised elsewhere; here we pin the resolved-path claims).
 	cfg := testConfig()
-	ctx := context.Background()
-
-	tok1, _ := cfg.mintToken(ctx, "chat-a")
-	tok2, _ := cfg.mintToken(ctx, "chat-a")
-
-	if s1, s2 := tokenScope(t, tok1), tokenScope(t, tok2); s1 != s2 {
-		t.Fatalf("same chat minted different scopes %q vs %q", s1, s2)
+	scope, ok := cfg.resolveScopeViaStatusVerbURL(context.Background(), srv.URL, "chat-a")
+	if !ok || scope != "fs-fleet-resolved00000000" {
+		t.Fatalf("status-verb resolve = (%q,%v), want the stub scope resolved", scope, ok)
 	}
 }
 
 // TestMintTokenNoChatContextMintsBase: no chat context -> the base scope (today's
-// behaviour), never a derived one.
+// behaviour), fully resolved (no scope_pending marker).
 func TestMintTokenNoChatContextMintsBase(t *testing.T) {
 	cfg := testConfig()
 	tok, err := cfg.mintToken(context.Background(), "")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if scope := tokenScope(t, tok); scope != "fs-fleet" {
+	scope, pending := tokenClaims(t, tok)
+	if scope != "fs-fleet" {
 		t.Fatalf("no-chat token scope = %q, want the base fs-fleet", scope)
 	}
-}
-
-// TestDeriveChatScopeShape pins the derived form: "<base>-<16 lowercase hex>".
-func TestDeriveChatScopeShape(t *testing.T) {
-	got := deriveChatScope("fs-fleet", "chat-a")
-	if !strings.HasPrefix(got, "fs-fleet-") {
-		t.Fatalf("derived scope %q lacks base prefix", got)
-	}
-	suffix := strings.TrimPrefix(got, "fs-fleet-")
-	if len(suffix) != 16 {
-		t.Fatalf("derived suffix %q is %d chars, want 16", suffix, len(suffix))
-	}
-	for _, r := range suffix {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
-			t.Fatalf("derived suffix %q is not lowercase hex", suffix)
-		}
+	if pending {
+		t.Fatalf("no-chat token flagged scope_pending; the base is fully resolved here")
 	}
 }

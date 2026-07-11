@@ -30,7 +30,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -55,19 +54,19 @@ type config struct {
 	tokenTTL     time.Duration
 
 	// D5 per-chat scope resolution (ADR-0030). The portal embeds the pane for a
-	// specific chat; the token it mints must carry that chat's derived scope so
-	// the pane's cooperative file view lines up with the guest's isolated subtree.
-	// The chat context arrives as a `?chat=<id>` query param on the embed page, or
-	// falls back to demoChatID.
+	// specific chat; the token it mints must carry that chat's status-verb-resolved
+	// scope so the pane's cooperative file view lines up with the guest's isolated
+	// subtree. The chat context arrives as a `?chat=<id>` query param on the embed
+	// page, or falls back to demoChatID.
 	demoChatID string // DEMO_CHAT_ID - chat context when the embed carries no ?chat=
 
 	// controlStatusURL, when set, is control's caller-scoped status verb
 	// (https://control:9466/v1alpha/sessions/status). The portal POSTs
 	// {session_hint:<chat>} over mTLS and reads effective_scope - the SAME
 	// attested owner form the guest is minted with, so pane and guest agree by
-	// construction. Unset -> the portal deterministically derives a per-chat scope
-	// locally (the north face is client-cooperative in v1; the status verb is the
-	// production path).
+	// construction. Unset (or a miss) -> the portal binds the BASE scope, flagged
+	// scope_pending; it NEVER derives a per-chat scope locally (a local derivation
+	// would diverge from control's owner form - a silent split-brain).
 	controlStatusURL  string // OCU_CONTROL_STATUS_URL
 	controlClientCert string // OCU_CONTROL_CLIENT_CERT - mTLS client leaf (PEM)
 	controlClientKey  string // OCU_CONTROL_CLIENT_KEY - mTLS client key (PEM)
@@ -124,28 +123,36 @@ func envOr(k, def string) string {
 // With a chat context and a configured control status verb, it POSTs
 // {session_hint:chatID} to control over mTLS and returns the attested
 // effective_scope - the SAME owner form the guest is minted with, so pane and
-// guest agree by construction. A miss (no status URL, transport error, non-2xx,
-// or an absent effective_scope) falls back to a portal-local DETERMINISTIC
-// derivation: "<base>-<16 hex>" over chatID, distinct per chat. That fallback is
-// the file-pane's cooperative view (the north face is client-cooperative in v1,
-// ADR-0030); it is NOT the attested owner form and keys no authority - the
-// guest's minted Storage-JWT claim is the real isolation.
-func (c config) resolveScope(ctx context.Context, chatID string) string {
+// guest agree by construction. The status verb is the ONLY source of a per-chat
+// scope: the portal never derives one locally, because a portal-local derivation
+// (a different pre-image than control's scopeHandle(version,tenant,caller,handle))
+// binds a divergent THIRD scope that matches neither the guest's minted claim nor
+// the pane's real subtree - a silent split-brain.
+//
+// On a miss (no status URL, transport error, non-2xx, or an absent
+// effective_scope), resolveScope returns the BASE filesystemID and a false "ok".
+// The caller (mintToken) treats that as "scope pending": it mints the base so the
+// pane still bootstraps, but the returned flag lets the token carry a visible
+// scope-pending marker rather than silently pretending a divergent local scope is
+// the attested answer.
+func (c config) resolveScope(ctx context.Context, chatID string) (scope string, resolved bool) {
 	if chatID == "" {
-		return c.filesystemID
+		// No chat context: the base is the correct, fully-resolved answer.
+		return c.filesystemID, true
 	}
 	if c.controlStatusURL != "" {
-		if scope, ok := c.resolveScopeViaStatusVerb(ctx, chatID); ok {
-			return scope
+		if s, ok := c.resolveScopeViaStatusVerb(ctx, chatID); ok {
+			return s, true
 		}
 	}
-	return deriveChatScope(c.filesystemID, chatID)
+	// Miss: bind the BASE, flagged as pending. Never a portal-local derivation.
+	return c.filesystemID, false
 }
 
 // resolveScopeViaStatusVerb POSTs the caller-scoped status verb over mTLS and
 // reads effective_scope. Returns (scope,true) only on a 2xx carrying a non-empty
 // effective_scope; every other outcome is (_, false) so resolveScope can fall
-// back deterministically without ever raising.
+// back to the flagged base without ever raising.
 func (c config) resolveScopeViaStatusVerb(ctx context.Context, chatID string) (string, bool) {
 	tlsCfg, err := c.controlTLSConfig()
 	if err != nil {
@@ -156,8 +163,20 @@ func (c config) resolveScopeViaStatusVerb(ctx context.Context, chatID string) (s
 		Timeout:   5 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: tlsCfg},
 	}
+	return c.statusVerbRoundTrip(ctx, client, c.controlStatusURL, chatID)
+}
+
+// resolveScopeViaStatusVerbURL drives the same request over a caller-supplied URL
+// with the default client - the plain-HTTP seam used to pin the resolved-path
+// claims in tests without standing up mTLS.
+func (c config) resolveScopeViaStatusVerbURL(ctx context.Context, url, chatID string) (string, bool) {
+	return c.statusVerbRoundTrip(ctx, &http.Client{Timeout: 5 * time.Second}, url, chatID)
+}
+
+// statusVerbRoundTrip is the shared POST {session_hint} -> effective_scope core.
+func (c config) statusVerbRoundTrip(ctx context.Context, client *http.Client, url, chatID string) (string, bool) {
 	body, _ := json.Marshal(map[string]string{"session_hint": chatID})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.controlStatusURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", false
 	}
@@ -209,30 +228,14 @@ func (c config) controlTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// deriveChatScope is the portal-local COOPERATIVE derivation used when the status
-// verb is unavailable: lowercase-hex SHA-256 over a domain-separated, chat-scoped
-// pre-image, truncated to 16 hex, appended as "<base>-<hex>". Deterministic (same
-// chat -> same scope) and distinct across chats. This is the file-pane's view, NOT
-// the attested owner form control mints (control's derivation is control-only); it
-// keys no authority.
-func deriveChatScope(base, chatID string) string {
-	h := sha256.New()
-	// Domain separator keeps this pre-image disjoint from any other hash use.
-	h.Write([]byte("ocu-portal-scope-v1\x00"))
-	h.Write([]byte(base))
-	h.Write([]byte("\x00"))
-	h.Write([]byte(chatID))
-	suffix := hex.EncodeToString(h.Sum(nil))[:16]
-	return base + "-" + suffix
-}
-
 // mintToken builds a fresh HS256 embed JWT carrying the claims the BFF requires:
 // aud (must equal the configured audience), exp (<= 120s after iat), and the
 // scope triple sub/filesystem_id/intent the BFF sources from the attested token.
-// The filesystem_id is the chat's resolved scope (per-chat when a chat context is
-// present, else the base).
+// The filesystem_id is the chat's status-verb-resolved scope (per-chat), or the
+// BASE when resolution missed. On a miss the token carries a "scope_pending":true
+// marker so the miss is visible and never mistaken for a resolved per-chat scope.
 func (c config) mintToken(ctx context.Context, chatID string) (string, error) {
-	scope := c.resolveScope(ctx, chatID)
+	scope, resolved := c.resolveScope(ctx, chatID)
 	now := time.Now()
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
 	claims := map[string]any{
@@ -242,6 +245,12 @@ func (c config) mintToken(ctx context.Context, chatID string) (string, error) {
 		"sub":           c.subject,
 		"filesystem_id": scope,
 		"intent":        c.intent,
+	}
+	// A chat context that did not resolve via the status verb is bound to the
+	// BASE and flagged pending - never a divergent portal-local derivation.
+	if chatID != "" && !resolved {
+		claims["scope_pending"] = true
+		log.Printf("embed-portal: scope pending for chat %q - minting base %q (no local derivation)", chatID, scope)
 	}
 	hb, err := json.Marshal(header)
 	if err != nil {

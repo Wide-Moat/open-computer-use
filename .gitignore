@@ -153,3 +153,11 @@ live-4tools*.yml
 .codex/
 AGENTS.md
 deploy/fleet/BACKLOG-mcp-tools.md
+
+# Scratch working notes and build artifacts - never tracked (local-only)
+deploy/D5-BUILD-SPEC.md
+deploy/PARITY-D-RESUME-STATE.md
+deploy/PARITY-LEDGER-147.md
+deploy/fleet/embed-portal/embed-portal
+first-input-green.png
+prompt-probe.yml

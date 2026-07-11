@@ -53,6 +53,37 @@ def _looks_like_error(s: str) -> bool:
     return any(s.startswith(p) for p in _ERROR_PREFIXES)
 
 
+def _extract_resolve_scope(payload: dict):
+    """Pull effective_scope out of a resolve_scope CallToolResult.
+
+    The gateway answers the synthetic resolve_scope tool with a JSON-RPC result
+    whose `result.content` carries a single text block; that text is JSON
+    {"effective_scope": "<base>-<hex>"}. Returns the scope string (possibly the
+    empty string when derivation is off), or None when the shape is not a
+    resolvable CallToolResult (a real miss, distinct from an explicit-empty
+    scope). Never raises.
+    """
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    for item in result.get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            text = item.get("text")
+            if not isinstance(text, str):
+                continue
+            try:
+                inner = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(inner, dict) and "effective_scope" in inner:
+                scope = inner.get("effective_scope")
+                if isinstance(scope, str):
+                    return scope
+    return None
+
+
 # ============================================================================
 # MCP Streamable HTTP Client
 # ============================================================================
@@ -641,52 +672,80 @@ class Tools:
         return headers
 
     def _resolve_chat_scope_sync(self, chat_id: str) -> str:
-        """Blocking POST to control's caller-scoped status verb; returns the
-        per-chat effective_scope, degrading to the base OCU_FILESYSTEM_ID.
+        """Blocking MCP tools/call to the gateway's resolve_scope tool; returns
+        the per-chat effective_scope, degrading to the base OCU_FILESYSTEM_ID.
 
-        The status verb (POST /v1alpha/sessions/status on the same authenticated
-        plane the tool already uses for /mcp) carries `effective_scope` in its
-        response body, audience-scoped by the caller's own bearer + X-Chat-Id
-        (the gateway maps X-Chat-Id -> session_hint). The tool reads that value;
-        it NEVER derives the scope handle locally - the attested owner form is
-        control-only (ADR-0030, D5).
+        Wire: a JSON-RPC tools/call for the synthetic `resolve_scope` tool on the
+        SAME MCP endpoint the bash tool speaks to (POST ORCHESTRATOR_URL, bearer +
+        MCP-Protocol-Version + X-Chat-Id). The gateway maps X-Chat-Id ->
+        session_hint, ensures/creates the session, and returns a CallToolResult
+        whose single text content block is JSON {"effective_scope":"<base>-<hex>"}.
+        The tool reads that value; it NEVER derives the scope handle locally - the
+        attested owner form is control-only (ADR-0030, D5).
 
-        Degrade: any transport error, non-2xx, unparseable body, or a response
-        that omits/blank-fills effective_scope (control ran without
-        -derive-chat-scope) yields the base OCU_FILESYSTEM_ID - today's single
-        static scope. Never raises; the upload path must not break on a status
-        miss.
+        Degrade to the base OCU_FILESYSTEM_ID ONLY on an EXPLICIT empty scope
+        (control ran without -derive-chat-scope, so effective_scope is blank) or a
+        REAL transport error / JSON-RPC error / unparseable body. A 202-empty or an
+        otherwise-successful-but-unusable response is NOT treated as a resolved
+        scope - it degrades WITH a visible debug flag, never silently as if the
+        base were the attested answer (the review's fake-green). Never raises; the
+        upload path must not break on a resolve miss.
         """
         base = self.valves.OCU_FILESYSTEM_ID
-        base_url = self.valves.ORCHESTRATOR_URL.rstrip("/")
-        status_url = f"{base_url}/v1alpha/sessions/status"
-        body = json.dumps({"session_hint": chat_id}).encode("utf-8")
+        endpoint = self.valves.ORCHESTRATOR_URL.rstrip("/") + "/mcp"
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "resolve_scope", "arguments": {}},
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
-            status_url,
+            endpoint,
             method="POST",
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "Accept": "application/json",
+                "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": _MCPClient._MCP_PROTOCOL_VERSION,
                 "X-Chat-Id": chat_id,
             },
         )
         api_key = self.valves.MCP_API_KEY
         if api_key:
             req.add_header("Authorization", f"Bearer {api_key}")
+
+        def _degrade(reason: str) -> str:
+            if self.valves.DEBUG_LOGGING:
+                print(f"[SCOPE] resolve_scope miss for chat {chat_id}: {reason} -> base {base}")
+            return base
+
         try:
             with urllib.request.urlopen(req, timeout=5) as resp:
-                if not (200 <= resp.status < 300):
-                    return base
-                payload = json.loads(resp.read().decode("utf-8"))
+                status = resp.status
+                raw = resp.read().decode("utf-8")
         except Exception as e:
-            if self.valves.DEBUG_LOGGING:
-                print(f"[SCOPE] status verb miss for chat {chat_id}: {e}")
-            return base
-        scope = payload.get("effective_scope") if isinstance(payload, dict) else None
-        if isinstance(scope, str) and scope:
-            return scope
-        return base
+            return _degrade(f"transport error {e}")
+
+        # A body-less / empty success (e.g. a 202 from a wire that does not carry a
+        # CallToolResult) is a MISS, not a base scope. Flag it; never silent-green.
+        if not raw.strip():
+            return _degrade(f"empty body (HTTP {status})")
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError) as e:
+            return _degrade(f"unparseable body (HTTP {status}): {e}")
+        if not isinstance(payload, dict) or "error" in payload:
+            return _degrade(f"JSON-RPC error or non-object (HTTP {status})")
+
+        scope = _extract_resolve_scope(payload)
+        if scope is None:
+            return _degrade(f"no resolvable effective_scope in CallToolResult (HTTP {status})")
+        if scope == "":
+            # An EXPLICIT empty scope is the derivation-off degrade: real, expected.
+            return _degrade("effective_scope is explicitly empty (derive-chat-scope off)")
+        return scope
 
     async def _resolve_chat_scope(self, chat_id: str) -> str:
         """Resolve (and memoise) this chat's storage scope via the status verb.

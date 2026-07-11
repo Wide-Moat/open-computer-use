@@ -34,9 +34,12 @@ fleet spine. Scenario rows live in scenarios.yaml (J1..J5).
 """
 
 import json
+import os
+import re
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -151,22 +154,36 @@ def _guest_bash(chat_id, command, timeout=60):
 
 
 def _resolve_scope(chat_id, timeout=15):
-    """Resolve a chat's effective storage scope via control's caller-scoped
-    status verb (POST /v1alpha/sessions/status through the gateway plane with
-    X-Chat-Id). Returns effective_scope or None. This is what makes J6
-    non-vacuous: the two chats must resolve DISTINCT derived scopes, else "B
-    does not see A" could be green for an unrelated reason.
+    """Resolve a chat's effective storage scope via the gateway's synthetic
+    resolve_scope MCP tool. This is a real tools/call on the SAME endpoint the
+    guest bash tool uses (bearer + MCP-Protocol-Version + X-Chat-Id); the body is
+    ACTUALLY sent (the earlier version built a JSON-RPC body then sent "{}"). The
+    gateway ensures/creates the chat's session (the create hop lives INSIDE this
+    call, so resolving chat B before B has run a guest command is fine) and
+    returns a CallToolResult whose single text block is JSON
+    {"effective_scope": "<base>-<hex>"}.
+
+    Returns effective_scope (possibly "") or None on a transport/JSON-RPC/parse
+    miss. This is what makes J6 non-vacuous: the two chats must resolve DISTINCT
+    derived scopes, else "B does not see A" could be green for an unrelated reason.
     """
     bearer = _bearer()
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "sessions/status", "params": {}})
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "resolve_scope", "arguments": {}},
+        }
+    )
     out = subprocess.run(
         ["curl", "-sS", "--max-time", str(timeout), "-o", "-", "-w", "\n%{http_code}",
-         f"{GATEWAY_URL}v1alpha/sessions/status",
+         GATEWAY_URL,
          "-H", f"Authorization: Bearer {bearer}",
          "-H", f"MCP-Protocol-Version: {_PROTO}",
          "-H", f"X-Chat-Id: {chat_id}",
          "-H", "content-type: application/json",
-         "-d", "{}"],
+         "-d", body],
         capture_output=True, text=True, timeout=timeout + 10,
     )
     if out.returncode != 0:
@@ -177,9 +194,54 @@ def _resolve_scope(chat_id, timeout=15):
     if status != "200":
         return None
     try:
-        return json.loads(text[:nl]).get("effective_scope")
+        parsed = json.loads(text[:nl])
     except (ValueError, TypeError):
         return None
+    if not isinstance(parsed, dict) or "error" in parsed:
+        return None
+    result = parsed.get("result")
+    if not isinstance(result, dict):
+        return None
+    for item in result.get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            try:
+                inner = json.loads(item.get("text", ""))
+            except (ValueError, TypeError):
+                continue
+            if isinstance(inner, dict) and "effective_scope" in inner:
+                sc = inner.get("effective_scope")
+                if isinstance(sc, str):
+                    return sc
+    return None
+
+
+_COMPOSE_FILE = (
+    Path(__file__).resolve().parents[2] / "fleet" / "docker-compose.fleet.yml"
+)
+
+
+def _derivation_expected_on():
+    """True when the shipped fleet compose has control's -derive-chat-scope
+    defaulting ON (OCU_DERIVE_CHAT_SCOPE unset -> :-true), so per-chat isolation
+    is EXPECTED and equal/empty scopes are a FAILURE, not a skip. False when the
+    flag is absent or defaults off (J7's degrade case), or when the compose file
+    cannot be read (unknown -> treat as OFF so J6 skips rather than false-fails).
+
+    An explicit env override wins: OCU_DERIVE_CHAT_SCOPE in this process's env
+    mirrors what a live `up` would pass to control.
+    """
+    env = os.environ.get("OCU_DERIVE_CHAT_SCOPE")
+    if env is not None:
+        return env.strip().lower() in ("1", "true", "yes", "on")
+    try:
+        text = _COMPOSE_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    m = re.search(r"-derive-chat-scope=\$\{OCU_DERIVE_CHAT_SCOPE:-(\w+)\}", text)
+    if m:
+        return m.group(1).strip().lower() in ("1", "true", "yes", "on")
+    # A bare `-derive-chat-scope=true` with no env indirection also counts as on.
+    return bool(re.search(r"-derive-chat-scope=true\b", text))
 
 
 # --- J1: agent deliverable reaches the user ---------------------------------
@@ -347,15 +409,33 @@ def test_j6_cross_chat_file_isolation():
     its own outputs listing, nor cat it back. This is the D5 per-chat storage
     isolation acceptance gate (ADR-0030).
 
-    Non-vacuity guard: the two chats MUST resolve DISTINCT effective_scope via
-    control's status verb - else "B does not see A" could be green because the
-    scopes collapsed to one base for an unrelated reason. If control runs with
-    -derive-chat-scope OFF (degrade), both resolve the base and the isolation is
-    NOT expected - the test skips loudly rather than asserting a false green.
-    Red-probe: flip control -derive-chat-scope=false -> both chats share fs-fleet
-    -> chat B DOES see A's file -> the absence assertion REDs.
+    Non-vacuity guard (two-sided): the two chats MUST resolve DISTINCT
+    effective_scope via the gateway's resolve_scope MCP tool - else "B does not
+    see A" could be green because the scopes collapsed to one base for an
+    unrelated reason. The compose preflight decides which branch is correct:
+
+      - derivation ON (the shipped default, -derive-chat-scope=${...:-true}):
+        distinct non-empty scopes are REQUIRED. Equal/None/empty scopes are a
+        FAILURE, never a skip - a degrade under derive-on is exactly the D5
+        regression this gate exists to catch.
+      - derivation OFF (OCU_DERIVE_CHAT_SCOPE=false, J7's world): equal/base
+        scopes are EXPECTED and isolation is not in force -> LOUD SKIP, deferring
+        to J7 for the degrade path.
+
+    Ordering: resolving chat B's scope is what CREATES/ensures B's session (the
+    gateway create hop lives inside the resolve_scope call), so calling
+    _resolve_scope(chat_b) before B has run any guest command is intentional and
+    safe - it is the act that gives B a session at all.
+
+    Red-probe: flip control -derive-chat-scope=false WITHOUT touching the compose
+    default (i.e. leave derive-on expected) -> both chats share fs-fleet -> the
+    "distinct non-empty scopes" precondition FAILS the test (derive-on regressed);
+    OR, with derive genuinely on, break isolation so chat B sees A's file -> the
+    absence assertion REDs.
     """
     _require_gateway()
+
+    derive_on = _derivation_expected_on()
 
     chat_a = f"j6a-{uuid.uuid4().hex[:8]}"
     chat_b = f"j6b-{uuid.uuid4().hex[:8]}"
@@ -373,21 +453,32 @@ def test_j6_cross_chat_file_isolation():
         f"chat A cannot see its own deliverable: {own[:200]}"
     )
 
-    # Non-vacuity: A and B must resolve DISTINCT derived scopes.
+    # Resolve both scopes via the resolve_scope tool. Resolving B here is what
+    # ensures B's session (the create hop is inside the call).
     scope_a = _resolve_scope(chat_a)
     scope_b = _resolve_scope(chat_b)
-    if scope_a is None or scope_b is None:
+
+    if not derive_on:
+        # J7's world: no per-chat derivation, so equal/base scopes are correct and
+        # cross-chat isolation is NOT in force. Do not assert a false isolation green.
         pytest.skip(
-            "control status verb did not return effective_scope for both chats "
-            "(derive-chat-scope OFF or verb unreachable) - the per-chat isolation "
-            "precondition is not established. LOUD SKIP, not a pass."
+            "compose preflight says -derive-chat-scope is OFF (or the compose file "
+            "is unreadable): per-chat isolation is not expected here. LOUD SKIP - "
+            "J7 covers the single-scope degrade path."
         )
-    if scope_a == scope_b:
-        pytest.skip(
-            f"chat A and chat B resolved the SAME scope {scope_a!r} (derive-chat-scope "
-            "degraded to a single base) - per-chat isolation is not in effect here. "
-            "LOUD SKIP, not a pass (J7 covers the degrade path)."
-        )
+
+    # Derivation is ON: distinct, non-empty scopes are REQUIRED. A degrade here is
+    # the exact D5 regression this gate catches - FAIL, do not skip.
+    assert scope_a and scope_b, (
+        "derive-chat-scope is ON per the compose preflight, but resolve_scope "
+        f"returned empty/None scopes (a={scope_a!r}, b={scope_b!r}) - the derivation "
+        "path regressed to a degrade. This is a FAILURE under derive-on, not a skip."
+    )
+    assert scope_a != scope_b, (
+        "derive-chat-scope is ON, but chat A and chat B resolved the SAME scope "
+        f"{scope_a!r} - the derivation collapsed to a single base and the isolation "
+        "assertion would be vacuous. FAILURE under derive-on."
+    )
 
     # The isolation assertion: chat B's own outputs listing must NOT carry A's file,
     # and a direct cat must not read A's bytes.
@@ -405,6 +496,65 @@ def test_j6_cross_chat_file_isolation():
     )
 
 
+def test_j6b_pane_view_omits_other_chats_secret(tmp_path):
+    """The NORTH/pane half of D5 (D5-BUILD-SPEC required it): the user-facing
+    File Pane for one chat must not surface another chat's outputs.
+
+    Chat A writes a secret to /mnt/user-data/outputs; then the pane (bootstrapped
+    for the DEFAULT/base scope) must not list that secret, and a pane content
+    read of a never-existing id 404s (the negative that keeps the omission
+    non-vacuous - the pane really answers 404 for an absent object, it does not
+    blanket-200 or blanket-list).
+
+    Scaffold limit, stated LOUDLY not faked: this demo portal mints one base
+    scope (the pane is per-portal, not per-chat here), so we cannot prove a
+    per-chat pane token against A's DERIVED scope. What IS provable - that a
+    base-scope pane does not enumerate a chat-derived secret, and that a bogus id
+    404s - is asserted; the per-chat pane token leg is skipped with a named
+    reason when derivation is on and the two scopes differ.
+    """
+    _require_gateway()
+    jar, _csrf = _pane_session(tmp_path)
+
+    chat_a = f"j6b-a-{uuid.uuid4().hex[:8]}"
+    secret = f"j6b-secret-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J6B-CHAT-A-ONLY-{uuid.uuid4().hex}"
+
+    is_err, text = _guest_bash(
+        chat_a,
+        f"printf %s '{payload}' > /mnt/user-data/outputs/{secret} && echo WROTE",
+    )
+    assert not is_err and "WROTE" in text, f"chat A write failed: {text[:200]}"
+
+    # Negative keeps the pane read honest: a never-minted file id must 404, so a
+    # blanket-200 content handler cannot make the omission look green.
+    bogus_id = f"nonexistent-{uuid.uuid4().hex}"
+    status, _ = _pane_content(jar, bogus_id)
+    assert status == 404, (
+        f"pane content of a bogus id = {status}, want 404 - the pane must not "
+        "blanket-serve, or the omission assertion below is vacuous"
+    )
+
+    if not _derivation_expected_on():
+        pytest.skip(
+            "compose preflight says -derive-chat-scope is OFF: the base-scope pane "
+            "shares chat A's scope, so cross-chat pane omission is not in force. "
+            "LOUD SKIP - J7 covers the single-scope world."
+        )
+
+    # Derivation ON: the pane here holds the BASE scope, chat A wrote under a
+    # DERIVED scope. A bounded window must never surface A's secret in the base
+    # pane list. (The per-chat pane token against A's own derived scope is the
+    # leg this demo scaffold cannot mint - stated, not faked.)
+    end = time.monotonic() + 12
+    while time.monotonic() < end:
+        assert not [f for f in _pane_list(jar) if f.get("filename") == secret], (
+            f"CROSS-CHAT LEAK: the base-scope pane lists chat A's derived-scope "
+            f"secret {secret} - per-chat north isolation broken"
+        )
+        time.sleep(3)
+
+
 # --- J7: single-scope degrade keeps the two-way flow (backward compat) --------
 
 
@@ -414,6 +564,13 @@ def test_j7_single_scope_degrades_to_two_way_flow():
     listing sees it) still works. This proves D5 does not break the single-scope
     deployment. When derivation is ON and a chat resolves a derived scope, this
     still holds within that chat's own scope - so the assertion is scope-agnostic.
+
+    Division of labour vs J6: the derive-OFF case (both chats resolve None/equal,
+    the base is shared) is J7's world - here the two-way flow within one scope
+    must stay green. The derive-ON case (distinct scopes REQUIRED) is J6's; there
+    equal/None scopes are a FAILURE, not this compat proof. Red-probe for J7: if
+    the two-way flow itself broke (a chat cannot see its own write in its own
+    scope) this test REDs regardless of the derivation flag.
     """
     _require_gateway()
 
