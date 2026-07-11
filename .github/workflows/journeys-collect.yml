@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 #
-# Tier-1 journeys gate: import + collection health for the fleet journey suite,
-# on every PR that touches deploy/. It does NOT run the journeys — they need the
-# live Lima fleet a GitHub runner does not have (that is the tier-2 live gate,
-# tracked separately). This catches import rot, fixture drift, and syntax breaks
-# in seconds, so the suite cannot silently stop being collectable.
+# Tier-1 journeys gate: import + collection health AND real execution of the
+# CI-runnable journeys, on every PR that touches deploy/. The pure-logic
+# journeys (the exec_sh meta-guard group) EXECUTE here and red on a regression.
+# The backend-parametrized journeys (poc / fleet) need a live Docker daemon and
+# a Lima + runsc stand a GitHub runner does not have; conftest loud-skips them
+# so they report SKIPPED, never a pass. The live fleet leg is the tier-2 gate
+# against a real stand, tracked as a follow-on. This job catches import rot,
+# fixture drift, syntax breaks, and pure-logic regressions in seconds.
 name: journeys-collect
 
 on:
@@ -39,8 +42,48 @@ jobs:
           out="$(mktemp -d)"
           python3 deploy/fleet/scripts/mint_boot_set.py --deployment ci --out-dir "$out"
           test -s "$out/boot-set.json"
-      - name: Collect the journey suite (import + fixture health, no run)
+      - name: Collect the journey suite (import + fixture health)
         # --collect-only imports every test module and resolves fixtures without
         # executing them; a broken import, a missing helper, or a renamed fixture
-        # reds here. The live run is the tier-2 gate against a real stand.
+        # reds here. This is collection health only - it executes ZERO scenarios,
+        # so it is NOT the journeys-pass gate. The real-run step below is.
         run: pytest --collect-only -q deploy/tests/journeys
+
+      - name: Run the CI-runnable journeys (pure-logic; backend legs loud-skip)
+        # This is the honest journeys gate: it EXECUTES scenarios rather than only
+        # collecting them. The pure-logic journeys (the exec_sh meta-guard group)
+        # run on a stock runner and RED on a real regression. The backend-
+        # parametrized journeys (poc / fleet) require a live Docker daemon and a
+        # Lima + runsc stand a GitHub runner does not have; conftest turns an
+        # unreachable stack into a LOUD pytest.skip with a reason, so those legs
+        # report SKIPPED (visible in -rs) and are NEVER counted as a pass. The
+        # live fleet leg is the tier-2 gate against a real stand (a follow-on
+        # increment), not this job.
+        #
+        # -o xfail_strict=true: an xfail journey that starts passing reds here
+        # instead of silently xpassing. --strict-markers: an unknown mark reds
+        # rather than warning. junit-xml drives the anti-vacuity guard next.
+        run: |
+          pytest -rs -o xfail_strict=true --strict-markers \
+            --junit-xml=journeys-report.xml deploy/tests/journeys
+
+      - name: Guard against an all-skipped vacuous pass
+        # A journeys gate where EVERY scenario skipped is vacuous: it renders
+        # green while running no journey. This step reds unless at least one
+        # journey actually EXECUTED (passed/failed/xfailed, not skipped). It
+        # reads the JUnit report the run emitted: tests total minus skipped must
+        # be > 0. If a future refactor makes the whole suite backend-gated, this
+        # reds and forces the pure-logic subset (or a real stand) back in.
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse("journeys-report.xml").getroot()
+          suites = root.findall("testsuite") or [root]
+          total = sum(int(s.get("tests", 0)) for s in suites)
+          skipped = sum(int(s.get("skips", s.get("skipped", 0))) for s in suites)
+          executed = total - skipped
+          print(f"journeys: total={total} skipped={skipped} executed={executed}")
+          if executed <= 0:
+              print("VACUOUS: no journey executed (all skipped). Failing the gate.")
+              sys.exit(1)
+          PY
