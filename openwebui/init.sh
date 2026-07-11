@@ -31,6 +31,12 @@ ADMIN_NAME="${ADMIN_NAME:-Admin}"
 # PUBLIC_BASE_URL env var and is delivered to the filter via response header.
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://computer-use-server:8081}"
 MCP_API_KEY="${MCP_API_KEY:-}"
+# OCU_FILESYSTEM_ID: the BASE attested storage scope chat attachments are written
+# under (X-OCU-Filesystem-Id). Compose-driven so the deploy pins one base; with
+# control's -derive-chat-scope on, the tool resolves a per-chat "<base>-<hex>"
+# scope from the status verb and writes under that, keeping the base available.
+# Seeded into the Tool Valve so the base is not a dead code-default (D5).
+OCU_FILESYSTEM_ID="${OCU_FILESYSTEM_ID:-fs-fleet}"
 MARKER_FILE="/app/backend/data/.computer-use-initialized"
 
 # Sanity checks — run EVERY start (before marker-gate), so stale-default
@@ -119,8 +125,8 @@ fi
 echo "[init] Configuring tool valves..."
 curl -sf -X POST "$WEBUI_URL/api/v1/tools/id/ai_computer_use/valves/update" \
     -H "$AUTH" -H "Content-Type: application/json" \
-    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"MCP_API_KEY\": \"$MCP_API_KEY\", \"DEBUG_LOGGING\": false}" >/dev/null
-echo "[init] Tool valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL"
+    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"MCP_API_KEY\": \"$MCP_API_KEY\", \"OCU_FILESYSTEM_ID\": \"$OCU_FILESYSTEM_ID\", \"DEBUG_LOGGING\": false}" >/dev/null
+echo "[init] Tool valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL OCU_FILESYSTEM_ID=$OCU_FILESYSTEM_ID"
 
 # Make tool public-read so non-admin users can see & call it.
 # Open WebUI's UI "Public" toggle writes BOTH group:* and user:* wildcards — we mirror

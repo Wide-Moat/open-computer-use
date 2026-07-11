@@ -581,7 +581,7 @@ class Tools:
         )
         OCU_FILESYSTEM_ID: str = Field(
             default="fs-fleet",
-            description="The attested filesystem scope attachments are written under (X-OCU-Filesystem-Id). Single-tenant demo: one deploy-pinned scope (fs-fleet), so uploads are shared across chats — a consequence of one scope, not a bug. Per-chat scope is a future control-plane feature."
+            description="The BASE attested filesystem scope attachments are written under (X-OCU-Filesystem-Id), compose-seeded by init.sh. With control's -derive-chat-scope on (ADR-0030, D5), the tool resolves a per-chat scope '<base>-<hex>' from the caller-scoped status verb and writes attachments under that isolated scope; the tool never derives the handle locally. Degrades to this base (shared across chats) when derivation is off."
         )
         FILESTORE_CA_CERT: str = Field(
             default="/etc/ocu/ca.pem",
@@ -601,6 +601,10 @@ class Tools:
         # invalidate if either changes so edits to MCP_API_KEY in Valves take
         # effect without a process restart.
         self._mcp_client_config: tuple[str, str] | None = None
+        # D5 per-chat storage scope, resolved once per chat_id from control's
+        # caller-scoped status verb and memoised. The tool NEVER derives the
+        # scope handle locally; the attested owner form is control-only.
+        self._chat_scope_cache: dict[str, str] = {}
 
     @property
     def mcp_client(self) -> _MCPClient:
@@ -636,6 +640,69 @@ class Tools:
                 pass
         return headers
 
+    def _resolve_chat_scope_sync(self, chat_id: str) -> str:
+        """Blocking POST to control's caller-scoped status verb; returns the
+        per-chat effective_scope, degrading to the base OCU_FILESYSTEM_ID.
+
+        The status verb (POST /v1alpha/sessions/status on the same authenticated
+        plane the tool already uses for /mcp) carries `effective_scope` in its
+        response body, audience-scoped by the caller's own bearer + X-Chat-Id
+        (the gateway maps X-Chat-Id -> session_hint). The tool reads that value;
+        it NEVER derives the scope handle locally - the attested owner form is
+        control-only (ADR-0030, D5).
+
+        Degrade: any transport error, non-2xx, unparseable body, or a response
+        that omits/blank-fills effective_scope (control ran without
+        -derive-chat-scope) yields the base OCU_FILESYSTEM_ID - today's single
+        static scope. Never raises; the upload path must not break on a status
+        miss.
+        """
+        base = self.valves.OCU_FILESYSTEM_ID
+        base_url = self.valves.ORCHESTRATOR_URL.rstrip("/")
+        status_url = f"{base_url}/v1alpha/sessions/status"
+        body = json.dumps({"session_hint": chat_id}).encode("utf-8")
+        req = urllib.request.Request(
+            status_url,
+            method="POST",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Chat-Id": chat_id,
+            },
+        )
+        api_key = self.valves.MCP_API_KEY
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if not (200 <= resp.status < 300):
+                    return base
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            if self.valves.DEBUG_LOGGING:
+                print(f"[SCOPE] status verb miss for chat {chat_id}: {e}")
+            return base
+        scope = payload.get("effective_scope") if isinstance(payload, dict) else None
+        if isinstance(scope, str) and scope:
+            return scope
+        return base
+
+    async def _resolve_chat_scope(self, chat_id: str) -> str:
+        """Resolve (and memoise) this chat's storage scope via the status verb.
+
+        Returns the control-derived effective_scope for the chat, or the base
+        OCU_FILESYSTEM_ID when derivation is off / the verb is unavailable. The
+        result is cached per chat_id so a busy chat pays the round-trip once.
+        """
+        chat_id = chat_id or "default"
+        cached = self._chat_scope_cache.get(chat_id)
+        if cached is not None:
+            return cached
+        scope = await asyncio.to_thread(self._resolve_chat_scope_sync, chat_id)
+        self._chat_scope_cache[chat_id] = scope
+        return scope
+
     async def _sync_files_if_needed(self, chat_id: str, command_or_path: str, __files__: list = None):
         """Sync uploaded files to computer-use-orchestrator if command/path references uploads."""
         uploads_path = "/mnt/user-data/uploads"
@@ -643,11 +710,18 @@ class Tools:
         if not needs_files:
             return
         if __files__:
+            # D5: resolve THIS chat's isolated scope from control's status verb
+            # before writing the attachment. When -derive-chat-scope is on the
+            # scope is "<base>-<hex>" (distinct per chat); otherwise it degrades
+            # to the base OCU_FILESYSTEM_ID (today's shared single-tenant scope).
+            # The attachment lands under the resolved scope so the guest's minted
+            # Storage-JWT claim keys the same subtree.
+            scope = await self._resolve_chat_scope(chat_id)
             try:
                 sync_result = await asyncio.to_thread(
                     _sync_uploaded_files,
                     self.valves.FILESTORE_URL,
-                    self.valves.OCU_FILESYSTEM_ID,
+                    scope,
                     __files__,
                     ca_cert_path=self.valves.FILESTORE_CA_CERT,
                     debug=self.valves.DEBUG_LOGGING,

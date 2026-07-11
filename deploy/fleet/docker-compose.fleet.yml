@@ -493,10 +493,27 @@ services:
       # The HMAC key the pane's BFF verifies the embed token against — same secret.
       OCU_EMBED_VERIFY_SECRET: ${OCU_EMBED_VERIFY_SECRET:?set a >=32-byte embed verify secret}
       OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
-      # The provisioned filesystem the F9 leg accepts (filestore logs fs-fleet).
+      # The BASE provisioned filesystem the F9 leg accepts (filestore logs fs-fleet).
+      # With control's -derive-chat-scope on, the portal mints a per-chat scope
+      # "<base>-<hex>" resolved for the embedded chat (?chat=<id> on the embed page,
+      # else DEMO_CHAT_ID) so the pane's view lines up with the guest's subtree (D5).
       DEMO_FILESYSTEM_ID: ${OCU_DEMO_FILESYSTEM_ID:-fs-fleet}
       DEMO_SUBJECT: ${OCU_DEMO_SUBJECT:-demo-user}
       DEMO_INTENT: ${OCU_DEMO_INTENT:-write}
+      # Chat context the portal embeds when the embed page carries no ?chat=<id>.
+      # Distinct values across two portal instances demonstrate per-chat isolation.
+      DEMO_CHAT_ID: ${OCU_DEMO_CHAT_ID:-}
+      # OPTIONAL live status-verb resolution (the production path). When set, the
+      # portal POSTs {session_hint:<chat>} to control's caller-scoped status verb
+      # over mTLS and mints the returned effective_scope - the SAME attested owner
+      # form the guest is minted with. Unset -> the portal derives a deterministic
+      # per-chat scope locally (the north face is client-cooperative in v1). The
+      # portal is on the frontend network only in this compose; wiring the live call
+      # also needs the portal on control's gateway network with an mTLS client cert.
+      OCU_CONTROL_STATUS_URL: ${OCU_CONTROL_STATUS_URL:-}
+      OCU_CONTROL_CLIENT_CERT: ${OCU_CONTROL_CLIENT_CERT:-}
+      OCU_CONTROL_CLIENT_KEY: ${OCU_CONTROL_CLIENT_KEY:-}
+      OCU_CONTROL_CA_CERT: ${OCU_CONTROL_CA_CERT:-}
     ports:
       - "127.0.0.1:3003:3003"
     networks:
@@ -627,6 +644,15 @@ services:
       # force-killed and its concurrency slot returned (NFR-REL-09).
       - -session-idle-ttl
       - ${OCU_SESSION_IDLE_TTL:-15m}
+      # D5 per-chat storage isolation (ADR-0030). Control derives a distinct scope
+      # per (attested owner, chat handle) - "<base>-<hex>" - and mints it into the
+      # guest's Storage-JWT claim, so a peer chat's guest gets a DIFFERENT credential
+      # and cannot read another chat's objects. OCU_FILESYSTEM_ID=fs-fleet stays the
+      # BASE the suffix is appended to; the south filestore runs -claims-bind so the
+      # derived claim actually binds on the read/write path (isolation is not vacuous).
+      # Turn off (OCU_DERIVE_CHAT_SCOPE=false) to fall back to today's single static
+      # scope shared across chats.
+      - -derive-chat-scope=${OCU_DERIVE_CHAT_SCOPE:-true}
     depends_on:
       control-db:
         condition: service_healthy
