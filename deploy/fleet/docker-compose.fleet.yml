@@ -50,7 +50,14 @@ networks:
       config:
         - subnet: 172.20.0.0/24
   ocu-edge-backend:
+    # Subnet pinned to a /24 disjoint from ocu-mount-facing's 172.20.0.0/24. Without
+    # a pin Docker auto-allocates a /16 that can overlap the pinned /24, and a cold
+    # up races to "Pool overlaps with other one on this address space" depending on
+    # network creation order. A pinned disjoint /24 removes the race.
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
   ocu-storage-backend:
     # The object-store engine's own backend (north F9 + MinIO). Kept distinct
     # from ocu-edge-backend: F9 is the no-credential read plane and has no place
