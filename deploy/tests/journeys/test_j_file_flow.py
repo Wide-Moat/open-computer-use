@@ -78,6 +78,20 @@ def _pane_session(tmp_path):
     Skips loudly when the portal or the pane is down: the user leg cannot be
     proven without the real browser-facing wires, and is never mocked green.
     """
+    # DECLARED expectation, distinct from an environment failure: on the
+    # published-artifact path (the keystone runner sets OCU_PUBLISHED_PATH)
+    # the canonical published webui image inlines the CLOSED
+    # NEXT_PUBLIC_OCU_PARENT_ORIGIN default, so the pane bootstrap is dead BY
+    # DESIGN - these legs are expected-closed there, never a mystery red and
+    # never a silent green. The marker lifts when runtime parent-origin
+    # config lands in ocu-webui.
+    if os.environ.get("OCU_PUBLISHED_PATH"):
+        pytest.skip(
+            "expected-closed on the published path: the canonical published "
+            "webui inlines the CLOSED parent-origin default, pane bootstrap "
+            "cannot complete by design (lifts with runtime parent-origin "
+            "config in ocu-webui)"
+        )
     jar = str(tmp_path / "pane-cookies.txt")
     try:
         status, body = _curl_json([PORTAL_TOKEN_URL])

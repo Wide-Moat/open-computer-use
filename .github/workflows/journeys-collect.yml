@@ -69,21 +69,29 @@ jobs:
 
       - name: Guard against an all-skipped vacuous pass
         # A journeys gate where EVERY scenario skipped is vacuous: it renders
-        # green while running no journey. This step reds unless at least one
-        # journey actually EXECUTED (passed/failed/xfailed, not skipped). It
-        # reads the JUnit report the run emitted: tests total minus skipped must
-        # be > 0. If a future refactor makes the whole suite backend-gated, this
-        # reds and forces the pure-logic subset (or a real stand) back in.
+        # green while running no journey. This step reds unless the number of
+        # journeys that actually EXECUTED (passed/failed/xfailed, not skipped)
+        # stays at or above a pinned FLOOR - a bare "> 0" would let the
+        # pure-logic group silently shrink from a dozen scenarios to one and
+        # still read as covered. The floor sits just below the measured
+        # baseline (11 pure-logic journeys execute on this runner), so a
+        # refactor that legitimately moves one scenario does not red while a
+        # collapse does. Raise the floor when the executable subset grows.
+        env:
+          MIN_EXECUTED: '10'
         run: |
           python3 - <<'PY'
-          import sys, xml.etree.ElementTree as ET
+          import os, sys, xml.etree.ElementTree as ET
           root = ET.parse("journeys-report.xml").getroot()
           suites = root.findall("testsuite") or [root]
           total = sum(int(s.get("tests", 0)) for s in suites)
           skipped = sum(int(s.get("skips", s.get("skipped", 0))) for s in suites)
           executed = total - skipped
-          print(f"journeys: total={total} skipped={skipped} executed={executed}")
-          if executed <= 0:
-              print("VACUOUS: no journey executed (all skipped). Failing the gate.")
+          floor = int(os.environ["MIN_EXECUTED"])
+          print(f"journeys: total={total} skipped={skipped} executed={executed} floor={floor}")
+          if executed < floor:
+              print(f"VACUOUS-OR-COLLAPSED: {executed} journey(s) executed, below the "
+                    f"{floor} floor. Either everything skipped or the pure-logic "
+                    f"subset collapsed. Failing the gate.")
               sys.exit(1)
           PY
