@@ -111,6 +111,43 @@ The sandbox guest is not a long-lived service: control creates it per session
 through the Docker socket. The standalone sandbox smoke runs through `octl`
 (see `ocu-sandbox`).
 
+## Published-artifact path
+
+The default bring-up above builds every OCU service from its sibling checkout
+(the dev path). The published path boots services from cosign-verified,
+digest-pinned GHCR images instead:
+
+```
+deploy/fleet/scripts/verify-published-images.sh    # cosign, fail-closed
+docker compose -f deploy/fleet/docker-compose.fleet.yml \
+               -f deploy/fleet/docker-compose.published.yml \
+               --env-file deploy/fleet/.env up -d --wait
+```
+
+The verify script parses the digest references out of
+`docker-compose.published.yml` (one source of truth: the set verified is the
+set booted), requires every reference to be digest-pinned, and checks each
+signature against the publishing repo's release-workflow identity (keyless,
+GitHub-Actions OIDC). Any failure - a mutable tag, an unmapped image, a bad
+signature - exits 1: do not `up`.
+
+Coverage today is filestore only, at v0.1.0-rc.7 (2026-06-13). That image
+predates the credential-claim subtree join, the sha256 dedup surface and the
+Storage-JWT verifier, so the journey suite is NOT expected green on this path
+until a fresh filestore tag is published. No other component publishes an
+image at all. Owner-gated steps to grow this path, in order:
+
+1. Tag a fresh `ocu-filestore` release (its pipeline already signs the image
+   by digest) and bump the digest in `docker-compose.published.yml`.
+2. Tag the first `ocu-control` release (release.yml exists; no tag has ever
+   been pushed, so no image exists).
+3. Land publish pipelines in gateway, webui, admin and the rclone edge, then
+   join each service to the override.
+
+The acceptance keystone for the whole path: a clean environment runs the
+journey suite green with every OCU service booted from a verified published
+digest and zero sibling checkouts.
+
 ## Durable state
 
 The control plane's session state — the reservation registry, the deny posture,
