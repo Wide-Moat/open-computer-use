@@ -8,7 +8,12 @@
 # "Signed SBOM + SLSA L3 provenance required for every release artifact.
 #  Syft → SPDX, Cosign-signed; CI fails if missing."
 #
-# Scope of this file: the SBOM + sign + attest half of that gate.
+# Scope of this file: tag-time and manually-dispatched re-attestation. The
+# PUBLISH-coupled signing lives in build.yml (sign-images, needs:-gated on
+# the four image builds): every push that publishes an image signs it by the
+# exact pushed digest in the same run, so nothing this repo publishes is ever
+# unsigned even between tags. This workflow stays for tag-time re-runs and
+# for signing an arbitrary ref by hand.
 #
 # SLSA-3 provenance is deferred to a follow-up release workflow that
 # colocates build/push and provenance generation so the real image digest
