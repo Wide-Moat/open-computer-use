@@ -249,12 +249,16 @@ jobs:
 
   sign-images:
     name: Sign + SBOM-attest pushed images
-    # Publish-coupled signing: needs:-gated on the four image builds and
-    # running on every trigger that pushes (main and tags alike), it signs
-    # each image by the exact digest its build step pushed - never by a
-    # mutable tag, never in a separate workflow that can drift from what was
-    # actually published. The tag-only supply-chain workflow remains the
-    # manual re-attestation path; the publish path is signed here.
+    # Publish-coupled signing AND provenance: needs:-gated on the four image
+    # builds and running on every trigger that pushes (main and tags alike),
+    # it signs each image by the exact digest its build step pushed - never
+    # by a mutable tag, never in a separate workflow that can drift from what
+    # was actually published - and attests build provenance for the same
+    # digests (SLSA provenance in the GitHub attestation store + pushed to
+    # the registry; the Build-L3 isolation upgrade is the org reusable
+    # workflow tracked in the licensing-posture BoM row for Sigstore/SLSA).
+    # The tag-only supply-chain workflow remains the manual re-attestation
+    # path; the publish path is signed here.
     needs: [build-sandbox, build-server, build-cleanup, build-webui]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -262,9 +266,12 @@ jobs:
       contents: read
       # packages:write lets cosign push signatures and SBOM attestations next
       # to the images; id-token:write mints the OIDC token keyless signing
-      # exchanges for a short-lived Fulcio certificate - no long-lived key.
+      # exchanges for a short-lived Fulcio certificate - no long-lived key;
+      # attestations:write lets attest-build-provenance record provenance in
+      # the GitHub attestation store.
       packages: write
       id-token: write
+      attestations: write
     env:
       DIGEST_SANDBOX: ${{ needs.build-sandbox.outputs.digest }}
       DIGEST_SERVER: ${{ needs.build-server.outputs.digest }}
@@ -305,6 +312,37 @@ jobs:
             syft "$ref" -o spdx-json > sbom.spdx.json
             cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$ref"
           done
+      # Build provenance per pushed digest (actions/attest-build-provenance
+      # records it in the GitHub attestation store - `gh attestation verify` -
+      # and pushes it to the registry next to the image). Same mechanism as
+      # the ocu-filestore release pipeline. The subject name must be
+      # lowercase; github.repository preserves the org's original case.
+      - name: derive the lowercase image-name base
+        run: echo "REPO_LC=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: attest build provenance - sandbox image
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REPO_LC }}
+          subject-digest: ${{ needs.build-sandbox.outputs.digest }}
+          push-to-registry: true
+      - name: attest build provenance - server image
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REPO_LC }}-server
+          subject-digest: ${{ needs.build-server.outputs.digest }}
+          push-to-registry: true
+      - name: attest build provenance - cleanup image
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REPO_LC }}-cleanup
+          subject-digest: ${{ needs.build-cleanup.outputs.digest }}
+          push-to-registry: true
+      - name: attest build provenance - webui image
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ env.REPO_LC }}-webui
+          subject-digest: ${{ needs.build-webui.outputs.digest }}
+          push-to-registry: true
 
   test:
     name: Test
