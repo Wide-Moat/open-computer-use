@@ -98,7 +98,7 @@ services:
   # One-shot; the stack waits on it.
   # -------------------------------------------------------------------------
   cert-init:
-    image: alpine/openssl:latest
+    image: alpine/openssl:latest@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
     volumes:
       - tls-certs:/certs
     entrypoint: ["/bin/sh", "-c"]
@@ -140,7 +140,7 @@ services:
   # (SAN covers DNS:jwks) so the edge/exchange south-CA client trusts it.
   # -------------------------------------------------------------------------
   jwks:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -187,7 +187,7 @@ services:
   # control's -ca-cert. One-shot; filestore waits on it.
   # -------------------------------------------------------------------------
   jwks-gate:
-    image: alpine/openssl:latest
+    image: alpine/openssl:latest@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
     depends_on:
       control:
         condition: service_started
@@ -227,7 +227,7 @@ services:
   # stack waits on it.
   # -------------------------------------------------------------------------
   signing-key-init:
-    image: alpine/openssl:latest
+    image: alpine/openssl:latest@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
     volumes:
       - control-signing-key:/keys
       # The JWKS artifact dir control renders into (-jwks-path) must be writable by
@@ -275,7 +275,7 @@ services:
   # to. No mock. Lives on the credential-bearing backend plane only.
   # -------------------------------------------------------------------------
   minio:
-    image: quay.io/minio/minio:latest
+    image: quay.io/minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${OCU_S3_ACCESS_KEY_ID:-ocu-fleet-root}
@@ -293,7 +293,7 @@ services:
       start_period: 10s
 
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: quay.io/minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       minio:
         condition: service_healthy
@@ -320,7 +320,7 @@ services:
   # image unmodified. One-shot; the web UI waits on it.
   # -------------------------------------------------------------------------
   webui-audit-init:
-    image: alpine:latest
+    image: alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
     volumes:
       - webui-audit:/var/audit
     entrypoint: ["/bin/sh", "-c"]
@@ -333,7 +333,7 @@ services:
   # fails closed at boot ("open audit file sink: permission denied"). One-shot;
   # the gateway waits on it.
   mcp-gateway-audit-init:
-    image: alpine:latest
+    image: alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
     volumes:
       - mcp-gateway-audit:/var/log/ocu-mcp-gateway
     entrypoint: ["/bin/sh", "-c"]
@@ -606,7 +606,7 @@ services:
   # needed. Replaces the in-memory minimal-shelf store.
   # -------------------------------------------------------------------------
   control-db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     environment:
       POSTGRES_USER: ${OCU_PG_USER:-ocu}
       POSTGRES_PASSWORD: ${OCU_PG_PASSWORD:-ocu-fleet-pg}
@@ -976,7 +976,7 @@ services:
   # the bundle via x509 AppendCertsFromPEM, which accepts multi-PEM
   # concatenation. Idempotent one-shot; the edge waits on it.
   south-trust-bridge:
-    image: alpine/openssl:latest
+    image: alpine/openssl:latest@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
     depends_on:
       cert-init:
         condition: service_completed_successfully
@@ -1187,7 +1187,7 @@ services:
   # from control-db (ocu_control on ocu-state); the UI DB never shares control's
   # private state network or credentials.
   openwebui-db:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
     environment:
       POSTGRES_USER: openwebui
       POSTGRES_PASSWORD: ${OPENWEBUI_DB_PASSWORD:-openwebui}
