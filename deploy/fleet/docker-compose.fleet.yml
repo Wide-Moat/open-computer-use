@@ -499,13 +499,6 @@ services:
     build:
       context: ../../../ocu-webui
       dockerfile: web/Dockerfile
-      args:
-        # NEXT_PUBLIC_* is inlined into the client bundle at `next build` — it
-        # cannot be set at runtime. The pane's bootstrap hook trusts exactly one
-        # parent origin (strict equality); it must be the embed-portal's origin,
-        # the address the owner opens in the browser. Empty here = deny-by-default
-        # = the pane can never receive a token = a dead browser bootstrap.
-        NEXT_PUBLIC_OCU_PARENT_ORIGIN: ${OCU_PARENT_ORIGIN:-http://localhost:3003}
     image: ocu-webui:fleet
     depends_on:
       cert-init:
@@ -523,8 +516,10 @@ services:
       OCU_EMBED_VERIFY_SECRET: ${OCU_EMBED_VERIFY_SECRET:?set a >=32-byte embed verify secret}
       OCU_EMBED_AUDIENCE: ${OCU_EMBED_AUDIENCE:-ocu-webui}
       OCU_SESSION_SECRET: ${OCU_SESSION_SECRET:?set a >=32-byte session secret}
-      # frame-ancestors default is 'none' (no embedder); the demo portal must be
-      # allow-listed or the pane refuses to render inside the portal iframe.
+      # The per-deployment portal-origin allowlist (ADR-0031): ONE runtime env
+      # feeds both the CSP frame-ancestors header and the pane's postMessage
+      # parent-origin trust set. Absent = 'none' + empty trust set = the pane
+      # neither frames nor bootstraps. The demo portal's origin is the default.
       OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-http://localhost:3003}
       # The append-only OCSF audit journal. Deny-by-default: the BFF hard-fails
       # a file-op at request time if this path is unset (NFR-SEC-79 — no file-op
