@@ -152,6 +152,10 @@ owner-live-click.txt
 live-4tools*.yml
 .codex/
 AGENTS.md
+
+# deploy/tests/journeys/test_k_admin.py: curl's cookie jar for the admin
+# login -> authenticated-read flow. Runtime scratch, never committed.
+deploy/tests/journeys/.admin-cookie-jar.txt
 deploy/fleet/BACKLOG-mcp-tools.md
 
 # Scratch working notes and build artifacts - never tracked (local-only)

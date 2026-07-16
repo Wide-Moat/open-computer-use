@@ -1111,6 +1111,75 @@ services:
       - no-new-privileges:true
 
   # =========================================================================
+  # ADMIN (component-08 read-only operator console, ocu-admin) — a BFF that
+  # projects control's frozen ADR-0022 read surface (GET /v1alpha/sessions,
+  # /v1alpha/sessions/{key}, /v1alpha/deployment, /metrics) behind its own
+  # bcrypt + session-cookie gate (CONSTITUTION §8: operator-sees-every-session,
+  # no per-tenant scoping of the read). It dials control the same way the
+  # operator CLI does: the host-owned operator UDS bind-mounted below — never
+  # the gateway mTLS plane, never a new control listener. Read-only: it issues
+  # only GETs and holds no mutating authority (revoke/resume stay the CLI's
+  # job over the same socket).
+  # =========================================================================
+  admin:
+    build:
+      context: ../../../ocu-admin
+      dockerfile: web/Dockerfile
+    image: ocu-admin:fleet
+    depends_on:
+      control:
+        condition: service_healthy
+    environment:
+      # The operator credential + session-signing secret. No default, same
+      # posture as OCU_EMBED_VERIFY_SECRET/OCU_SESSION_SECRET below: a bcrypt
+      # hash contains literal `$` characters that compose's ${VAR:-default}
+      # interpolation cannot round-trip safely (a bare `$2y$12$...` default is
+      # parsed as positional variable references, not a literal string), so
+      # the demo value lives in .env.example instead of a compose default.
+      # Fail-closed by design (web/src/lib/auth/config.ts): the server refuses
+      # to boot with any of the three unset — no silent unauthenticated
+      # fallback. Regenerate the hash with `htpasswd -nbBC 12 <user> <pass>`.
+      OCU_ADMIN_OPERATOR_USER: ${OCU_ADMIN_OPERATOR_USER:?set the admin operator username}
+      OCU_ADMIN_OPERATOR_BCRYPT_HASH: ${OCU_ADMIN_OPERATOR_BCRYPT_HASH:?set a bcrypt(cost=12) hash - see .env.example}
+      # >=32 bytes (byte-floor enforced at boot); generate with
+      # `openssl rand -hex 32` for any non-demo deployment.
+      OCU_ADMIN_SESSION_SECRET: ${OCU_ADMIN_SESSION_SECRET:?set a >=32-byte admin session secret}
+      # Same host-bind-mounted operator socket control writes -operator-listen
+      # to (see the control service block). The default in
+      # web/src/lib/read/control-config.ts already matches this path; the env
+      # is set explicitly here so the fleet wiring is auditable in one place
+      # rather than relying on the image default.
+      OCU_ADMIN_CONTROL_SOCKET: /run/ocu-control/operator.sock
+    volumes:
+      # Read-only: admin only ever GETs the operator plane, never mutates it.
+      - /run/ocu-control:/run/ocu-control:ro
+    ports:
+      - "127.0.0.1:3004:3000"
+    networks:
+      - ocu-frontend
+    user: "node"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # No curl/wget in node:22-bookworm-slim; probe with Node's own http
+      # client instead. Every route but /api/auth/login is gated by
+      # middleware.ts, so an unauthenticated GET / answers 401 — that is the
+      # BFF working correctly (config loaded, auth gate live), not a health
+      # failure. Any HTTP response proves the server is up; only a connection
+      # error (process not listening yet) fails the check.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:3000/',()=>process.exit(0)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # =========================================================================
   # OPENWEBUI CLIENT LEG — the agent client that drives the fleet through our
   # MCP gateway. The old PoC integration under openwebui/ already speaks MCP
   # Streamable HTTP (tools/call); here it is REPOINTED at OUR next/v1 gateway
