@@ -353,9 +353,10 @@ jobs:
 
       - name: Run structure and English-only tests
         run: |
-          chmod +x tests/test-project-structure.sh tests/test-no-cyrillic.sh
+          chmod +x tests/test-project-structure.sh tests/test-no-cyrillic.sh tests/test-system-prompt-skills-contract.sh
           ./tests/test-project-structure.sh
           ./tests/test-no-cyrillic.sh
+          ./tests/test-system-prompt-skills-contract.sh
 
   pytest-orchestrator:
     name: Pytest — orchestrator
