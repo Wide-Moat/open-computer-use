@@ -61,12 +61,22 @@ Feature: OCU MCP tool surface executes end-to-end
     Then the result has isError true
     And the result text is exactly "cause\n"
 
+  @L4 @bash @semantics
+  Scenario: a bare grep no-match is informational, not a tool error (D8 parity)
+    # PoC parity (D8): the gateway's COMMAND_SEMANTICS table restores the PoC
+    # reading for a leading grep/rg whose only failure is exit 1 (no matches):
+    # informational, isError false, rewritten to "No matches found". This
+    # matches the PoC, which treated grep-exit-1 as informational.
+    When bash_tool runs "grep needle /etc/hostname"
+    Then the result has isError false
+    And the result text is exactly "No matches found"
+
   @L4 @bash @contrast
-  Scenario: grep no-match is a tool error under the fleet contract
-    # Deliberate PoC divergence: the gateway relays exit facts and does NOT
-    # interpret per-command exit semantics (no "No matches found" rewriting).
-    # PoC treats grep-exit-1 as informational; the fleet's isError model makes
-    # that heuristic obsolete. Recorded as a PoC-vs-fleet contrast, not a bug.
+  Scenario: the semantics table is first-command-only (compound scope pin)
+    # Scope pin for the D8 table: it keys on the FIRST command of the bash argv,
+    # so a COMPOUND command whose leading program is not grep/rg does NOT get the
+    # informational rewrite. Here printf leads, so the grep-exit-1 tail surfaces
+    # as the fleet's plain isError model -- the table never fires on the tail.
     When bash_tool runs "printf hay > /tmp/f && grep needle /tmp/f"
     Then the result has isError true
     And the result text is exactly "[Exit code: 1]"
