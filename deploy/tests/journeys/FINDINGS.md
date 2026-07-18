@@ -43,19 +43,25 @@ Reproduce:
 The pure-Python OOXML validity keystone (`_assert_valid_docx`) stays a hard
 pass; only the mount round-trip is xfail.
 
-## 2. Concurrency-counter leak wedges the deployment (E7)
+## 2. Concurrency-counter leak wedges the deployment (E7) — RESOLVED
 
-The `DimConcurrentSessions` counter is a write-only ratchet under the operator
-kill-switch path: `RevokeAll` / `forceKillRow` call `ForceReleaseRow` (row →
-Released) but never `ReleaseConcurrency`, so the counter is not decremented.
-Separately, boot reconcile lists containers with `ListOptions{All: true}`, so an
-Exited-but-present container matches its still-ACTIVE row and its slot is never
-reclaimed. The counter climbs to the tier cap and every subsequent create is
-refused `409`, even with zero live sessions.
+Historical finding, kept for the E7 keystone's provenance. As first observed,
+the `DimConcurrentSessions` counter was a write-only ratchet under the operator
+kill-switch path (`RevokeAll` / `forceKillRow` released the row but never the
+slot) and boot reconcile treated an Exited-but-present container as live, so
+the counter climbed to the tier cap and every create 409'd against zero live
+sessions (observed then: counter stuck at 64 against 3 live rows).
 
-Observed on the live stack: counter stuck at 64 against 3 live rows → all
-creates 409. Same family as the boot-reconcile row-leak already fixed, one layer
-deeper (the derived counter, not the row).
+RESOLVED in the current control build, verified behaviorally on the live
+stack: `forceKillRow` refunds the slot through the same decrement the destroy
+path uses (a revoke-one decrements the live quota cell and tombstones the
+row), boot reconcile recomputes the counter from actual state, a failed create
+unwinds its charge, and the idle reaper reclaims a substrate-lost ACTIVE row
+at the idle-TTL with a `reconcile_reclaim` audit record. E7's counter-parity
+keystone remains the regression guard. A suite-scale 409 cascade now indicates
+HARNESS slot hygiene (sessions created faster than they are destroyed inside
+one idle-TTL window), which the per-test operator sweep in `conftest.py`
+addresses.
 
 ## 3. Egress is open to the public internet (G4)
 
