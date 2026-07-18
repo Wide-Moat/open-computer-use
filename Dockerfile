@@ -182,6 +182,7 @@ RUN mkdir -p /usr/local/lib/node_modules_global && \
 # Copy and install Python dependencies (as root first for system-wide availability)
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
+    --timeout=300 --retries=10 \
     -r /tmp/requirements.txt
 
 # Pre-register Cyrillic and Emoji fonts in reportlab
