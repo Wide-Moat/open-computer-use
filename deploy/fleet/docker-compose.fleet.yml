@@ -724,6 +724,14 @@ services:
       # Turn off (OCU_DERIVE_CHAT_SCOPE=false) to fall back to today's single static
       # scope shared across chats.
       - -derive-chat-scope=${OCU_DERIVE_CHAT_SCOPE:-true}
+      # Grant ONE dedicated gid access to the operator-plane socket (dir 0750 +
+      # socket 0660) so the co-located admin read-plane peer, running under a
+      # different uid, can connect. Without it the socket stays owner-only 0700
+      # and admin's cross-uid connect(2) gets EACCES -> the dashboard reads 503
+      # -> the operator console shows state=unavailable. The gid matches the
+      # admin service's group_add below; -1 (unset) keeps the owner-only posture.
+      - -operator-socket-gid
+      - ${OCU_OPERATOR_SOCKET_GID:-988}
     depends_on:
       control-db:
         condition: service_healthy
@@ -1158,6 +1166,12 @@ services:
     networks:
       - ocu-frontend
     user: "node"
+    # Admin (uid 1000/node) joins the gid control grants on its operator socket
+    # (-operator-socket-gid above) so its cross-uid connect(2) to the read-plane
+    # socket succeeds. Without it the socket is owner-only 0700 and admin reads
+    # 503 -> the dashboard shows state=unavailable. Read-only plane: admin only
+    # GETs the operator surface. The gid matches control's -operator-socket-gid.
+    group_add: ["${OCU_OPERATOR_SOCKET_GID:-988}"]
     read_only: true
     cap_drop: [ALL]
     security_opt:
