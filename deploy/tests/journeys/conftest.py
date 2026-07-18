@@ -100,15 +100,19 @@ def backend(request: pytest.FixtureRequest) -> Backend:
     # Per-test teardown: return every slot this test occupied via REAL verbs, so
     # the suite does not accumulate live sessions and trip the tier cap
     # order-dependently. A live session legitimately holds its slot until it is
-    # ended (an exec exit does not end it — the guest is a long-lived service),
-    # and the control plane has no idle-reaper that reclaims an abandoned
-    # session's slot at runtime (a real gap, filed separately; boot-reconcile
-    # and the kill-switch reclaim only at boot / on revoke). So the test client
-    # ends its own sessions the way a disconnecting client would: first the
-    # per-session destroy verb for the hints it tracked, then an operator
-    # revoke-all + resume-all sweep as the belt-and-suspenders reclaim for any
-    # session a lifecycle test left in a state the hint-addressed destroy can no
-    # longer reach (404 after a revoke). Both are REAL operator/gateway verbs —
+    # ended (an exec exit does not end it -- the guest is a long-lived service).
+    # The control plane reclaims abandoned sessions on its own only at the
+    # idle-TTL (-session-idle-ttl, 15m on the stand) -- far longer than a suite
+    # run, so a suite that bursts creates without destroying them exhausts the
+    # tier cap (64) and every later create 409s, order-dependently. That is a
+    # HARNESS obligation, not a product leak: the kill-switch refund and the
+    # boot-reconcile counter recompute are both in the control build (verified
+    # behaviorally: revoke-one decrements the live quota cell). So the test
+    # client ends its own sessions the way a disconnecting client would: first
+    # the per-session destroy verb for the hints it tracked, then the operator
+    # revoke-all + resume-all sweep for any session this test created that the
+    # hint-addressed destroy cannot reach (untracked per-chat sessions, rows a
+    # lifecycle test already revoked). Both are REAL operator/gateway verbs --
     # never a DB-counter poke. resume-all lifts the deny so the next test's
     # create is admitted.
     if name == "fleet":
@@ -118,25 +122,21 @@ def backend(request: pytest.FixtureRequest) -> Backend:
                 destroy()
             except Exception:
                 pass
+        _fleet_operator_reclaim_slots()
 
 
-# KNOWN-BUG REMEDIATION (delete when [concurrency-counter-leak] lands).
+# HARNESS SLOT HYGIENE (the [concurrency-counter-leak] this block once tracked
+# is FIXED in the control build and verified behaviorally: the kill-switch
+# refunds the DimConcurrentSessions slot on revoke -- a revoke-one decrements the
+# live quota cell and tombstones the row -- and boot reconcile recomputes the
+# counter from actual state. E7's counter-parity keystone witnesses the refund.)
 #
-# The fleet control DimConcurrentSessions counter leaks: the operator kill-switch
-# (RevokeAll) releases the ROW but never calls ReleaseConcurrency, and boot
-# reconcile treats an EXITED-but-present container as live substrate, so it never
-# reclaims that row's slot. A guest whose exec exits (every storage session in
-# this suite) therefore leaks one slot, and the counter climbs to the tier cap
-# (64) while few rows are actually live — after which every create 409s and the
-# whole suite wedges, order-dependently.
-#
-# This is recorded as a REAL-FINDING (issue [concurrency-counter-leak]) and is
-# exercised directly by the E7 counter-parity keystone. To keep the OTHER fleet
-# tests from cascading a single control bug into unrelated 409 reds, we reclaim
-# the leak before each fleet test by resetting the counter to the TRUE live-row
-# count — exactly what the eventual reconcile fix will compute. This is a
-# documented test-env reset, not a green: E7 still witnesses the leak, and this
-# hook is deleted the moment the counter refund lands.
+# What remains is a HARNESS obligation: a live session legitimately holds its
+# slot until destroyed or idle-reaped (-session-idle-ttl, 15m on the stand), and
+# a suite run is shorter than the idle-TTL, so bursting creates without per-test
+# reap exhausts the tier cap (64) and cascades 409s into unrelated tests. The
+# sweep below returns the slots through the REAL operator verbs after each fleet
+# test; it never pokes the DB counter.
 _FLEET_CONTROL_DB = os.getenv("FLEET_CONTROL_DB_CONTAINER", "ocu-fleet-control-db-1")
 _FLEET_DB_USER = os.getenv("FLEET_CONTROL_DB_USER", "ocu")
 _FLEET_DB_NAME = os.getenv("FLEET_CONTROL_DB_NAME", "ocu_control")
@@ -168,46 +168,59 @@ def _fleet_operator_reclaim_slots() -> None:
 
     No-op (never fails a test) when docker / the operator socket is unreachable
     or when FLEET_RECLAIM_COUNTER_LEAK=0. All three are real verbs; the socket
-    is the operator credential (0700 SO_PEERCRED), reached with sudo in the Lima
-    harness.
+    is the operator credential (0700 SO_PEERCRED), reached with sudo.
+
+    The socket and the guest containers live where control runs. When the suite
+    runs OUTSIDE that host (e.g. pytest on the workstation against a Lima VM),
+    set FLEET_LIMA_INSTANCE to the Lima instance name: the sweep then executes
+    its verbs inside the VM via ``limactl shell``. Without it, a socket path
+    that does not exist locally makes every verb a silent no-op -- the exact
+    failure mode that let a full-suite run leak dozens of sessions into the
+    tier cap.
     """
     if not _FLEET_RECLAIM:
         return
     import shutil
     import subprocess
 
-    curl = shutil.which("curl")
-    docker = shutil.which("docker")
-    if not curl:
+    lima = os.getenv("FLEET_LIMA_INSTANCE", "")
+    remote = bool(lima) and not os.path.exists(_FLEET_OPERATOR_SOCK)
+
+    def _run(argv: list[str], timeout: float) -> "subprocess.CompletedProcess[str]":
+        if remote:
+            limactl = shutil.which("limactl")
+            if not limactl:
+                raise OSError("limactl not found for FLEET_LIMA_INSTANCE")
+            argv = [limactl, "shell", lima, "--", *argv]
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+
+    if not remote and not shutil.which("curl"):
         return
 
     def _op(path: str) -> None:
         try:
-            subprocess.run(
+            _run(
                 [
-                    "sudo", curl, "-sS", "--max-time", "10",
+                    "sudo", "curl", "-sS", "--max-time", "10",
                     "--unix-socket", _FLEET_OPERATOR_SOCK,
                     "-X", "POST", f"http://localhost{path}",
                     "-H", "content-type: application/json",
                     "-d", '{"reason":"journey-suite per-test teardown"}',
                 ],
-                capture_output=True,
-                timeout=15,
+                timeout=20,
             )
         except (OSError, subprocess.SubprocessError):
             pass
 
     _op("/v1alpha/revoke/all")
-    if docker:
-        try:
-            ids = subprocess.run(
-                [docker, "ps", "-aq", "--filter", "name=ocu-sess-"],
-                capture_output=True, text=True, timeout=15,
-            ).stdout.split()
-            if ids:
-                subprocess.run([docker, "rm", "-f", *ids], capture_output=True, timeout=30)
-        except (OSError, subprocess.SubprocessError):
-            pass
+    try:
+        ids = _run(
+            ["docker", "ps", "-aq", "--filter", "name=ocu-sess-"], timeout=20,
+        ).stdout.split()
+        if ids:
+            _run(["docker", "rm", "-f", *ids], timeout=40)
+    except (OSError, subprocess.SubprocessError):
+        pass
     _op("/v1alpha/resume/all")
 
 

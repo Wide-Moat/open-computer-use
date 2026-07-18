@@ -255,22 +255,27 @@ def test_i3_timeout_is_enforced():
     """A command that would sleep far past the exec-timeout is KILLED (does not run
     to completion), while a fast command over the SAME path returns promptly. This
     proves timeout ENFORCEMENT — the load-bearing property — holds on the live
-    stand. It does NOT assert the result shape (that is I3b): control's exec-timeout
-    (execTimeoutDefaultSeconds=30) kills the command; enforcement is proven by the
-    wall-clock, not the status."""
+    stand. It does NOT assert the result shape (that is I3b).
+
+    The contract: the gateway provisioning policy sets exec_timeout_seconds=120
+    (deploy/fleet/secrets/gateway/provisioning-policy.json, the PoC-parity value),
+    bounded by control's host-side hard cap of 5 minutes. The kill therefore lands
+    at ~120s; the transport budget must OUTLIVE the kill (a curl budget equal to
+    the kill time aborts rc=28 with zero bytes and reads as a false red)."""
     # sleep 600 would hang for 10 minutes if unbounded; the exec-timeout kills it
-    # far sooner. We assert it did NOT run to completion, whatever the result shape.
+    # at ~120s. We assert it did NOT run to completion, whatever the result shape.
     start = time.monotonic()
     try:
-        _call(_cid("i3-hang"), _bash_body("sleep 600"), timeout=120)
+        _call(_cid("i3-hang"), _bash_body("sleep 600"), timeout=180)
     except RuntimeError:
         # A curl-level abort still means the call did not hang the full 600s; the
         # wall-clock assertion below is the real check.
         pass
     elapsed = time.monotonic() - start
-    assert elapsed < 115, (
-        f"a sleep 600 must be KILLED by the exec-timeout, not run to completion; "
-        f"took {elapsed:.0f}s (timeout enforcement is the load-bearing property)"
+    assert elapsed < 150, (
+        f"a sleep 600 must be KILLED by the 120s exec-timeout (policy "
+        f"exec_timeout_seconds), not run to completion; took {elapsed:.0f}s "
+        f"(timeout enforcement is the load-bearing property)"
     )
 
     # keystone: a fast command returns promptly (the kill is the timeout, not a cap).
@@ -295,9 +300,11 @@ def test_i3b_timeout_surfaces_as_tool_result_with_partial_output():
     with the pre-kill stdout + '[Command timed out after Ns]' in the SAME stream the
     gateway relays on isError (stdout AND non-empty stderr), so the partial output
     survives the gateway's stderr-wins relay."""
-    # A command that writes a marker BEFORE it hangs past the exec-timeout.
+    # A command that writes a marker BEFORE it hangs past the exec-timeout. The
+    # transport budget must outlive the ~120s policy kill plus the result relay,
+    # or curl aborts rc=28 at exactly the kill boundary and loses the reply.
     marker = "I3B_PARTIAL_" + uuid.uuid4().hex[:8]
-    status, parsed = _call(_cid("i3b"), _bash_body(f"echo {marker}; sleep 600"), timeout=120)
+    status, parsed = _call(_cid("i3b"), _bash_body(f"echo {marker}; sleep 600"), timeout=180)
     text, is_error = _result(parsed)
     assert status == 200, (
         f"a timed-out command must be a Tier-2 tool result (HTTP 200 + isError), not "
