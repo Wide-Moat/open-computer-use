@@ -158,10 +158,9 @@ def _fleet_operator_reclaim_slots() -> None:
       1. POST /v1alpha/revoke/all  — force-releases every session ROW (and, on
          the @c978045 fix, ReleaseConcurrency returns the slot: F-1). Reaches
          sessions the hint-addressed destroy could not (already-revoked rows).
-      2. docker rm -f any ocu-sess-* container left behind — the runtime reap a
-         reaper would do; without a control-side idle-reaper (the real gap filed
-         separately) a stopped guest's container lingers and its endpoint holds
-         the network.
+      2. docker rm -f any ocu-sess-* container left behind -- faster than
+         waiting out the control idle-reaper (-session-idle-ttl, 15m on the
+         stand); a lingering stopped guest holds its network endpoint.
       3. POST /v1alpha/resume/all  — lift the deny so the NEXT test's create is
          admitted (revoke-all engages deny-all; without resume every later
          create is refused).
@@ -183,23 +182,12 @@ def _fleet_operator_reclaim_slots() -> None:
     import shutil
     import subprocess
 
-    lima = os.getenv("FLEET_LIMA_INSTANCE", "")
-    remote = bool(lima) and not os.path.exists(_FLEET_OPERATOR_SOCK)
-
-    def _run(argv: list[str], timeout: float) -> "subprocess.CompletedProcess[str]":
-        if remote:
-            limactl = shutil.which("limactl")
-            if not limactl:
-                raise OSError("limactl not found for FLEET_LIMA_INSTANCE")
-            argv = [limactl, "shell", lima, "--", *argv]
-        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
-
-    if not remote and not shutil.which("curl"):
+    if not _fleet_is_remote() and not shutil.which("curl"):
         return
 
     def _op(path: str) -> None:
         try:
-            _run(
+            _fleet_exec(
                 [
                     "sudo", "curl", "-sS", "--max-time", "10",
                     "--unix-socket", _FLEET_OPERATOR_SOCK,
@@ -214,14 +202,69 @@ def _fleet_operator_reclaim_slots() -> None:
 
     _op("/v1alpha/revoke/all")
     try:
-        ids = _run(
+        ids = _fleet_exec(
             ["docker", "ps", "-aq", "--filter", "name=ocu-sess-"], timeout=20,
         ).stdout.split()
         if ids:
-            _run(["docker", "rm", "-f", *ids], timeout=40)
+            _fleet_exec(["docker", "rm", "-f", *ids], timeout=40)
     except (OSError, subprocess.SubprocessError):
         pass
     _op("/v1alpha/resume/all")
+
+
+def _fleet_is_remote() -> bool:
+    """True when the operator socket lives in a Lima VM rather than this host."""
+    return bool(os.getenv("FLEET_LIMA_INSTANCE", "")) and not os.path.exists(
+        _FLEET_OPERATOR_SOCK
+    )
+
+
+def _fleet_exec(argv: list[str], timeout: float):
+    """Run a sweep verb on the host that owns the operator socket.
+
+    Local by default; routed through ``limactl shell $FLEET_LIMA_INSTANCE``
+    when the socket is not present on this host (suite on the workstation,
+    control in a Lima VM).
+    """
+    import shutil
+    import subprocess
+
+    if _fleet_is_remote():
+        limactl = shutil.which("limactl")
+        if not limactl:
+            raise OSError("limactl not found for FLEET_LIMA_INSTANCE")
+        argv = [limactl, "shell", os.environ["FLEET_LIMA_INSTANCE"], "--", *argv]
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+
+
+def _fleet_guests_present() -> bool:
+    """Cheap guard: does any ocu-sess-* guest container exist right now?"""
+    import subprocess
+
+    try:
+        out = _fleet_exec(
+            ["docker", "ps", "-aq", "--filter", "name=ocu-sess-"], timeout=15,
+        )
+        return bool(out.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _fleet_slot_hygiene():
+    """Reap fleet guest sessions after EVERY test, backend fixture or not.
+
+    The direct-gateway tests (the I-group and friends) drive the fleet MCP
+    endpoint with plain curl and never request the ``backend`` fixture, so its
+    teardown sweep cannot cover them -- a full-module run used to leave every
+    created guest holding its concurrency slot until the idle-TTL, wedging the
+    tier cap for whatever ran next. This autouse fixture closes that class: it
+    sweeps only when a guest container actually exists, so tests that created
+    nothing pay one cheap docker-ps probe and no operator round-trips.
+    """
+    yield
+    if _FLEET_RECLAIM and _fleet_guests_present():
+        _fleet_operator_reclaim_slots()
 
 
 # Back-compat alias: the E7 counter-parity keystone imports this name to reclaim
