@@ -106,12 +106,55 @@ def _pane_session(tmp_path):
     )
     if status != 200:
         pytest.skip(f"pane bootstrap returned {status} - user leg cannot run. LOUD SKIP, not a pass.")
-    csrf = json.loads(body).get("csrfToken", "")
+    payload = json.loads(body)
+    csrf = payload.get("csrfToken", "")
+    global _PANE_SCOPE
+    _PANE_SCOPE = payload.get("chatScope", "")
+    _unlock_secure_cookies_for_loopback(jar)
     return jar, csrf
 
 
+# The chat scope the bootstrap attested. The pane names its session cookie
+# per chat scope (ocu_webui_session_<hash(scope)>) and the gate derives the
+# EXPECTED name from the x-ocu-chat-scope request header, so every authed
+# pane call must carry the header or the gate looks up the wrong cookie and
+# 401s. The pane's own client sends it on every call; the curl harness must
+# do the same.
+_PANE_SCOPE = ""
+
+
+def _pane_scope_headers():
+    return ["-H", f"x-ocu-chat-scope: {_PANE_SCOPE}"] if _PANE_SCOPE else []
+
+
+def _unlock_secure_cookies_for_loopback(jar):
+    """Replay the pane's Secure session cookie over plain-HTTP loopback.
+
+    The pane sets its session cookie ``Secure; SameSite=None`` for the HTTPS
+    iframe deployment. Browsers treat http://127.0.0.1 as a trustworthy
+    origin and DO store+send Secure cookies there (the loopback exemption in
+    the Secure Contexts spec); curl has no such exemption -- it stores the
+    cookie in the jar but refuses to send it back over http://, so every
+    authed pane call 401s as a pure transport artifact. Flipping the secure
+    column for loopback entries in the Netscape jar reproduces the browser's
+    documented policy, nothing more: the cookie value, session, and CSRF pair
+    stay exactly what the pane minted.
+    """
+    p = Path(jar)
+    lines = []
+    for line in p.read_text().splitlines():
+        fields = line.split("\t")
+        if len(fields) == 7 and "127.0.0.1" in fields[0] and fields[3] == "TRUE":
+            fields[3] = "FALSE"
+            line = "\t".join(fields)
+        lines.append(line)
+    p.write_text("\n".join(lines) + "\n")
+
+
 def _pane_list(jar):
-    status, body = _curl_json(["-b", jar, f"{PANE_URL}/api/v1/files"])
+    status, body = _curl_json(
+        ["-b", jar, *_pane_scope_headers(), f"{PANE_URL}/api/v1/files"]
+    )
     assert status == 200, f"pane list status = {status}, want 200"
     return json.loads(body)["data"]
 
@@ -129,12 +172,15 @@ def _pane_find(jar, filename, deadline_s=45):
 
 
 def _pane_content(jar, file_id):
-    return _curl_json(["-b", jar, f"{PANE_URL}/api/v1/files/{file_id}/content"])
+    return _curl_json(
+        ["-b", jar, *_pane_scope_headers(), f"{PANE_URL}/api/v1/files/{file_id}/content"]
+    )
 
 
 def _pane_upload(jar, csrf, filename, content, mime="text/plain"):
     status, body = _curl_json(
         ["-b", jar, "-X", "POST",
+         *_pane_scope_headers(),
          "-H", f"x-csrf-token: {csrf}",
          "-H", f"x-filename: {filename}",
          "-H", f"Content-Type: {mime}",
@@ -235,18 +281,58 @@ _COMPOSE_FILE = (
 
 
 def _derivation_expected_on():
-    """True when the shipped fleet compose has control's -derive-chat-scope
-    defaulting ON (OCU_DERIVE_CHAT_SCOPE unset -> :-true), so per-chat isolation
-    is EXPECTED and equal/empty scopes are a FAILURE, not a skip. False when the
-    flag is absent or defaults off (J7's degrade case), or when the compose file
-    cannot be read (unknown -> treat as OFF so J6 skips rather than false-fails).
+    """True when the CONTROL THE SUITE IS TALKING TO runs -derive-chat-scope on,
+    so per-chat isolation is EXPECTED and equal/empty scopes are a FAILURE, not
+    a skip. False in the degrade case (J7) or when the mode cannot be
+    determined (unknown -> OFF so J6 skips loudly rather than false-fails).
 
-    An explicit env override wins: OCU_DERIVE_CHAT_SCOPE in this process's env
-    mirrors what a live `up` would pass to control.
+    Truth ladder, most-authoritative first. A compose-file default is the LAST
+    resort: the deployment .env overrides it on a real `up`, and asserting the
+    file default against a live stand whose .env flipped the flag produced a
+    false CROSS-CHAT-LEAK red (the write landed in the base scope because
+    derivation was actually off).
+      1. OCU_DERIVE_CHAT_SCOPE in this process's env (explicit override).
+      2. The RUNNING control container's argv (docker inspect via the
+         conftest fleet-exec routing) - the ground truth.
+      3. OCU_DERIVE_CHAT_SCOPE in the deployment .env next to the compose file.
+      4. The compose file's ${OCU_DERIVE_CHAT_SCOPE:-default}.
     """
     env = os.environ.get("OCU_DERIVE_CHAT_SCOPE")
     if env is not None:
         return env.strip().lower() in ("1", "true", "yes", "on")
+
+    try:
+        from conftest import _fleet_exec
+
+        names = _fleet_exec(
+            ["docker", "ps", "--format", "{{.Names}}", "--filter", "name=control"],
+            timeout=15,
+        ).stdout.split()
+        cname = next((n for n in names if "control" in n and "db" not in n), None)
+        if cname:
+            argv = _fleet_exec(
+                ["docker", "inspect", cname, "--format", "{{json .Args}}"],
+                timeout=15,
+            ).stdout
+            m = re.search(r"-derive-chat-scope=(\w+)", argv)
+            if m:
+                return m.group(1).strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        pass  # no docker reach from here: fall through to the file ladder
+
+    env_file = _COMPOSE_FILE.parent / ".env"
+    try:
+        val = None
+        # last assignment wins, mirroring compose env-file precedence
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("OCU_DERIVE_CHAT_SCOPE="):
+                val = line.split("=", 1)[1].strip()
+        if val is not None:
+            return val.lower() in ("1", "true", "yes", "on")
+    except OSError:
+        pass
+
     try:
         text = _COMPOSE_FILE.read_text(encoding="utf-8")
     except OSError:
