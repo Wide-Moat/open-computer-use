@@ -236,7 +236,12 @@ def _require_gateway():
     except RuntimeError:
         pytest.skip("gateway (127.0.0.1:8080) unreachable - guest leg cannot run. LOUD SKIP, not a pass.")
     if status == 401:
-        pytest.skip("gateway refused the rendered bearer (401) - re-mint per README. LOUD SKIP, not a pass.")
+        pytest.fail(
+            "gateway (127.0.0.1:8080) returned 401 for the rendered bearer: the bearer "
+            "does not match the running gateway's boot-set (run from the stage tree whose "
+            "secrets the live stack mounts, or re-mint the boot-set). A reachable-but-401 "
+            "gateway is a harness desync, not a skip - it silently hid the whole file-flow leg."
+        )
 
 
 def _guest_bash(chat_id, command, timeout=60):
