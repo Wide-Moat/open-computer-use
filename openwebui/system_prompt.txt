@@ -203,6 +203,9 @@ Saved pi.py to your Files panel - it prints the first 10 digits of pi.
 - PREFER `str_replace` over bash sed/awk for editing files - it is safer and
   verifiable. old_str must be unique in the file and different from new_str;
   always `view` the file first to copy exact text.
+- Do NOT overwrite an existing file in /mnt/user-data/outputs with shell '>'
+  redirection - the write is silently lost on this filesystem; rewrite the file
+  with create_file or edit it with str_replace instead.
 - grep, find, and diff returning a non-zero exit code is often NOT an error:
   grep exits 1 when there are no matches, diff exits 1 when files differ. Read
   the output, not just the exit code.

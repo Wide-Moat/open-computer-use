@@ -762,7 +762,9 @@ class Tools:
         self._chat_scope_cache[chat_id] = scope
         return scope
 
-    async def _sync_files_if_needed(self, chat_id: str, command_or_path: str, __files__: list = None):
+    async def _sync_files_if_needed(
+        self, chat_id: str, command_or_path: str, __files__: list = None, emitter=None
+    ):
         """Sync uploaded files to computer-use-orchestrator if command/path references uploads."""
         uploads_path = "/mnt/user-data/uploads"
         needs_files = uploads_path in command_or_path or "uploads/" in command_or_path
@@ -787,8 +789,42 @@ class Tools:
                 )
                 if sync_result.get("synced", 0) > 0:
                     print(f"Synced {sync_result['synced']} file(s)")
+                # A non-zero errors count means one or more attachments did NOT
+                # reach the store, so the guest may read STALE or absent bytes.
+                # This MUST be model-visible -- a silent errors count is the exact
+                # staleness class D6 exists to kill (a swallowed error re-opens it).
+                errors = sync_result.get("errors", 0)
+                if errors > 0:
+                    warning = (
+                        f"WARNING: {errors} chat attachment(s) failed to sync to "
+                        "the guest; it may read stale or missing bytes at "
+                        "/mnt/user-data/uploads."
+                    )
+                    print(f"[SYNC] {warning}")
+                    if emitter:
+                        try:
+                            await emitter({
+                                "type": "status",
+                                "data": {"description": warning, "done": True},
+                            })
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"[SYNC] Error: {e}")
+                if emitter:
+                    try:
+                        await emitter({
+                            "type": "status",
+                            "data": {
+                                "description": (
+                                    "WARNING: chat attachment sync failed; the guest "
+                                    "may not see the uploaded file(s)."
+                                ),
+                                "done": True,
+                            },
+                        })
+                    except Exception:
+                        pass
 
     async def _run_tool(
         self,
@@ -872,7 +908,7 @@ class Tools:
         :return: Command output (stdout/stderr)
         """
         chat_id = (__metadata__.get("chat_id") if __metadata__ else None) or "default"
-        await self._sync_files_if_needed(chat_id, command, __files__)
+        await self._sync_files_if_needed(chat_id, command, __files__, emitter=__event_emitter__)
         return await self._run_tool(
             "bash_tool", {"command": command, "description": description},
             chat_id, __event_emitter__, __request__, __user__,
@@ -958,7 +994,7 @@ class Tools:
         :return: File contents, directory listing, or error message
         """
         chat_id = (__metadata__.get("chat_id") if __metadata__ else None) or "default"
-        await self._sync_files_if_needed(chat_id, path, __files__)
+        await self._sync_files_if_needed(chat_id, path, __files__, emitter=__event_emitter__)
         args = {"description": description, "path": path}
         if view_range:
             args["view_range"] = view_range
@@ -1132,6 +1168,15 @@ def _sync_uploaded_files(
                 "authorization_metadata": {"intent": "write", "downloadable": True},
                 "filename": filename,
                 "media_type": mime_type,
+                # A re-attach with changed content (the D6 sha256 arm fired above)
+                # must REPLACE the existing object, not 409. F9 create defaults
+                # overwrite_existing=false (refuse), so an omitted flag makes the
+                # re-upload fail and the guest keeps reading stale bytes -- the exact
+                # staleness D6 exists to kill. The sha256 dedup short-circuits before
+                # this POST on identical content, so overwrite only ever fires on a
+                # genuine change; the client holds the write lease (intent:write) and
+                # per ADR-0030 the scope is this chat's sole writer.
+                "overwrite_existing": True,
             }
 
             with open(source_path, "rb") as f:
