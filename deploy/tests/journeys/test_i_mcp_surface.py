@@ -170,10 +170,24 @@ def _gateway_live():
 
 
 def _guest_has_python3(chat_id):
-    """True iff the live guest has a runnable python3 (gates the file-tool journey)."""
-    _, parsed = _call(chat_id, _bash_body("command -v python3 >/dev/null 2>&1 && echo yes || echo no"))
-    text, _ = _result(parsed)
-    return bool(text and "yes" in text)
+    """True iff the live guest has a runnable python3 (gates the file-tool journey).
+
+    The probe command echoes "yes" or "no", so a non-empty reply is authoritative.
+    An EMPTY reply is not "no python3" -- it is a transient exec miss (a session-
+    create hiccup late in a long suite returns 200 with no content block, which used
+    to skip the skill tests as if the guest were thin). Retry once on empty before
+    deciding; a genuine "no" is returned immediately, never retried.
+    """
+    probe = _bash_body("command -v python3 >/dev/null 2>&1 && echo yes || echo no")
+    for _ in range(2):
+        _, parsed = _call(chat_id, probe)
+        text, _err = _result(parsed)
+        if text and text.strip():
+            return "yes" in text
+        # empty reply -> transient exec miss; retry once with a fresh chat id so a
+        # per-session create race does not repeat.
+        chat_id = f"{chat_id}-r"
+    return False
 
 
 @pytest.fixture(autouse=True)
