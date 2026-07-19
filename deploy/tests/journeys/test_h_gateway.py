@@ -42,11 +42,12 @@ import pytest
 # The gateway's north listener, host-mapped in the fleet compose.
 GATEWAY_URL = "http://127.0.0.1:8080/"
 # The rendered boot-set + the bearer that hashes into it. mint_boot_set.py writes
-# boot-set.json here and prints the plaintext bearer; the suite reads the bearer
-# from a sibling file the harness writes, or skips loudly if absent.
-_SECRETS = Path(__file__).resolve().parents[2] / "fleet" / "secrets" / "gateway"
-_BOOT_SET = _SECRETS / "boot-set.json"
-_BEARER_FILE = _SECRETS / "bearer.txt"
+# boot-set.json and prints the plaintext bearer. _BOOT_SET / _BEARER_FILE come from
+# the i-suite, which resolves them from the RUNNING gateway container's mounted
+# secrets dir (falling back to this checkout's fleet/secrets/gateway). Reusing that
+# resolution means H4 reads the bearer the live stack accepts even when the suite is
+# run from a sibling checkout, instead of failing on a stale sibling bearer.
+from test_i_mcp_surface import _BOOT_SET, _BEARER_FILE  # noqa: E402  (shared secrets resolution)
 
 _PROTO = "2025-06-18"
 _BODY = json.dumps(
