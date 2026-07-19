@@ -145,6 +145,20 @@ def _require_gateway():
             f"MCP gateway not reachable at {GATEWAY_URL} "
             "(bring up the mcp-gateway service inside Lima) — SKIP, not a pass."
         )
+    # A REACHABLE gateway that rejects the bearer is a harness auth desync, never a
+    # skip: the bearer file and the running gateway's boot-set were minted in
+    # different runs / different stage trees, so the presented sk-ocu- token does not
+    # hash to the gateway's stored credential. Silently skipping here let a stale
+    # bearer masquerade as a clean capability skip (the guest probe returns empty on
+    # the 401, reading as "no python3"). FAIL loudly so a wrong-tree run is caught.
+    status, parsed = _call("i-auth-probe", _bash_body("true"), timeout=8)
+    if status == 401 or (isinstance(parsed, dict) and (parsed.get("error") or {}).get("message") == "unauthenticated"):
+        pytest.fail(
+            f"gateway at {GATEWAY_URL} returned 401 unauthenticated for the bearer at "
+            f"{_BEARER_FILE}: the bearer does not match the running gateway's boot-set "
+            "(run the suite from the stage tree whose secrets the live stack mounts, or "
+            "re-mint the boot-set). A reachable-but-401 gateway is a harness desync, not a skip."
+        )
 
 
 def _cid(tag):
