@@ -24,6 +24,7 @@ no gateway. The PoC-vs-fleet contrast for each lives in scenarios.yaml (I1..I6).
 """
 
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -34,7 +35,51 @@ import pytest
 # The gateway's north listener, host-mapped in the fleet compose (same as H).
 GATEWAY_URL = "http://127.0.0.1:8080/"
 _PROTO = "2025-06-18"
-_SECRETS = Path(__file__).resolve().parents[2] / "fleet" / "secrets" / "gateway"
+# The secrets dir has TWO sources, in priority order:
+#   1. the dir the RUNNING gateway container actually mounts its boot-set from
+#      (resolved live via docker inspect) -- the bearer there is the ONLY one that
+#      hashes to the gateway's loaded credential, so this is authoritative;
+#   2. the file-relative fallback (this checkout's own fleet/secrets/gateway).
+# Preferring the mounted dir removes the wrong-stage-tree trap: a suite run from a
+# sibling checkout still reads the bearer the live stack accepts, instead of a
+# stale sibling bearer that 401s (which used to read as a clean capability skip).
+_GATEWAY_CONTAINER = os.getenv("OCU_GATEWAY_CONTAINER", "ocu-donegate-mcp-gateway-1")
+_SECRETS_FALLBACK = Path(__file__).resolve().parents[2] / "fleet" / "secrets" / "gateway"
+
+
+def _running_gateway_secrets_dir():
+    """The dir the live gateway container mounts boot-set.json from, or None.
+
+    Reads the container's mounts via docker inspect; returns the parent dir of the
+    boot-set mount SOURCE so the matching plaintext bearer.txt (minted alongside it)
+    is read from the same place the gateway validates against. None if docker is
+    unavailable, the container is absent, or no boot-set mount is found.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .Mounts}}", _GATEWAY_CONTAINER],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0:
+            return None
+        for m in json.loads(out.stdout):
+            if m.get("Destination", "").endswith("/boot-set.json"):
+                src = m.get("Source")
+                if src:
+                    return Path(src).parent
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return None
+
+
+def _secrets_dir():
+    d = _running_gateway_secrets_dir()
+    if d is not None and (d / "bearer.txt").exists():
+        return d
+    return _SECRETS_FALLBACK
+
+
+_SECRETS = _secrets_dir()
 _BOOT_SET = _SECRETS / "boot-set.json"
 _BEARER_FILE = _SECRETS / "bearer.txt"
 
