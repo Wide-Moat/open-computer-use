@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-"""GROUP J — two-way user<->agent file flow across the storage spine, fleet-only.
+"""GROUP J -- two-way user<->agent file flow across the storage spine, fleet-only.
 
 The finale proved the chat tool cycle; this group pins the FILE cycle between
 the chat guest and the user's Files panel under the TWO-MOUNT guest layout
@@ -157,6 +157,40 @@ def _pane_list(jar):
     )
     assert status == 200, f"pane list status = {status}, want 200"
     return json.loads(body)["data"]
+
+
+# Shared xfail reason for the J-group pane-list-reader tests blocked by defect #182
+# (F9 list sorts ascending CreatedAt + the pane fetches page-1 only, so a
+# just-written file is off page-1 once the scope holds >=100 objects). Mirrors the
+# M-group's marker; j8 is the canonical J-group #182 keystone. When the order=desc
+# fix ships (ADR-0031 amends 0028), these XPASS and strict=True forces removal.
+_J182_XFAIL_REASON = (
+    "task #182: the F9 list sorts ASCENDING CreatedAt and the pane fetches only "
+    "page-1, so a just-written file (the newest) is off page-1 once the scope holds "
+    ">=100 objects -- a positive pane-find of a new file never resolves. Fix: "
+    "additive order=asc|desc param, pane sends desc (ADR-0031). XPASSes when that "
+    "ships; strict=True then forces this marker's removal."
+)
+
+
+def _ensure_scope_saturated_for_182(jar, csrf):
+    """Make the #182 condition DETERMINISTIC for the xfail-marked pane-list tests:
+    the scope must hold >= 100 objects so a just-written file sorts onto page-2+ and
+    the pane's page-1-only list never shows it. The shared fs-fleet scope usually
+    already carries >=100 from accumulated runs; this pads only if under-populated.
+    Without it the xfail could flake to XPASS on a rare under-100 scope and strict=
+    True would (correctly) fail -- the guard keeps the marker honest. Mirrors j8."""
+    PAGE = 100
+    current = len(_pane_list(jar))
+    need = max(0, (PAGE + 5) - current)
+    for i in range(need):
+        _pane_upload(jar, csrf, f"j182-pad-{i:03d}-{uuid.uuid4().hex[:8]}.txt", f"pad{i}")
+    saturated = len(_pane_list(jar))
+    assert saturated >= PAGE, (
+        f"could not saturate the scope past {PAGE} objects (have {saturated}) -- the "
+        "#182 blindness is only reachable at >=100; an under-populated scope would "
+        "make the xfail vacuously XPASS"
+    )
 
 
 def _pane_find(jar, filename, deadline_s=45):
@@ -347,13 +381,24 @@ def _derivation_expected_on():
 # --- J1: agent deliverable reaches the user ---------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=_J182_XFAIL_REASON,
+)
 def test_j1_agent_write_reaches_pane_download(tmp_path):
     """Agent writes /mnt/user-data/outputs/<unique> -> pane lists it ->
     download 200 serves the exact bytes. Keystone: a never-written sibling
     name stays absent from the same listing window, so the green cannot come
-    from a stale or over-matching list."""
+    from a stale or over-matching list.
+
+    xfail(strict) under #182: the entire flow is agent-write -> pane-find ->
+    download; at >=100 objects the just-written file sorts off page-1 (ascending)
+    and the positive pane-find never resolves, so the download leg is unreachable.
+    Clears (XPASS -> remove marker) when order=desc ships (ADR-0031). The guest-FUSE
+    read legs (j4) are #182-immune; only the pane-list positive-find is blocked."""
     _require_gateway()
-    jar, _csrf = _pane_session(tmp_path)
+    jar, csrf = _pane_session(tmp_path)
+    _ensure_scope_saturated_for_182(jar, csrf)
 
     name = f"j1-{uuid.uuid4().hex[:10]}.txt"
     ghost = f"j1-ghost-{uuid.uuid4().hex[:10]}.txt"
@@ -405,10 +450,12 @@ def test_j2_pane_upload_readable_by_guest(tmp_path):
 
 
 def test_j3_download_gate_asymmetry(tmp_path):
-    """The uploads-side object refuses download (not-downloadable) while the
-    agent's outputs-side deliverable serves 200. The asymmetry is the
-    keystone: if a fix for the south read path ever loosens the NORTH gate,
-    the 403 half reddens; if the outputs leg breaks, the 200 half reddens."""
+    """The uploads-side object refuses download (403 not-downloadable) -- the
+    security keystone: if a fix for the south read path ever loosens the NORTH
+    content-egress gate, this reddens. This assertion is #182-INDEPENDENT (the
+    object id comes from the upload RESPONSE, not a pane-list find), so it stays
+    live at any scope size. The outputs-side 200 half moved to j3b, which needs a
+    positive pane-find and is #182-blocked at >=100 objects."""
     _require_gateway()
     jar, csrf = _pane_session(tmp_path)
 
@@ -420,9 +467,26 @@ def test_j3_download_gate_asymmetry(tmp_path):
         "(NFR-SEC-73 stored-tag gate on the north content egress)"
     )
 
-    out_name = f"j3-out-{uuid.uuid4().hex[:10]}.txt"
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=_J182_XFAIL_REASON,
+)
+def test_j3b_outputs_side_deliverable_downloads(tmp_path):
+    """The #182-fragile half split out of j3 (per the M2 precedent): the agent's
+    outputs-side deliverable serves 200 byte-exact via the pane. This needs a
+    positive pane-find of the just-written file to get its id for the content
+    fetch; at >=100 objects the file is off page-1 (ascending) and the find never
+    resolves -- so this is xfail(strict) under #182. j3 keeps the #182-independent
+    403 security keystone live; only this 200 leg is blocked. Clears when order=
+    desc ships (ADR-0031)."""
+    _require_gateway()
+    jar, csrf = _pane_session(tmp_path)
+    _ensure_scope_saturated_for_182(jar, csrf)
+
+    out_name = f"j3b-out-{uuid.uuid4().hex[:10]}.txt"
     is_err, text = _guest_bash(
-        f"j3-{uuid.uuid4().hex[:8]}",
+        f"j3b-{uuid.uuid4().hex[:8]}",
         f"printf %s J3-OUTPUT-SIDE > /mnt/user-data/outputs/{out_name} && echo WROTE",
     )
     assert not is_err and "WROTE" in text
@@ -498,6 +562,88 @@ def test_j5_uploads_mount_refuses_guest_write(tmp_path):
             "refused uploads-write surfaced in the pane list - engine accepted it"
         )
         time.sleep(3)
+
+
+def test_j5b_guest_cannot_tamper_existing_upload(tmp_path):
+    """The tamper keystone: a guest CANNOT overwrite the bytes of a file the
+    user actually uploaded. J5 covers a guest CREATE into the RO uploads view;
+    this covers the more dangerous vector -- overwriting an EXISTING uploaded
+    object with attacker content. The user's original bytes must survive both
+    the guest re-read and the pane download.
+
+    The write may return exit 0 (the RO surface accepts the open then drops the
+    flush -- a known DX gap, see the O_TRUNC platform ticket), so this asserts
+    the SECURITY invariant (original bytes intact) rather than a non-zero exit.
+    """
+    _require_gateway()
+    jar, csrf = _pane_session(tmp_path)
+
+    name = f"j5b-{uuid.uuid4().hex[:10]}.txt"
+    original = b"ORIGINAL_USER_BYTES_" + uuid.uuid4().hex[:8].encode()
+    _pane_upload(jar, csrf, name, original, mime="text/plain")
+
+    gpath = f"/mnt/user-data/uploads/{name}"
+    chat = f"j5b-{uuid.uuid4().hex[:8]}"
+
+    # The guest must first SEE the user's real upload (bounded write-back).
+    end = time.monotonic() + 30
+    seen = False
+    while time.monotonic() < end:
+        is_err, text = _guest_bash(chat, f"cat {gpath} 2>&1")
+        if not is_err and original.decode() in text:
+            seen = True
+            break
+        time.sleep(2)
+    assert seen, (
+        f"the guest never read the user's upload at {gpath} -- cannot run the "
+        "tamper keystone if the input is not visible"
+    )
+
+    # TAMPER: the guest tries all three mutation verbs against the RO upload --
+    # overwrite (O_TRUNC), append (O_APPEND), and unlink. A read-only mount must
+    # refuse all three; each may still exit 0 because bash swallows the EROFS at
+    # close on a redirect (python/touch surface it loudly -- see the O_TRUNC
+    # platform ticket), so the assertion is on the surviving bytes, not the exit.
+    _guest_bash(chat, f"printf TAMPERED_BY_GUEST > {gpath} 2>&1; echo rc=$?")
+    _guest_bash(chat, f"printf APPENDED_BY_GUEST >> {gpath} 2>&1; echo rc=$?")
+    _guest_bash(chat, f"rm -f {gpath} 2>&1; echo rc=$?")
+
+    # KEYSTONE 1: a fresh guest read (a LATER exec, so it cannot be a same-exec
+    # write-back cache echo) still returns the ORIGINAL bytes, and none of the
+    # tamper markers, and the file still exists (the unlink was refused).
+    is_err, text = _guest_bash(chat, f"cat {gpath} 2>&1")
+    assert (
+        not is_err
+        and original.decode() in text
+        and "TAMPERED_BY_GUEST" not in text
+        and "APPENDED_BY_GUEST" not in text
+    ), (
+        f"a guest MUTATED the user's uploaded file -- RO tamper protection is "
+        f"broken (overwrite/append/unlink must all no-op): read-back {text[:200]!r}"
+    )
+
+    # KEYSTONE 2 (defense-in-depth, #182-aware): the pane content path never
+    # serves the guest's tampered bytes. Uploads are read-in-place, not pane-
+    # downloadable (NFR-SEC-73), so the content endpoint legitimately refuses with
+    # 403; if it DOES serve content it must be the original. This is the SAME
+    # security property KEYSTONE 1 already proved via the guest re-read; here it is
+    # checked through the pane. A positive pane-find is #182-fragile: at >=100
+    # objects the file sorts off page-1 and _pane_find returns None -- but a file
+    # the pane cannot even list also cannot serve tampered bytes through the pane,
+    # so #182-hidden is a SAFE outcome for this invariant, not a failure. Only run
+    # the content assertion when the file is findable; the security core is
+    # KEYSTONE 1 (always run). j8/j1/j3b carry the #182 ordering signal.
+    obj = _pane_find(jar, name, deadline_s=15)
+    if obj is not None:
+        status, body = _pane_content(jar, obj["id"])
+        assert "TAMPERED_BY_GUEST" not in (body or ""), (
+            f"the pane content path served the guest's tampered bytes: {body[:200]!r}"
+        )
+        assert status == 403 or (status == 200 and original.decode() in body), (
+            f"unexpected pane content for an uploaded file: status={status} "
+            f"body={body[:200]!r} (want 403 not-downloadable, or 200 with the "
+            "original bytes)"
+        )
 
 
 # --- J6: cross-chat file isolation (D5 acceptance keystone) -------------------
@@ -690,4 +836,78 @@ def test_j7_single_scope_degrades_to_two_way_flow():
     is_err, back = _guest_bash(chat, f"cat /mnt/user-data/outputs/{name}")
     assert not is_err and back.strip() == payload, (
         "own-scope deliverable does not cat back byte-exact"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="task #182: the F9 list sorts ASCENDING CreatedAt (oldest-first) and "
+    "the pane fetches only page-1 (no cursor-follow), so a just-created file is "
+    "the NEWEST -> sorts LAST -> is off page-1 once the scope holds >=100 objects. "
+    "The pane never shows it, breaking the owner's 'created file appears in the "
+    "preview' bar. Fable-ruled fix (owner-gated): additive order=asc|desc param, "
+    "default asc, the pane sends order=desc (ADR-0031 amends 0028). When that "
+    "lands this XPASSes and strict=True forces this marker's removal.",
+)
+def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
+    """K2 acceptance keystone for task #182: in a scope holding >=100 objects, a
+    file the guest writes LAST must appear in the pane's FIRST-page list (the exact
+    GET /v1/files the pane issues on mount: no ?after, no ?limit). The owner's bar
+    is that the just-created file is visible in the pane; a user does not page a
+    file panel.
+
+    Non-vacuous: this asserts the NEWEST file, and only after the scope is padded
+    past the 100-object page boundary -- the exact condition M1/M5/M6 miss by
+    under-population (their scopes stay small, so their new file is trivially on
+    page-1 and they are blind to the ordering defect). This test is xfail(strict)
+    today because the ordering defect is live; it XPASSes when the order=desc fix
+    ships, and strict=True then turns the XPASS into a failure that forces the
+    marker off (a self-clearing acceptance gate).
+    """
+    _require_gateway()
+    jar, csrf = _pane_session(tmp_path)
+
+    # 1. Ensure the scope is saturated past the 100-object first-page boundary, so
+    # a fresh file cannot trivially land on page-1. Pad only as many as needed
+    # (the shared fs-fleet scope usually already carries >=100 from prior runs).
+    PAGE = 100
+    current = len(_pane_list(jar))
+    need = max(0, (PAGE + 5) - current)
+    for i in range(need):
+        _pane_upload(jar, csrf, f"j8-pad-{i:03d}-{uuid.uuid4().hex[:8]}.txt", f"pad{i}")
+    saturated = len(_pane_list(jar))
+    assert saturated >= PAGE, (
+        f"could not saturate the scope past {PAGE} objects (have {saturated}); the "
+        "ordering defect is only reachable at >=100 -- an under-populated scope "
+        "would make this test vacuously pass"
+    )
+
+    # 2. The guest writes the NEWEST file (latest CreatedAt) via the real P-A path.
+    chat = f"j8-{uuid.uuid4().hex[:8]}"
+    newest = f"j8-newest-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J8-NEWEST-{uuid.uuid4().hex}"
+    is_err, text = _guest_bash(
+        chat, f"printf %s '{payload}' > /mnt/user-data/outputs/{newest} && echo WROTE"
+    )
+    assert not is_err and "WROTE" in text, f"guest write of the newest file failed: {text[:200]}"
+
+    # 3. The newest file must be on the pane's FIRST-page fetch. Poll for the
+    # write-back lag, but ONLY the first page (what the pane actually renders) --
+    # NOT a cursor-followed full walk, because the pane does not follow the cursor.
+    import time as _time
+
+    deadline = _time.monotonic() + 45
+    seen = False
+    while _time.monotonic() < deadline:
+        page1 = _pane_list(jar)  # GET /v1/files, no after/limit -- the pane's call
+        if any(f.get("filename") == newest for f in page1):
+            seen = True
+            break
+        _time.sleep(3)
+    assert seen, (
+        f"the just-written newest file {newest!r} is NOT on the pane's first-page "
+        f"list (scope has {saturated}+ objects). It exists (the guest wrote it) but "
+        "sorts LAST under ascending CreatedAt, so the page-1-only pane never shows "
+        "it -- the owner's 'created file appears in the preview' bar is broken. "
+        "This is task #182; it clears when order=desc ships."
     )

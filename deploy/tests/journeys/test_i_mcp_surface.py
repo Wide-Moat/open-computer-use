@@ -445,3 +445,338 @@ def test_i6_four_tools_compose_over_one_workspace():
     assert is_error is False and text and "ALPHA EDITED" in text, (
         f"bash cat must confirm the edit persisted across all four tools, got {text!r}"
     )
+
+
+def _image_url_block(parsed):
+    """The image content block (data-URI) from a view result, or None.
+
+    view on an IMAGE must return a real image the MODEL sees (D4, PARITY-LEDGER
+    -147): the gateway ViewScript emits a resized JPEG and projectCallToolResult
+    wraps it in an image_url content block. This reaches past _result (which only
+    reads the text block) into res.content for the image_url item.
+    """
+    if not isinstance(parsed, dict):
+        return None
+    for item in (parsed.get("result") or {}).get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "image_url":
+            url = item.get("image_url")
+            return url.get("url") if isinstance(url, dict) else url
+    return None
+
+
+def test_i7_view_on_image_returns_a_model_visible_image_block():
+    """D4 parity: view on an IMAGE gives the MODEL a rendered image block (a
+    data:image data-URI), not just the numbered-line text path. This is the
+    tool-side of image handling, distinct from the pane preview (M1): the model
+    itself sees the pixels via the view tool. Requires a PIL-bearing guest.
+
+    Non-vacuous: assert a genuine data:image data-URI content block, not that the
+    text merely mentions the filename. A guest with no image projection returns
+    only a text block -> the image_url is None -> RED.
+    """
+    probe_cid = _cid("i7-probe")
+    if not _guest_has_python3(probe_cid):
+        pytest.skip(
+            "view-image needs a PIL-bearing guest (#122); the default guest is "
+            "stripped -- SKIP, not a pass."
+        )
+    cid = _cid("i7")
+    path = "/tmp/i7_view.png"
+
+    # 1) the guest writes a small PNG of known dimensions (avoid nested quotes:
+    # a heredoc into the guest's python, chr() for the mode string).
+    make = (
+        "python3 - <<'PY'\n"
+        "from PIL import Image\n"
+        f"Image.new(chr(82)+chr(71)+chr(66), (64, 48), (7, 8, 9)).save({path!r})\n"
+        "print('WROTE')\n"
+        "PY"
+    )
+    _, parsed = _call(cid, _bash_body(make))
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "WROTE" in text, (
+        f"guest PNG write for the view leg failed: {text!r}"
+    )
+
+    # 2) view the image -> the result must carry a model-visible image block.
+    _, parsed = _call(cid, _file_tool_body("view", {"path": path}))
+    _, is_error = _result(parsed)
+    assert is_error is False, f"view on an image errored: {parsed!r}"
+    url = _image_url_block(parsed)
+    assert url and str(url).startswith("data:image"), (
+        "view on an image must return a data:image data-URI content block the "
+        f"model can see (D4 parity); got image_url={url!r}. A text-only result "
+        "means the guest did not project the image."
+    )
+
+
+def test_i8_document_skill_produces_a_valid_ooxml_artifact_in_guest():
+    """Parity: the guest's document-skill toolchain (pandoc markdown -> docx)
+    PRODUCES a real, content-bearing OOXML artifact -- the non-image, non-inline
+    "skills produce their artifact" leg. Distinct from M3 (matplotlib PNG,
+    image-previewable)
+    and the B-group (which validates the download path with a TEST-BUILT docx).
+    Here the ARTIFACT ITSELF is produced by the skill inside the guest.
+
+    Non-vacuous: the guest base64s the produced docx out, the test unzips it and
+    asserts BOTH word/document.xml is present (valid OOXML) AND the unique body
+    marker is in it (real content, not an empty/garbage zip). A guest with no
+    pandoc, or a corrupt artifact, reds. Needs a pandoc-bearing guest.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i8")
+    if not _guest_has_python3(cid):
+        pytest.skip("document skill needs a full guest (#122) -- SKIP, not a pass.")
+
+    marker = "DOCXMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i8_report.docx"
+    src = f"# Report\nThe unique body text is {marker} here.\n"
+    # Build the source, run the skill (pandoc), stream the artifact out as base64.
+    gcmd = (
+        "printf %s " + repr(src) + " > /tmp/i8_src.md && "
+        "pandoc /tmp/i8_src.md -o " + out + " && "
+        "base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "pandoc" in text and "not found" in text:
+        pytest.skip("guest has no pandoc (document skill absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"document skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    assert "word/document.xml" in z.namelist(), (
+        "the skill artifact is not a valid OOXML docx (no word/document.xml)"
+    )
+    doc_xml = z.read("word/document.xml").decode()
+    assert marker in doc_xml, (
+        f"the produced docx does not carry the source content ({marker!r} absent "
+        "from word/document.xml) -- the skill did not render the real document"
+    )
+
+
+def test_i9_spreadsheet_skill_produces_a_valid_xlsx_with_data_in_guest():
+    """Parity: the guest's spreadsheet-skill toolchain (openpyxl) PRODUCES a
+    real, data-bearing .xlsx -- a DIFFERENT OOXML type (xl/worksheets/sheet1.xml)
+    and a DIFFERENT skill runtime than i8's pandoc docx, exercising the data/
+    spreadsheet artifact the model builds. The test reads the artifact back with
+    zipfile + raw XML only (no openpyxl needed on the test side).
+
+    Non-vacuous: assert the produced workbook has a real worksheet part AND the
+    unique cell value is in it (not an empty/garbage zip). A guest with no
+    openpyxl, or a workbook missing the value, reds. Needs a full guest.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i9")
+    if not _guest_has_python3(cid):
+        pytest.skip("spreadsheet skill needs a full guest (#122) -- SKIP, not a pass.")
+
+    cell = "XLCELL" + uuid.uuid4().hex[:8]
+    out = "/tmp/i9_book.xlsx"
+    # The skill: openpyxl writes a workbook with a known cell value, streamed out.
+    # chr() avoids nested quoting for the A1 cell reference inside the heredoc.
+    gcmd = (
+        "python3 - <<PY\n"
+        "import openpyxl\n"
+        "wb = openpyxl.Workbook(); ws = wb.active\n"
+        f"ws[chr(65) + chr(49)] = {cell!r}\n"
+        f"wb.save({out!r})\n"
+        "PY\n"
+        "base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "openpyxl" in text and "No module" in text:
+        pytest.skip("guest has no openpyxl (spreadsheet skill absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"spreadsheet skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    assert any("xl/worksheets/sheet1.xml" in n for n in names), (
+        f"the skill artifact is not a valid xlsx (no worksheet part); parts={names}"
+    )
+    sheet_xml = z.read("xl/worksheets/sheet1.xml").decode(errors="ignore")
+    assert cell in sheet_xml, (
+        f"the produced xlsx does not carry the cell value ({cell!r} absent from "
+        "the worksheet) -- the skill did not write the real data"
+    )
+
+
+def test_i10_str_replace_edits_a_file_on_the_outputs_surface():
+    """Parity + regression: str_replace edits an EXISTING file on the object-
+    backed /mnt/user-data/outputs surface, and the edit PERSISTS (visible to a
+    FRESH guest session, so it is not merely a write-back cache artifact of the
+    editing session).
+
+    This guards a real defect: the projection scripts used open(path,'w')
+    (O_TRUNC-on-open), which the object-backed FUSE outputs surface rejects with
+    EIO for an EXISTING file (create_file only wrote NEW files so it never
+    tripped it; str_replace edits existing so it always did). The fix is a single
+    r+ seek/write/truncate. Non-vacuous by two independent asserts:
+      1. the tool result is "Successfully replaced" and NOT an "Error:" line
+         (the broken pattern returns "Error: [Errno 5] Input/output error");
+      2. a FRESH session reads the edited content back through the surface
+         (proves persistence, not a same-session cache echo).
+    Needs a python3-bearing guest.
+    """
+    # ONE chat_id (== one derived per-chat storage scope, D5). The outputs surface
+    # is scoped per-chat, so persistence is verified WITHIN the same scope by a
+    # later exec -- a different chat_id would be a different scope and correctly
+    # would NOT see the file (that is the D5 isolation contract, not persistence).
+    editor = _cid("i10")
+    if not _guest_has_python3(editor):
+        pytest.skip("str_replace-on-outputs needs a full guest (#122) -- SKIP, not a pass.")
+
+    marker_before = "I10_BEFORE_" + uuid.uuid4().hex[:8]
+    marker_after = "I10_AFTER_" + uuid.uuid4().hex[:8]
+    name = "i10_" + uuid.uuid4().hex[:8] + ".txt"
+    path = "/mnt/user-data/outputs/" + name
+
+    # 1) create the file on the outputs surface (exists as an object).
+    _, parsed = _call(
+        editor, _file_tool_body("create_file", {"path": path, "file_text": marker_before + " original\n"})
+    )
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "Successfully created" in text, (
+        f"create_file onto outputs failed: {text!r}"
+    )
+
+    # 2) str_replace the EXISTING outputs file -- this is the O_TRUNC-on-existing
+    # path that EIO'd before the r+ fix.
+    _, parsed = _call(
+        editor,
+        _file_tool_body("str_replace", {"path": path, "old_str": marker_before, "new_str": marker_after}),
+    )
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "Successfully replaced" in text and "Error" not in text, (
+        f"str_replace on the outputs surface failed: {text!r}. The broken "
+        "open(path,'w') pattern returns '[Errno 5] Input/output error' here; the "
+        "r+ seek/write/truncate fix restores it."
+    )
+
+    # 3) a LATER exec in the SAME scope reads the edited content back through the
+    # surface -- proves the edit PERSISTED to the object, not a lost/torn write.
+    # A separate guest exec (cat) forces a fresh open of the object, so a torn or
+    # zero-length write would surface here as a wrong/empty read.
+    _, parsed = _call(editor, _bash_body("cat " + path))
+    text, is_error = _result(parsed)
+    assert is_error is False and text and marker_after in text and marker_before not in text, (
+        f"the persisted edit was not readable at {path}: {text!r} "
+        f"(want {marker_after!r}, and {marker_before!r} gone)"
+    )
+
+
+def test_i11_presentation_skill_produces_a_valid_pptx_with_text_in_guest():
+    """Parity: the guest's presentation-skill toolchain (python-pptx) PRODUCES a
+    real, text-bearing .pptx -- a DIFFERENT OOXML type (ppt/slides/slide1.xml)
+    and a DIFFERENT skill runtime than the docx (i8) and xlsx (i9) skills. Reads
+    the artifact back with zipfile + raw XML only (no python-pptx on the test
+    side). This closes the pptx leg of "skills produce their artifact".
+
+    Non-vacuous: assert the deck has a real slide part AND the unique marker text
+    is in that slide's XML (not an empty deck or a garbage zip). A guest without
+    python-pptx, or a deck missing the marker, reds. Needs a full guest.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i11")
+    if not _guest_has_python3(cid):
+        pytest.skip("presentation skill needs a full guest (#122) -- SKIP, not a pass.")
+
+    marker = "PPTXMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i11_deck.pptx"
+    gcmd = (
+        "python3 - <<PY\n"
+        "from pptx import Presentation\n"
+        "prs = Presentation()\n"
+        "slide = prs.slides.add_slide(prs.slide_layouts[5])\n"
+        f"slide.shapes.title.text = {marker!r}\n"
+        f"prs.save({out!r})\n"
+        "PY\n"
+        "base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "pptx" in text and "No module" in text:
+        pytest.skip("guest has no python-pptx (presentation skill absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"presentation skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    assert any("ppt/slides/slide1.xml" in n for n in names), (
+        f"the skill artifact is not a valid pptx (no slide part); parts={names}"
+    )
+    slide_xml = z.read("ppt/slides/slide1.xml").decode(errors="ignore")
+    assert marker in slide_xml, (
+        f"the produced pptx does not carry the slide text ({marker!r} absent from "
+        "the slide) -- the skill did not write the real content"
+    )
+
+
+def test_i12_pdf_skill_produces_a_valid_pdf_with_text_in_guest():
+    """Parity: the guest's PDF-skill toolchain (reportlab) PRODUCES a real,
+    text-bearing .pdf -- a DIFFERENT artifact format (not OOXML) and a DIFFERENT
+    skill runtime than the docx/xlsx/pptx skills. Reads the artifact back as raw
+    bytes only (no reportlab on the test side). This closes the pdf leg of
+    "skills produce their artifact".
+
+    Non-vacuous: assert the artifact begins with the %PDF header AND the unique
+    marker text is present in the PDF bytes. reportlab FlateDecode-compresses the
+    content stream by default, which would hide the marker in the raw bytes, so
+    the skill run sets pageCompression=0 -- the drawn text then appears verbatim
+    in an uncompressed content stream. A guest without reportlab, or a PDF missing
+    the marker, reds. Needs a full guest.
+    """
+    import base64
+
+    cid = _cid("i12")
+    if not _guest_has_python3(cid):
+        pytest.skip("pdf skill needs a full guest (#122) -- SKIP, not a pass.")
+
+    marker = "PDFMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i12_doc.pdf"
+    gcmd = (
+        "python3 - <<PY\n"
+        "from reportlab.pdfgen import canvas\n"
+        f"c = canvas.Canvas({out!r}, pageCompression=0)\n"
+        f"c.drawString(72, 720, {marker!r})\n"
+        "c.showPage(); c.save()\n"
+        "PY\n"
+        "base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "reportlab" in text and "No module" in text:
+        pytest.skip("guest has no reportlab (pdf skill absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"pdf skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    assert data[:5] == b"%PDF-", (
+        f"the skill artifact is not a valid PDF (no %PDF header); head={data[:16]!r}"
+    )
+    assert marker.encode() in data, (
+        f"the produced pdf does not carry the drawn text ({marker!r} absent from "
+        "the PDF bytes) -- the skill did not write the real content"
+    )

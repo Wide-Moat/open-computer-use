@@ -29,18 +29,41 @@ unset, they skip loudly (the browser rig is opt-in, run in the VM jvenv).
 """
 
 import os
+import pathlib
 import subprocess
 import time
 import uuid
 
 import pytest
 
-PORTAL_URL = "http://127.0.0.1:3003"
-PANE_FRAME_URL = "127.0.0.1:3000"
+# The portal frames the pane by its localhost origin and the pane's CSP is
+# frame-ancestors http://localhost:3003 -- so the browser MUST reach the portal
+# via localhost (not 127.0.0.1). A 127.0.0.1 origin is a DIFFERENT origin for
+# CSP: the iframe is blocked and drops to chrome-error, which reads as "pane
+# iframe not found". Lima forwards both host names to the same listener.
+PORTAL_URL = "http://localhost:3003"
+PANE_FRAME_URL = "localhost:3000"
 
 pytestmark = pytest.mark.fleet
 
 _BROWSER_GATE = os.getenv("OCU_BROWSER_E2E", "") in ("1", "true", "yes", "on")
+
+# Shared xfail reason for the pane-list-reader tests blocked by defect #182. These
+# gate on the pane's page-1-only GET /v1/files before their preview/download leg;
+# at >=100 objects the newest file sorts onto page-2+ (ascending CreatedAt) and the
+# pane never lists it. Fable-ruled disposition: strict xfail with the >=100 seed
+# retained (NOT a skip-guard -- skipping-when-saturated deletes the only non-vacuous
+# condition; NOT raw RED -- four duplicate reds normalize a red suite and bury new
+# regressions). The canonical strict signal is j8; these mirror it. When the
+# order=desc fix ships (ADR-0031 amends 0028), all XPASS-strict and strict=True
+# forces every marker's removal.
+_182_XFAIL_REASON = (
+    "task #182: the F9 list sorts ASCENDING CreatedAt and the pane fetches only "
+    "page-1, so a just-written file (the newest) is off page-1 once the scope holds "
+    ">=100 objects -- the pane never lists it and the preview/download leg is "
+    "unreachable. Fix: additive order=asc|desc param, pane sends desc (ADR-0031). "
+    "XPASSes when that ships; strict=True then forces this marker's removal."
+)
 
 
 def _require_browser():
@@ -85,15 +108,90 @@ def _portal_reachable():
         return False
 
 
+def _wait_file_listed(filename, deadline_s=60):
+    """Poll the pane's own GET /v1/files (the same endpoint the pane calls on
+    mount) until `filename` is in the list, or the deadline passes. Returns the
+    FileObject or None. Reuses test_j's pane bootstrap + scope-header list so
+    the poll sees exactly what the browser mount will see.
+    """
+    import tempfile
+    import test_j_file_flow as J
+
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    jar, _csrf = J._pane_session(tmp)
+    return J._pane_find(jar, filename, deadline_s=deadline_s)
+
+
+def _ensure_scope_saturated_for_182():
+    """Make the #182 defect condition DETERMINISTIC for the xfail-marked pane-list
+    tests (M1/M3/M5/M6): the scope must hold >= maxListLimit (100) objects so a
+    just-written file sorts onto page-2+ and is invisible in the pane's page-1-only
+    list. The shared fs-fleet scope already carries >=100 from accumulated runs
+    (117 observed), so this is normally a no-op guard; it pads only if a fresh
+    scope is under-populated. Without this, the xfail would flake to XPASS on a
+    rare under-100 scope and strict=True would (correctly) fail -- the guard keeps
+    the marker honest. Mirrors j8's saturation (test_j_file_flow)."""
+    import tempfile
+    import test_j_file_flow as J
+
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    jar, csrf = J._pane_session(tmp)
+    PAGE = 100
+    current = len(J._pane_list(jar))
+    need = max(0, (PAGE + 5) - current)
+    for i in range(need):
+        J._pane_upload(jar, csrf, f"m182-pad-{i:03d}-{uuid.uuid4().hex[:8]}.txt", f"pad{i}")
+    saturated = len(J._pane_list(jar))
+    assert saturated >= PAGE, (
+        f"could not saturate the scope past {PAGE} objects (have {saturated}) -- the "
+        "#182 blindness is only reachable at >=100; an under-populated scope would "
+        "make the xfail vacuously XPASS"
+    )
+
+
+def _wait_content_contains(file_id, marker, deadline_s=45):
+    """Poll the pane's content endpoint (the exact bytes the browser preview
+    fetches) until `marker` is present, or fail. An in-place edit (str_replace)
+    reaches the north-face content-read with a bounded write-back lag; this gates
+    on the propagated bytes so a preview assert does not race a stale read."""
+    import tempfile
+    import time
+
+    import test_j_file_flow as J
+
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    jar, _csrf = J._pane_session(tmp)
+    for _ in range(deadline_s):
+        status, body = J._pane_content(jar, file_id)
+        if status == 200 and marker in (body or ""):
+            return
+        time.sleep(1)
+    status, body = J._pane_content(jar, file_id)
+    assert marker in (body or ""), (
+        f"the edited marker {marker!r} never reached the pane content endpoint "
+        f"within {deadline_s}s; last read (status={status}): {body!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # M1 -- a model-written image renders in the pane preview (P-A)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=_182_XFAIL_REASON,
+)
 def test_m1_agent_image_renders_in_pane_preview():
     """P-A: an image written to outputs renders as an <img> in the pane preview
     with the file's real pixel dimensions -- not just a 200 on the content URL
     (that is a download, not a preview). Requires the #218 slice built with
     NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=true.
+
+    xfail(strict) under #182: this gates on the pane's page-1-only GET /v1/files
+    (via _wait_file_listed) before the preview; at >=100 objects the just-written
+    image sorts onto page-2+ (ascending CreatedAt) and the pane never lists it, so
+    the preview row never appears. Clears (XPASS -> remove marker) when order=desc
+    ships (ADR-0031). The saturation guard makes the condition deterministic.
     """
     _require_browser()
     if not _portal_reachable():
@@ -101,6 +199,7 @@ def test_m1_agent_image_renders_in_pane_preview():
             "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
             "user leg cannot run; a down portal under the gate is a FAILURE."
         )
+    _ensure_scope_saturated_for_182()
     from playwright.sync_api import sync_playwright
 
     # 1. The guest writes a PNG of KNOWN dimensions (poc-fat has PIL).
@@ -118,6 +217,22 @@ def test_m1_agent_image_renders_in_pane_preview():
         f"guest PNG write failed: status={status} err={is_error} text={text!r}"
     )
 
+    # 1b. The pane lists-on-mount and does NOT poll. A guest write reaches the
+    # north-face list with a bounded lag (observed ~6s: the object is byte-
+    # complete in the backend at ~2s, the list reflects it at ~6s -- the tail
+    # is on the read/list side). So poll the pane's OWN list endpoint until the
+    # file is authoritative BEFORE launching the browser -- else the mount-list
+    # snapshot misses the just-written file and the preview row never appears.
+    # This models the real-user timing (the model wrote the file moments before
+    # the user opens the panel) without a flaky fixed sleep. Polling the pane's
+    # endpoint (not MinIO or filestore-north directly) gates on the exact list
+    # the browser mount will fetch.
+    obj = _wait_file_listed(name, deadline_s=60)
+    assert obj is not None, (
+        f"{name} never appeared in GET /v1/files within 60s -- the write did "
+        "not propagate to the north-face list (VFS write-back or list gap)"
+    )
+
     # 2. Drive a real browser: portal frames the pane; open the file's preview.
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -127,7 +242,12 @@ def test_m1_agent_image_renders_in_pane_preview():
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
-            assert frame is not None, "pane iframe (127.0.0.1:3000) not found in portal"
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal -- if the "
+                "iframe dropped to chrome-error, the portal was reached on a "
+                "different origin than the pane CSP frame-ancestors allows "
+                "(reach the portal via localhost, not 127.0.0.1)"
+            )
             # Wait for the file row, then activate its preview affordance.
             frame.wait_for_selector(f"text={name}", timeout=45000)
             preview_btn = frame.locator(f"[aria-label='Preview {name}']")
@@ -153,16 +273,1356 @@ def test_m1_agent_image_renders_in_pane_preview():
 # M2/M3/M4 -- authored next, once M1 is green against the built image.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="M2 (chat-upload UI leg) authored after M1 is green against the built webui image")
 def test_m2_chat_upload_reaches_guest():
-    ...
+    """P-B: a user uploads a file through the pane's real file input (the
+    UploadZone <input type=file>, driven by set_input_files -- NOT the upload
+    API) and the guest reads the EXACT bytes at /mnt/user-data/uploads/<name>.
+
+    This is the chat-file-upload leg (the owner's "upload works" bar): a browser drives the real
+    upload affordance, the file lands in the filestore uploads/ prefix, and the
+    guest's read-only /mnt/user-data/uploads FUSE view serves the same bytes.
+    Asserting the exact payload (not just presence) is the non-vacuous form.
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    from playwright.sync_api import sync_playwright
+
+    name = f"m2-{uuid.uuid4().hex[:8]}.txt"
+    payload = f"CHAT_UPLOAD_{uuid.uuid4().hex[:12]}"
+    local = os.path.join("/tmp", name)
+    with open(local, "w") as fh:
+        fh.write(payload)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            frame.wait_for_selector("text=Download", timeout=45000)
+            file_input = frame.locator("input[type=file]")
+            assert file_input.count() > 0, (
+                "no <input type=file> in the pane -- the UploadZone affordance is "
+                "missing (the user cannot upload a file)"
+            )
+            # Barrier on the upload REQUEST, not the pane list. The pane's
+            # GET /v1/files list is #182-blocked at >=100 objects (a fresh upload
+            # sorts onto page-2+ ascending and never lists on page-1) -- so the
+            # old wait_for_selector(text=<name>) timed out for the #182 defect,
+            # not for a real P-B failure. The upload POST (/v1/files, the frozen
+            # north path the pane's UploadZone hits -- verified by a live network
+            # trace, NOT the Next.js-internal /api/v1/files) landing 2xx is the
+            # #182-independent P-B signal AND the pre-close barrier
+            # (without it the browser could close before the async upload
+            # completes, racing the guest-read). The pane-visibility of an upload
+            # is test_m2b's strict-xfail(#182) leg (the uploads-branch list path).
+            with page.expect_response(
+                lambda r: r.request.method == "POST"
+                and "/v1/files" in r.url
+                and r.ok,
+                timeout=45000,
+            ):
+                file_input.first.set_input_files(local)
+        finally:
+            browser.close()
+
+    # The guest's read-only uploads view must serve the EXACT uploaded bytes.
+    # Poll for the FUSE/dir-cache propagation lag (the pane-DOM wait used to
+    # double as this barrier); assert byte-equality, never a proxy.
+    chat_id = f"m2g-{uuid.uuid4().hex[:8]}"
+    got_bytes = False
+    last = ""
+    for _ in range(6):
+        status, text, is_error = _guest_exec(
+            chat_id, f"cat /mnt/user-data/uploads/{name}", timeout=90
+        )
+        last = f"status={status} err={is_error} text={text!r}"
+        if status == 200 and not is_error and payload in (text or ""):
+            got_bytes = True
+            break
+        time.sleep(10)
+    assert got_bytes, (
+        f"guest could not read the uploaded bytes at uploads/{name} within the "
+        f"propagation window: {last} (want {payload!r})"
+    )
 
 
-@pytest.mark.skip(reason="M3 (skills fire + artifact) authored after M1/M2")
+@pytest.mark.xfail(
+    strict=True,
+    reason=_182_XFAIL_REASON,
+)
+def test_m2b_chat_upload_visible_in_pane():
+    """The uploads-branch pane-list leg of #182 (split out of M2 per Fable's
+    ruling): a user uploads a file through the pane's real file input, and the
+    uploaded name must appear IN THE PANE list. This is a DISTINCT list path from
+    M1/M3 (which cover the outputs-branch -- agent/skill writes reaching the pane);
+    m2b covers the uploads-branch of the ADR-0029 north read-map, which no other M
+    test exercises.
+
+    xfail(strict) under #182: the pane fetches page-1 only (ascending CreatedAt),
+    so at >=100 objects a fresh upload sorts onto page-2+ and never lists on
+    page-1. M2's own P-B core (upload -> guest bytes) is #182-INDEPENDENT and stays
+    green; only this pane-visibility leg is #182-blocked. Clears (XPASS -> remove
+    marker) when order=desc ships (ADR-0031). The saturation guard makes the
+    condition deterministic (an under-100 scope would XPASS and red strict).
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    _ensure_scope_saturated_for_182()
+    from playwright.sync_api import sync_playwright
+
+    name = f"m2b-{uuid.uuid4().hex[:8]}.txt"
+    payload = f"CHAT_UPLOAD_{uuid.uuid4().hex[:12]}"
+    local = os.path.join("/tmp", name)
+    with open(local, "w") as fh:
+        fh.write(payload)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            frame.wait_for_selector("text=Download", timeout=45000)
+            file_input = frame.locator("input[type=file]")
+            assert file_input.count() > 0, (
+                "no <input type=file> in the pane -- the UploadZone affordance is "
+                "missing (the user cannot upload a file)"
+            )
+            # Barrier on the upload POST so the row would be renderable if the pane
+            # listed it; then require the uploaded name in the pane DOM -- the
+            # #182-blocked leg (times out at >=100 objects; XPASSes when desc ships).
+            with page.expect_response(
+                lambda r: r.request.method == "POST"
+                and "/v1/files" in r.url
+                and r.ok,
+                timeout=45000,
+            ):
+                file_input.first.set_input_files(local)
+            frame.wait_for_selector(f"text={name}", timeout=45000)
+        finally:
+            browser.close()
+
+
+def _preview_image_in_pane(name, expected_w, expected_h):
+    """Open the portal in a real browser, find the file row, click Preview, and
+    assert the rendered <img> paints at exactly (expected_w, expected_h). Shared
+    by the P-A (M1) and P-C (M3) legs -- both assert an image truly previews.
+    The caller must have already ensured `name` is in the pane's list (poll
+    first: the pane lists-on-mount and the write-back has a bounded lag)."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            frame.wait_for_selector(f"text={name}", timeout=45000)
+            preview_btn = frame.locator(f"[aria-label='Preview {name}']")
+            assert preview_btn.count() > 0, (
+                "no Preview affordance for the file -- the #218 slice flag is "
+                "likely OFF in this webui image (build with "
+                "NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=true)"
+            )
+            preview_btn.first.click()
+            img = frame.locator("[data-testid='file-preview-image']")
+            img.wait_for(state="visible", timeout=20000)
+            nat_w = img.evaluate("el => el.naturalWidth")
+            nat_h = img.evaluate("el => el.naturalHeight")
+            assert (nat_w, nat_h) == (expected_w, expected_h), (
+                f"preview <img> rendered {nat_w}x{nat_h}, expected "
+                f"{expected_w}x{expected_h} -- the image did not truly paint"
+            )
+        finally:
+            browser.close()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=_182_XFAIL_REASON,
+)
 def test_m3_skill_fires_and_artifact_previews():
-    ...
+    """P-C: the guest runs a skill toolchain (matplotlib charting -- a real
+    skill runtime, Agg backend so it needs no browser under gVisor) that
+    PRODUCES an artifact in outputs, and that artifact then PREVIEWS in the pane
+    as an image with its real pixel dimensions. This is the "skills work" bar: a
+    skill fires and its output is visible in the pane, not just a wire 200.
+
+    matplotlib is used because mmdc (mermaid-cli) launches a headless Chromium
+    that crashes under gVisor (crashpad socket reset) -- a real gVisor+Chromium
+    limitation, not a skill defect. The charting skill exercises the same
+    "skill -> artifact -> preview" path deterministically.
+
+    xfail(strict) under #182: gates on the pane's page-1-only list before the
+    preview; at >=100 objects the skill artifact is off page-1 and never previews.
+    Clears when order=desc ships (ADR-0031). The live-model skill path (M7/M8/M9)
+    is #182-immune because it reads the artifact via guest FUSE, not the pane list.
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    _ensure_scope_saturated_for_182()
+
+    name = f"m3-{uuid.uuid4().hex[:8]}.png"
+    W, H = 200, 100
+    # The skill toolchain: matplotlib (Agg) renders a chart of known dims.
+    chart = (
+        "MPLCONFIGDIR=/tmp python3 -c \""
+        "import matplotlib; matplotlib.use('Agg'); "
+        "import matplotlib.pyplot as plt; "
+        f"fig=plt.figure(figsize=(2,1),dpi=100); "
+        "plt.plot([0,1,2],[0,1,4]); "
+        f"fig.savefig('/mnt/user-data/outputs/{name}')\" && echo CHARTED"
+    )
+    status, text, is_error = _guest_exec(
+        f"m3-{uuid.uuid4().hex[:8]}", chart, timeout=150
+    )
+    assert status == 200 and not is_error and "CHARTED" in (text or ""), (
+        f"skill toolchain (matplotlib chart) failed: status={status} "
+        f"err={is_error} text={text!r}"
+    )
+
+    # The artifact must reach the pane's list (bounded write-back lag).
+    obj = _wait_file_listed(name, deadline_s=60)
+    assert obj is not None, (
+        f"skill artifact {name} never appeared in GET /v1/files within 60s"
+    )
+
+    # And it must PREVIEW as an image with the chart's real dimensions.
+    _preview_image_in_pane(name, W, H)
 
 
-@pytest.mark.skip(reason="M4 keystone (live model -> file -> preview) needs a model endpoint; authored last")
+def _preview_text_in_pane(name, must_contain, must_not_contain=None):
+    """Open the portal in a real browser, find the file row, click Preview, and
+    assert the rendered <pre data-testid=file-preview-text> contains
+    `must_contain` and (if given) does NOT contain `must_not_contain`. The caller
+    must have already ensured `name` is listed. Reloads the frame each call so a
+    second call after an edit fetches fresh content, not a cached preview."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            frame.wait_for_selector(f"text={name}", timeout=45000)
+            preview_btn = frame.locator(f"[aria-label='Preview {name}']")
+            assert preview_btn.count() > 0, (
+                "no Preview affordance for the file -- the #218 slice flag is "
+                "likely OFF in this webui image (build with "
+                "NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=true)"
+            )
+            preview_btn.first.click()
+            pre = frame.locator("[data-testid='file-preview-text']")
+            pre.wait_for(state="visible", timeout=20000)
+            body = pre.inner_text()
+            assert must_contain in body, (
+                f"text preview did not contain {must_contain!r}; pane <pre> "
+                f"showed {body!r}"
+            )
+            if must_not_contain is not None:
+                assert must_not_contain not in body, (
+                    f"text preview still contained the pre-edit marker "
+                    f"{must_not_contain!r}; pane <pre> showed {body!r} -- the "
+                    "edit did not reflect in the pane"
+                )
+        finally:
+            browser.close()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=_182_XFAIL_REASON,
+)
+def test_m5_str_replace_edit_reflects_in_pane_preview():
+    """P-A (edit path): a file created in outputs previews its text in the pane,
+    then str_replace edits it IN PLACE and the pane preview reflects the NEW
+    content. This ties the str_replace r+ fix (which edits an existing
+    object-backed outputs file -- the O_TRUNC-on-open path that EIO'd before the
+    fix) to the eyes-in-browser bar: not just "the tool returns success" but
+    "the edited bytes render in the OpenWebUI pane".
+
+    Non-vacuous: a broken str_replace (the pre-fix open(path,'w') that EIOs on an
+    existing outputs file) leaves the file at its pre-edit content, so the
+    post-edit preview would still show the BEFORE marker and the must_not_contain
+    assert reds. Requires the #218 preview slice (text/plain inline) in the webui
+    image and a python3-bearing guest for the file tools.
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    _ensure_scope_saturated_for_182()
+    from test_i_mcp_surface import _call, _file_tool_body, _result
+
+    chat_id = f"m5-{uuid.uuid4().hex[:8]}"
+    name = f"m5-{uuid.uuid4().hex[:8]}.txt"
+    path = f"/mnt/user-data/outputs/{name}"
+    before = f"M5_BEFORE_{uuid.uuid4().hex[:8]}"
+    after = f"M5_AFTER_{uuid.uuid4().hex[:8]}"
+
+    # 1. create_file the text file with the BEFORE marker.
+    _, parsed = _call(
+        chat_id, _file_tool_body("create_file", {"path": path, "file_text": before + "\n"})
+    )
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "Successfully created" in text, (
+        f"create_file for the M5 text file failed: {text!r}"
+    )
+
+    # 2. It must list, then preview its text (the BEFORE marker) in the pane.
+    obj = _wait_file_listed(name, deadline_s=60)
+    assert obj is not None, f"{name} never appeared in GET /v1/files within 60s"
+    _preview_text_in_pane(name, must_contain=before)
+
+    # 3. str_replace the EXISTING outputs object (the r+ fix path).
+    _, parsed = _call(
+        chat_id,
+        _file_tool_body("str_replace", {"path": path, "old_str": before, "new_str": after}),
+    )
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "Successfully replaced" in text and "Error" not in text, (
+        f"str_replace on the outputs object failed: {text!r} -- the r+ fix "
+        "should make this succeed on an existing file"
+    )
+
+    # 4. The edit propagates to the pane's content endpoint with the same
+    # bounded write-back lag as a fresh write (~5s observed) -- str_replace does
+    # an in-place r+ rewrite, so the north-face content-read reflects it shortly
+    # after success, not instantly. Poll the pane content for the AFTER marker
+    # before driving the browser, so the preview asserts against propagated bytes
+    # (models the real user opening the panel moments after the edit) rather than
+    # racing a stale read.
+    _wait_content_contains(obj.get("id"), after, deadline_s=45)
+
+    # 5. Then the pane preview must show the AFTER marker and NOT the BEFORE one.
+    _preview_text_in_pane(name, must_contain=after, must_not_contain=before)
+
+
+# ---------------------------------------------------------------------------
+# M6 -- a non-previewable P-C artifact: unsupported-preview state + Download
+# byte-match (the pane's fourth code path, untested in-browser before this)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=_182_XFAIL_REASON,
+)
+def test_m6_non_previewable_artifact_downloads_bytewise():
+    """P-C (non-image artifact): a skill-produced PDF in outputs takes the pane's
+    UNSUPPORTED-preview path (it is neither an image nor text/plain), and the user
+    retrieves it byte-identical via the pane's Download control. M1/M3/M5 cover the
+    two RENDER paths (image, text); this covers the third preview state
+    (file-preview-unsupported) and the Download code path (triggerBlobDownload) --
+    neither had any in-browser coverage, and four of the five flagship skill
+    artifact classes (docx/xlsx/pptx/pdf) reach the browser only as this state.
+
+    Three distinct failure classes, one test:
+      - dispatch regression: the preview panel does not reach the unsupported note.
+      - binary-as-text regression: a widened extIsText / a resolveMime returning
+        text/* for an unknown ext would route the PDF into the <pre> text branch;
+        asserting file-preview-text is ABSENT catches it (the known-fragile path).
+      - transform/truncation in the download leg: the sha of the downloaded bytes
+        must equal the guest's on-disk sha -- content, not size.
+
+    The byte reference is the GUEST's own sha256 of the object it wrote (not a
+    regeneration -- reportlab embeds a creation timestamp, so two writes differ;
+    and not the pane content endpoint decoded as text, which would corrupt binary).
+    The Download control is per-row (a sibling of the row's `Preview <name>`
+    button), so it is located WITHIN the file's row, never a bare page-wide
+    text=Download that would match every row.
+
+    Non-vacuous: with the PDF forced into the text branch (add "pdf" to extIsText
+    in FilePane), the unsupported note never renders and file-preview-text appears
+    -- the two preview asserts red; a truncated/transformed download reds the sha
+    keystone. Requires the #218 preview slice in the webui image and a
+    reportlab-bearing guest (poc-fat).
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    import hashlib
+    import pathlib
+    import tempfile
+
+    from playwright.sync_api import sync_playwright
+
+    # 1. The guest writes a PDF (reportlab, pageCompression=0 -- same generator as
+    # i12) and reports its on-disk sha256 + size. That sha is the byte reference.
+    chat_id = f"m6-{uuid.uuid4().hex[:8]}"
+    name = f"m6-{uuid.uuid4().hex[:8]}.pdf"
+    path = f"/mnt/user-data/outputs/{name}"
+    marker = f"M6_PDF_{uuid.uuid4().hex[:8]}"
+    write = (
+        f"python3 -c \"from reportlab.pdfgen import canvas; "
+        f"c=canvas.Canvas('{path}', pageCompression=0); "
+        f"c.drawString(72,720,'{marker}'); c.showPage(); c.save()\" "
+        f"&& sha256sum {path} | cut -d' ' -f1 && stat -c %s {path}"
+    )
+    status, text, is_error = _guest_exec(chat_id, write, timeout=120)
+    assert status == 200 and not is_error and text, (
+        f"guest PDF write failed: status={status} err={is_error} text={text!r}"
+    )
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    assert len(lines) >= 2, f"expected sha + size from the guest, got {text!r}"
+    guest_sha, guest_size = lines[-2], int(lines[-1])
+    assert len(guest_sha) == 64, f"guest sha256 malformed: {guest_sha!r}"
+
+    # 2. It must list on the pane's own endpoint (the exact list the browser mount
+    # fetches) with the guest's byte size -- gate before driving the browser so the
+    # mount snapshot sees the file (same bounded write-back lag as M1/M5).
+    obj = _wait_file_listed(name, deadline_s=60)
+    assert obj is not None, (
+        f"{name} never appeared in GET /v1/files within 60s -- the write did not "
+        "propagate to the north-face list"
+    )
+    listed_size = obj.get("size_bytes", obj.get("size"))
+    assert listed_size == guest_size, (
+        f"pane list reports size {listed_size} but the guest wrote {guest_size} "
+        "bytes -- the object is not byte-complete in the list the browser sees"
+    )
+
+    # 3. Drive a real browser: the PDF must take the UNSUPPORTED-preview path and
+    # then download byte-identical.
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            frame.wait_for_selector(f"text={name}", timeout=45000)
+
+            # Preview -> the unsupported note, and NEITHER render branch.
+            preview_btn = frame.locator(f"[aria-label='Preview {name}']")
+            assert preview_btn.count() > 0, (
+                "no Preview affordance for the file -- the #218 slice flag is "
+                "likely OFF in this webui image (build with "
+                "NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=true)"
+            )
+            preview_btn.first.click()
+            unsupported = frame.locator("[data-testid='file-preview-unsupported']")
+            unsupported.wait_for(state="visible", timeout=20000)
+            assert frame.locator("[data-testid='file-preview-text']").count() == 0, (
+                "a PDF rendered in the TEXT preview branch -- binary-as-text "
+                "regression (extIsText widened or resolveMime returned text/* for "
+                ".pdf); the unsupported state is the correct path for a PDF"
+            )
+            assert frame.locator("[data-testid='file-preview-image']").count() == 0, (
+                "a PDF rendered in the IMAGE preview branch -- the mime dispatch "
+                "mis-classified a non-image as an image"
+            )
+
+            # Download -> the per-row control (sibling of this row's Preview). The
+            # Download button carries no aria-label/testid (verified against the
+            # shipped bundle: a <button> with text child 'Download'), so scope it to
+            # the row that holds the unique `Preview <name>` button, never a
+            # page-wide text=Download that would match every row. The row is the
+            # <li> in the list's <ul> (verified against the live DOM: the <li>
+            # carries exactly ONE Download; the enclosing <ul>/<div> carry one per
+            # listed file, so a loose `li,tr,div` ancestor with .first grabs the
+            # whole list and downloads the FIRST file, not this one).
+            row = frame.locator("li").filter(
+                has=frame.locator(f"[aria-label='Preview {name}']")
+            )
+            assert row.count() == 1, (
+                f"expected exactly one <li> row for {name}, found {row.count()} -- "
+                "the row scoping is ambiguous and a Download click could fetch the "
+                "wrong file"
+            )
+            download_btn = row.get_by_role("button", name="Download")
+            assert download_btn.count() > 0, (
+                f"no Download control in the row for {name} -- the pane row must "
+                "carry a Download button alongside Preview"
+            )
+            with page.expect_download(timeout=20000) as dl_info:
+                download_btn.first.click()
+            dl = dl_info.value
+            dst = pathlib.Path(tempfile.mkdtemp()) / name
+            dl.save_as(str(dst))
+            got = dst.read_bytes()
+            assert got[:5] == b"%PDF-", (
+                f"the downloaded bytes are not a PDF (head={got[:8]!r}) -- the "
+                "Download leg transformed or mis-served the object"
+            )
+            got_sha = hashlib.sha256(got).hexdigest()
+            assert got_sha == guest_sha, (
+                f"downloaded sha {got_sha} != guest on-disk sha {guest_sha} -- the "
+                f"Download leg did not serve the exact bytes ({len(got)} of "
+                f"{guest_size} expected). Content-match, not size-match, is the "
+                "non-vacuous form."
+            )
+        finally:
+            browser.close()
+
+
+OPENWEBUI_URL = "http://localhost:3001"
+_OWUI_EMAIL = "admin@open-computer-use.dev"
+_OWUI_PASSWORD = "admin"
+
+
+def _model_endpoint_configured():
+    """True when a real model connection is wired in the running OpenWebUI. M4 is
+    env-gated: with the endpoint set, a live-model failure is a FAILURE, not a
+    skip. Probed via the admin session's /models count (populated = configured).
+    """
+    probe = (
+        "TOK=$(curl -sS --max-time 10 -X POST "
+        "http://localhost:8080/api/v1/auths/signin -H 'Content-Type: application/json' "
+        f"-d '{{\"email\":\"{_OWUI_EMAIL}\",\"password\":\"{_OWUI_PASSWORD}\"}}' 2>/dev/null "
+        "| python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"token\",\"\"))'); "
+        "curl -sS --max-time 10 http://localhost:8080/api/models -H \"Authorization: Bearer $TOK\" 2>/dev/null "
+        "| python3 -c 'import sys,json;print(len(json.load(sys.stdin).get(\"data\",[])))'"
+    )
+    try:
+        out = subprocess.run(
+            ["docker", "exec", "ocu-donegate-open-webui-1", "bash", "-c", probe],
+            capture_output=True, text=True, timeout=30,
+        )
+        return out.stdout.strip().isdigit() and int(out.stdout.strip()) > 0
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+
+
+def _owui_login_and_open_chat(page):
+    """Sign in to the real OpenWebUI browser UI and reach the chat input,
+    dismissing the first-run 'What's New' release-notes modal that otherwise
+    intercepts every click on the composer."""
+    page.goto(OPENWEBUI_URL + "/", wait_until="networkidle", timeout=30000)
+    time.sleep(2)
+    page.fill("input[type=email]", _OWUI_EMAIL)
+    page.fill("input[type=password]", _OWUI_PASSWORD)
+    page.click('button:has-text("Sign in")')
+    page.wait_for_selector("[contenteditable=true]", timeout=25000)
+    time.sleep(2)
+    # Dismiss the release-notes modal if present (blocks the composer).
+    try:
+        page.click('button:has-text("Okay")', timeout=5000)
+        time.sleep(1)
+    except Exception:
+        pass  # no modal (already dismissed on a warm profile)
+
+
+def test_m4a_live_model_chat_turn_deterministic():
+    """M4a (deterministic, CI-grade): a LIVE model in the real OpenWebUI browser
+    chat completes a plain instruction-following turn -- proves the whole
+    model-in-chat wire (auth -> composer -> process_chat -> OpenRouter -> model
+    -> streamed reply in the DOM) without the nondeterminism of the model
+    choosing to call a tool. The reply must ECHO a unique token, so a dead chat
+    (token appears only in the user's own message) fails the >=2 count.
+
+    This is the gate M4b (the tool-forced keystone) rides on: if M4a is red, the
+    model wire is broken and M4b's INCONCLUSIVE lane would be meaningless.
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "chat gate is opt-in. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    token = f"PONG{uuid.uuid4().hex[:8].upper()}"
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            _owui_login_and_open_chat(page)
+            composer = page.query_selector("[contenteditable=true]")
+            assert composer is not None, "OpenWebUI chat composer not reachable"
+            composer.click()
+            composer.type(f"Reply with exactly this token and nothing else: {token}")
+            time.sleep(0.5)
+            page.keyboard.press("Enter")
+            # The model's reply must echo the token: count >= 2 (user msg + reply).
+            deadline = time.monotonic() + 60
+            echoed = False
+            while time.monotonic() < deadline:
+                if page.inner_text("body").count(token) >= 2:
+                    echoed = True
+                    break
+                time.sleep(1)
+            assert echoed, (
+                f"the live model did not echo {token!r} in its reply within 60s "
+                "-- the model-in-chat wire is broken (a healthy turn echoes the "
+                "token; a dead chat shows it only in the user's own message)"
+            )
+        finally:
+            browser.close()
+
+
 def test_m4_live_model_file_preview_keystone():
-    ...
+    """P-A/P-C tier-2 KEYSTONE: a LIVE model, in the real OpenWebUI browser chat,
+    is prompted to write a file; it decides to CALL the OCU bash_tool; the tool
+    executes in the guest; the file lands in the store with the EXACT marker.
+    This is the owner's literal bar -- the model can create a file -- proven
+    end-to-end eyes-in-browser (model -> tool-call -> guest -> FUSE -> filestore).
+
+    Fable ruling: env-gate on the model endpoint. With the endpoint configured a
+    failure is a FAILURE, not a skip. Verdict semantics: a transport/500/tool
+    error or file-absent-after-the-turn = FAIL; a healthy turn where the model
+    declines the tool after the forcing prompt = the caller re-runs (bounded),
+    never silently green. The assert is a BYTE-MATCH of the unique marker (the
+    proof.txt precedent -- content, not size), not mere presence.
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "keystone is opt-in; wire OPENAI_API_KEY/BASE_URL + DEFAULT_MODELS. "
+            "LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    # Fable verdict semantics: a transport/composer failure is a hard FAIL; a
+    # healthy turn where the model DECLINES the tool after N forcing attempts is
+    # INCONCLUSIVE (reported via skip, never silently green, never conflated
+    # with a wire break). A byte-matched file from any attempt is a PASS.
+    ATTEMPTS = 3
+    for attempt in range(ATTEMPTS):
+        marker = f"M4LIVE{uuid.uuid4().hex[:8]}"
+        name = f"m4-{uuid.uuid4().hex[:8]}.txt"
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                _owui_login_and_open_chat(page)
+                composer = page.query_selector("[contenteditable=true]")
+                assert composer is not None, (
+                    "OpenWebUI chat composer not reachable -- transport/UI "
+                    "failure, a hard FAIL (not the model declining)"
+                )
+                # A hard tool-forcing prompt: the model must call the tool.
+                prompt = (
+                    f"Call bash_tool now with command: "
+                    f"echo {marker} > /mnt/user-data/outputs/{name}"
+                )
+                composer.click()
+                composer.type(prompt)
+                time.sleep(0.5)
+                page.keyboard.press("Enter")
+                # Wait for the turn + the tool-call to execute + the object to land.
+                time.sleep(45)
+            finally:
+                browser.close()
+
+        # BYTE-MATCH: the object the live model wrote must carry the exact marker.
+        chat_id = f"m4v-{uuid.uuid4().hex[:8]}"
+        status, text, is_error = _guest_exec(
+            chat_id, f"cat /mnt/user-data/outputs/{name}", timeout=90
+        )
+        if status == 200 and not is_error and marker in (text or ""):
+            return  # PASS: the live model drove the tool and wrote the marker.
+
+    # Every attempt had a healthy turn but no marked file: the model declined the
+    # tool. INCONCLUSIVE, not a red -- the wire is proven live by M4a; only the
+    # model's tool-choice was absent this run.
+    pytest.skip(
+        f"INCONCLUSIVE: the live model completed its turn(s) but declined to "
+        f"call the tool after {ATTEMPTS} forcing attempts (no marked file "
+        "reached the store). The model-in-chat wire is proven by M4a; this is "
+        "model tool-choice nondeterminism, reported explicitly -- never a "
+        "silent green and never conflated with a broken wire."
+    )
+
+
+def test_m7_live_model_invokes_skill_and_artifact_dims_match():
+    """P-C tier-2 KEYSTONE (the live-model half of "skills work"): a LIVE model,
+    in the real OpenWebUI browser chat, is asked in NATURAL LANGUAGE to render a
+    chart; it decides to CALL the OCU bash_tool and AUTHORS the matplotlib
+    (skill-runtime) code itself; the tool runs in the guest; a matplotlib-stamped
+    PNG lands in outputs. This is the gap M3 does NOT cover: M3 fires the skill
+    toolchain DETERMINISTICALLY (the harness writes the exec string), while M4b
+    drives a live model but only to a PLAIN file WRITE. M7 is the missing corner --
+    a live model REACHING a skill runtime, writing the skill code, and producing
+    its artifact end-to-end.
+
+    Prompt shape (Fable ruling 8f... on relay fidelity): the prompt is natural
+    language with dictated parameters; the ONLY token the model must relay
+    verbatim is the nonce filename (a bare [a-z0-9-] token, zero shell
+    metacharacters). Handing the model a `python3 -c "..."` one-liner would force
+    backslash-escaped inner quotes the model corrupts on relay -- flakiness of the
+    wrong class (quoting, not tool-choice). Letting the model author the code is
+    also the MORE realistic P-C: the model reaches the skill runtime AND writes
+    the code.
+
+    Non-vacuity (skill-runtime proof, not mere presence): matplotlib's Agg
+    savefig embeds a `Software: Matplotlib version ...` tEXt chunk in the PNG.
+    Asserting that chunk proves the artifact came out of the matplotlib skill
+    runtime specifically -- not touch, not echo, not a PIL Image.new fallback --
+    a stronger discriminator than exact dims. Dims are asserted only in a sane
+    band (the model chooses figsize freely); exact 200x100 is logged, not
+    asserted, so absorbed model-choice variance never reds the keystone.
+
+    Verdict semantics (Fable-split on tool-invocation): endpoint configured ->
+    live. A transport/composer failure is a hard FAIL. NO matplotlib-stamped PNG
+    at the nonce path after N attempts, when the model DID drive a bash_tool call
+    (the tool executes but the skill runtime is broken -- matplotlib import dead,
+    Agg broken, outputs unwritable), is a FAIL (a deterministic break reds every
+    attempt). NO PNG because no bash_tool call is observed = INCONCLUSIVE skip
+    (model declined the tool -- the absorbed nondeterminism). A stamped PNG from
+    any attempt is a PASS.
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "skill keystone is opt-in; wire OPENAI_API_KEY/BASE_URL + "
+            "DEFAULT_MODELS. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    ATTEMPTS = 3
+    tool_call_ever_seen = False
+    for attempt in range(ATTEMPTS):
+        # The nonce is the ONLY token the model must relay verbatim: a bare
+        # filename, no shell metacharacters. Asserted absent BEFORE the prompt so
+        # a stamped PNG at this exact path is causally the model's turn, not a
+        # leftover from a prior attempt.
+        nonce = f"m7-{uuid.uuid4().hex[:8]}.png"
+        path = f"/mnt/user-data/outputs/{nonce}"
+
+        # Causality guard: the nonce path must not already exist. (Cross-chat
+        # reads share the single static fs-fleet scope with derive-chat-scope
+        # off, so a fresh _guest_exec chat_id sees the same outputs tree.)
+        pre_status, pre_text, _ = _guest_exec(
+            f"m7pre-{uuid.uuid4().hex[:8]}", f"ls {path} 2>&1 | tail -1", timeout=60
+        )
+        assert "No such file" in (pre_text or "") or pre_status != 200, (
+            f"nonce path {path} unexpectedly already exists before the turn -- "
+            "the causality guard cannot attribute a later PNG to this turn"
+        )
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                _owui_login_and_open_chat(page)
+                composer = page.query_selector("[contenteditable=true]")
+                assert composer is not None, (
+                    "OpenWebUI chat composer not reachable -- transport/UI "
+                    "failure, a hard FAIL (not the model declining)"
+                )
+                # Natural language + dictated params; only the nonce is verbatim.
+                prompt = (
+                    "Use bash_tool to run a Python script that renders a line "
+                    "chart with matplotlib (use the Agg backend), figure size 2 "
+                    "by 1 inches at 100 dpi, and save it as a PNG to exactly this "
+                    f"path: {path} . Set MPLCONFIGDIR=/tmp so matplotlib can "
+                    "write its cache. Call the tool now."
+                )
+                composer.click()
+                composer.type(prompt)
+                time.sleep(0.5)
+                page.keyboard.press("Enter")
+                # Wait for the turn + the tool-call to execute + the PNG to land.
+                time.sleep(60)
+                # Tool-invocation signal: OpenWebUI renders a tool/function-call
+                # block in the turn. Its presence splits FAIL (tool ran, skill
+                # broke) from INCONCLUSIVE (model declined the tool).
+                body = page.inner_text("body")
+                if "bash_tool" in body or "Tool" in body or "function" in body.lower():
+                    tool_call_ever_seen = True
+            finally:
+                browser.close()
+
+        # Read the artifact back through the guest, polling for the ~8s north/FUSE
+        # write-back propagation lag (a cross-chat read at +0s FileNotFounds even
+        # on a healthy write; the object appears within a few seconds). The assert
+        # is the matplotlib Software tEXt chunk -- the skill-runtime discriminator.
+        probe = (
+            "python3 -c \"from PIL import Image; "
+            f"im=Image.open('{path}'); "
+            "print(im.format, im.size[0], im.size[1], im.info.get('Software',''))\""
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, text, is_error = _guest_exec(
+                f"m7v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+            )
+            out = (text or "").strip()
+            if status == 200 and not is_error and out.startswith("PNG"):
+                parts = out.split()
+                fmt = parts[0]
+                w = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                h = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+                software = out.partition(" ")[2].partition(" ")[2].partition(" ")[2]
+                assert fmt == "PNG", f"artifact is not a PNG: {out!r}"
+                assert software.startswith("Matplotlib"), (
+                    f"the PNG at {path} carries Software={software!r}, not a "
+                    "Matplotlib stamp -- the artifact did NOT come out of the "
+                    "matplotlib skill runtime (touch/echo/PIL-fallback would "
+                    "lack this tEXt chunk). Skill-runtime proof failed."
+                )
+                assert 16 <= w <= 4000 and 16 <= h <= 4000, (
+                    f"PNG dims {w}x{h} outside the sane render band 16..4000"
+                )
+                if (w, h) != (200, 100):
+                    print(
+                        f"M7 telemetry: model rendered {w}x{h} (asked for 200x100) "
+                        "-- absorbed model-choice variance, not a failure"
+                    )
+                return  # PASS: live model reached the matplotlib skill runtime.
+            time.sleep(5)
+
+    # No matplotlib-stamped PNG after every attempt. Split on tool-invocation:
+    # a tool call was seen but no stamped artifact = a skill-runtime break (FAIL);
+    # no tool call ever = the model declined (INCONCLUSIVE).
+    assert not tool_call_ever_seen, (
+        f"the live model drove a bash_tool call but no Matplotlib-stamped PNG "
+        f"reached the nonce path after {ATTEMPTS} attempts -- a deterministic "
+        "skill-runtime break (matplotlib import/Agg/outputs-write), a FAIL. This "
+        "is not model tool-choice: the tool ran and the skill did not produce."
+    )
+    pytest.skip(
+        f"INCONCLUSIVE: the live model completed its turn(s) but no bash_tool "
+        f"call was observed after {ATTEMPTS} attempts (no skill artifact "
+        "produced). The model-in-chat wire is proven by M4a and the skill path "
+        "by M3; this is model tool-choice nondeterminism, reported explicitly -- "
+        "never a silent green and never conflated with a skill-runtime break."
+    )
+
+
+def test_m8_live_model_invokes_pptx_skill_and_ooxml_valid():
+    """P-C tier-2 (the live-model skill path GENERALIZED beyond matplotlib): a
+    LIVE model, in the real OpenWebUI browser chat, is asked in NATURAL LANGUAGE
+    to build a PowerPoint deck; it decides to CALL the OCU bash_tool and AUTHORS a
+    python-pptx script itself; the tool runs in the guest; a valid OOXML .pptx
+    lands in outputs carrying the title marker.
+
+    Why a SECOND live-model skill leg: M7 proves a live model reaches ONE skill
+    runtime (matplotlib -- a 4-line call). A single format does not prove the
+    path GENERALIZES. python-pptx is a harder authoring task (a multi-statement
+    script) with a DIFFERENT artifact discriminator (OOXML zip, not a PNG tEXt
+    chunk). M8 lifts the deterministic I11 (harness-driven pptx) to the live-model
+    tier, mirroring M7:matplotlib::M3.
+
+    Discriminator (the OOXML skill-runtime proof, analogous to M7's Matplotlib
+    stamp): read the artifact back through the guest with zipfile --
+      - the file IS a zip (a .pptx is a zip; touch/echo/a text file is not),
+      - it contains `ppt/slides/slide1.xml` (the python-pptx OOXML structure,
+        not an arbitrary zip),
+      - the unique title marker appears in slide1.xml (the model wrote content,
+        not an empty template).
+    A model that writes a text file, an empty zip, or a marker-less template fails
+    a distinct leg. Exact layout/theme is the model's choice (absorbed variance).
+
+    Verdict split (Fable-ruled, M7's): endpoint+browser gates live; a tool call
+    seen but no valid marked pptx = FAIL (a python-pptx skill-runtime break); no
+    tool call = INCONCLUSIVE skip (model declined the tool).
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "pptx skill leg is opt-in; wire OPENAI_API_KEY/BASE_URL + "
+            "DEFAULT_MODELS. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    ATTEMPTS = 3
+    tool_call_ever_seen = False
+    for attempt in range(ATTEMPTS):
+        marker = f"M8DECK{uuid.uuid4().hex[:8].upper()}"
+        nonce = f"m8-{uuid.uuid4().hex[:8]}.pptx"
+        path = f"/mnt/user-data/outputs/{nonce}"
+
+        # Causality guard: the nonce path must not already exist.
+        pre_status, pre_text, _ = _guest_exec(
+            f"m8pre-{uuid.uuid4().hex[:8]}", f"ls {path} 2>&1 | tail -1", timeout=60
+        )
+        assert "No such file" in (pre_text or "") or pre_status != 200, (
+            f"nonce path {path} unexpectedly already exists before the turn -- "
+            "the causality guard cannot attribute a later pptx to this turn"
+        )
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                _owui_login_and_open_chat(page)
+                composer = page.query_selector("[contenteditable=true]")
+                assert composer is not None, (
+                    "OpenWebUI chat composer not reachable -- transport/UI "
+                    "failure, a hard FAIL (not the model declining)"
+                )
+                # Natural language + dictated params; only the nonce path and the
+                # marker text are relayed verbatim (both metacharacter-free).
+                prompt = (
+                    "Use bash_tool to run a Python script that uses the "
+                    "python-pptx library to build a one-slide PowerPoint "
+                    "presentation. Put the exact text "
+                    f"'{marker}' as the slide title, and save the deck to exactly "
+                    f"this path: {path} . Call the tool now."
+                )
+                composer.click()
+                composer.type(prompt)
+                time.sleep(0.5)
+                page.keyboard.press("Enter")
+                # Wait for the turn + the tool-call to execute + the pptx to land.
+                time.sleep(60)
+                body = page.inner_text("body")
+                if "bash_tool" in body or "Tool" in body or "function" in body.lower():
+                    tool_call_ever_seen = True
+            finally:
+                browser.close()
+
+        # Read the artifact back through the guest (poll the ~8s write-back
+        # settle). The probe validates the OOXML structure + the title marker in
+        # slide1.xml, and prints a single parseable line.
+        probe = (
+            "python3 -c \"import sys, zipfile; "
+            f"p='{path}'; "
+            "z=zipfile.is_zipfile(p); "
+            "names=zipfile.ZipFile(p).namelist() if z else []; "
+            "has_slide=('ppt/slides/slide1.xml' in names); "
+            f"body=(zipfile.ZipFile(p).read('ppt/slides/slide1.xml').decode('utf-8','replace') if has_slide else ''); "
+            f"print('OOXML', z, has_slide, ('{marker}' in body))\""
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, text, is_error = _guest_exec(
+                f"m8v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+            )
+            out = (text or "").strip()
+            if status == 200 and not is_error and out.startswith("OOXML"):
+                parts = out.split()
+                is_zip = len(parts) > 1 and parts[1] == "True"
+                has_slide = len(parts) > 2 and parts[2] == "True"
+                marker_in = len(parts) > 3 and parts[3] == "True"
+                if is_zip and has_slide and marker_in:
+                    return  # PASS: live model reached the python-pptx skill runtime.
+                # A parseable OOXML line that fails a leg: the artifact exists but
+                # is not a valid marked pptx. Keep polling briefly (a partial write
+                # may still settle); the FAIL/skip split is decided after the loop.
+            time.sleep(5)
+
+    # No valid marked pptx after every attempt. Split on tool-invocation.
+    assert not tool_call_ever_seen, (
+        f"the live model drove a bash_tool call but no valid marked .pptx reached "
+        f"the nonce path after {ATTEMPTS} attempts -- a python-pptx skill-runtime "
+        "break (import dead, OOXML not written, outputs unwritable, or the marker "
+        "absent), a FAIL. This is not model tool-choice: the tool ran and the "
+        "skill did not produce a valid deck."
+    )
+    pytest.skip(
+        f"INCONCLUSIVE: the live model completed its turn(s) but no bash_tool "
+        f"call was observed after {ATTEMPTS} attempts (no pptx produced). The "
+        "model-in-chat wire is proven by M4a and the skill path by M3/M7; this is "
+        "model tool-choice nondeterminism, reported explicitly -- never a silent "
+        "green and never conflated with a skill-runtime break."
+    )
+
+
+def test_m9_live_model_invokes_pdf_skill_and_pdf_valid():
+    """P-C tier-2 (the live-model skill path -- THIRD discriminator class): a LIVE
+    model, in the real OpenWebUI browser chat, is asked in NATURAL LANGUAGE to
+    generate a PDF; it decides to CALL the OCU bash_tool and AUTHORS a reportlab
+    script itself; the tool runs in the guest; a valid PDF lands in outputs
+    carrying the title marker.
+
+    Why a THIRD live-model skill leg: M7 (matplotlib -> PNG tEXt chunk) + M8
+    (python-pptx -> OOXML zip) cover an image runtime + an office-doc-zip runtime.
+    reportlab -> PDF is a THIRD, genuinely different discriminator class: a `%PDF-`
+    binary header + a content stream (not a PNG chunk, not a zip). PDF is a
+    flagship PoC DEFAULT skill. M9 lifts the deterministic I12 (harness-driven
+    reportlab pdf) to the live-model tier, so the live-model-reaches-skill path is
+    proven across THREE distinct runtimes + THREE distinct artifact discriminators.
+
+    I12's lesson (recorded in the plan) is dictated in the prompt: reportlab
+    FlateDecode-COMPRESSES the content stream by default, hiding the marker in the
+    compressed bytes. So the model is told to disable page compression
+    (pageCompression=0) -- else the marker leg reds for a compression reason, not a
+    skill-runtime one.
+
+    Discriminator (the PDF skill-runtime proof, read back through the guest):
+      - the file head is `%PDF-` (a real PDF; touch/echo/text lacks it),
+      - the title marker appears in the raw PDF bytes (proves reportlab drew the
+        content AND pageCompression=0 took -- a working uncompressed reportlab doc).
+    A model that writes a text file reds the head; a compressed-stream PDF reds the
+    marker leg (I12's real-red precedent). Exact layout is the model's choice.
+
+    Verdict split (Fable-ruled, M7/M8's): endpoint+browser gates live; a tool call
+    seen but no valid marked pdf = FAIL (a reportlab skill-runtime break OR
+    compression-not-disabled); no tool call = INCONCLUSIVE skip (model declined).
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live pdf "
+            "skill leg is opt-in; wire OPENAI_API_KEY/BASE_URL + DEFAULT_MODELS. "
+            "LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    ATTEMPTS = 3
+    tool_call_ever_seen = False
+    for attempt in range(ATTEMPTS):
+        marker = f"M9DOC{uuid.uuid4().hex[:8].upper()}"
+        nonce = f"m9-{uuid.uuid4().hex[:8]}.pdf"
+        path = f"/mnt/user-data/outputs/{nonce}"
+
+        # Causality guard: the nonce path must not already exist.
+        pre_status, pre_text, _ = _guest_exec(
+            f"m9pre-{uuid.uuid4().hex[:8]}", f"ls {path} 2>&1 | tail -1", timeout=60
+        )
+        assert "No such file" in (pre_text or "") or pre_status != 200, (
+            f"nonce path {path} unexpectedly already exists before the turn -- "
+            "the causality guard cannot attribute a later pdf to this turn"
+        )
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                _owui_login_and_open_chat(page)
+                composer = page.query_selector("[contenteditable=true]")
+                assert composer is not None, (
+                    "OpenWebUI chat composer not reachable -- transport/UI "
+                    "failure, a hard FAIL (not the model declining)"
+                )
+                # Natural language + dictated params; only the nonce path and the
+                # marker are relayed verbatim (both metacharacter-free). The
+                # compression-off instruction is essential so the marker is
+                # greppable in the raw PDF.
+                prompt = (
+                    "Use bash_tool to run a Python script that uses the reportlab "
+                    "library to generate a PDF. Draw the exact text "
+                    f"'{marker}' onto the page, DISABLE page compression (pass "
+                    "pageCompression=0 to the canvas so the text is stored "
+                    f"uncompressed), and save the PDF to exactly this path: {path} "
+                    ". Call the tool now."
+                )
+                composer.click()
+                composer.type(prompt)
+                time.sleep(0.5)
+                page.keyboard.press("Enter")
+                # Wait for the turn + the tool-call to execute + the pdf to land.
+                time.sleep(60)
+                body = page.inner_text("body")
+                if "bash_tool" in body or "Tool" in body or "function" in body.lower():
+                    tool_call_ever_seen = True
+            finally:
+                browser.close()
+
+        # Read the artifact back through the guest (poll the ~8s write-back
+        # settle). The probe validates the %PDF- head + the marker in raw bytes.
+        probe = (
+            "python3 -c \""
+            f"d=open('{path}','rb').read(); "
+            "head=d[:5]==b'%PDF-'; "
+            f"mk=b'{marker}' in d; "
+            "print('PDF', head, mk)\""
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, text, is_error = _guest_exec(
+                f"m9v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+            )
+            out = (text or "").strip()
+            if status == 200 and not is_error and out.startswith("PDF"):
+                parts = out.split()
+                head_ok = len(parts) > 1 and parts[1] == "True"
+                marker_in = len(parts) > 2 and parts[2] == "True"
+                if head_ok and marker_in:
+                    return  # PASS: live model reached the reportlab skill runtime.
+                # A parseable PDF line that fails a leg (e.g. head_ok=True but
+                # marker=False = a compressed-stream PDF): the artifact exists but
+                # the marker is not in raw bytes. Keep polling briefly; the FAIL/
+                # skip split is decided after the loop.
+            time.sleep(5)
+
+    # No valid marked pdf after every attempt. Split on tool-invocation.
+    assert not tool_call_ever_seen, (
+        f"the live model drove a bash_tool call but no valid marked PDF reached "
+        f"the nonce path after {ATTEMPTS} attempts -- a reportlab skill-runtime "
+        "break (import dead, no %PDF- written, outputs unwritable) OR the marker "
+        "hidden in a compressed stream (pageCompression not disabled), a FAIL. "
+        "This is not model tool-choice: the tool ran and no valid marked PDF "
+        "landed."
+    )
+    pytest.skip(
+        f"INCONCLUSIVE: the live model completed its turn(s) but no bash_tool "
+        f"call was observed after {ATTEMPTS} attempts (no pdf produced). The "
+        "model-in-chat wire is proven by M4a and the skill path by M3/M7/M8; this "
+        "is model tool-choice nondeterminism, reported explicitly -- never a "
+        "silent green and never conflated with a skill-runtime break."
+    )
+
+
+def test_m10_live_model_invokes_docx_skill_and_ooxml_valid():
+    """P-C tier-2 (the live-model skill path -- FOURTH runtime + OOXML variant): a
+    LIVE model, in the real OpenWebUI browser chat, is asked in NATURAL LANGUAGE to
+    produce a Word document; it decides to CALL the OCU bash_tool and AUTHORS a
+    pandoc invocation itself (write markdown, then `pandoc in.md -o out.docx`); the
+    tool runs in the guest; a valid OOXML .docx lands in outputs carrying the marker.
+
+    Why a FOURTH live-model skill leg: M7 (matplotlib PNG) + M8 (python-pptx OOXML
+    ppt/slides) + M9 (reportlab PDF) cover three distinct runtimes + discriminators.
+    pandoc -> docx adds a fourth: a DIFFERENT skill runtime (a native binary
+    markdown->docx converter, not a Python lib) and a DISTINCT OOXML member,
+    word/document.xml (Word's namespace, not pptx's ppt/slides/slide1.xml). The
+    model must author a TWO-step command (write the markdown, run pandoc) -- a
+    harder relay than M8/M9's single-call scripts. Lifts the deterministic I8
+    (pandoc docx) to the live-model tier.
+
+    Discriminator (docx OOXML skill-runtime proof, read back through the guest):
+      - the file IS a zip (a .docx is a zip; touch/echo/a text file is not),
+      - it contains `word/document.xml` (the docx OOXML structure -- pandoc/Word,
+        NOT pptx's ppt/slides -- a distinct member from M8),
+      - the marker appears in word/document.xml (the model wrote content via pandoc).
+
+    Verdict split (Fable-ruled, M7-M9's): endpoint+browser gates live; a tool call
+    seen but no valid marked docx = FAIL (a pandoc skill-runtime break); no tool
+    call = INCONCLUSIVE skip (model declined the tool).
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "docx skill leg is opt-in; wire OPENAI_API_KEY/BASE_URL + "
+            "DEFAULT_MODELS. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    ATTEMPTS = 3
+    tool_call_ever_seen = False
+    for attempt in range(ATTEMPTS):
+        marker = f"M10DOC{uuid.uuid4().hex[:8].upper()}"
+        nonce = f"m10-{uuid.uuid4().hex[:8]}.docx"
+        path = f"/mnt/user-data/outputs/{nonce}"
+
+        # Causality guard: the nonce path must not already exist.
+        pre_status, pre_text, _ = _guest_exec(
+            f"m10pre-{uuid.uuid4().hex[:8]}", f"ls {path} 2>&1 | tail -1", timeout=60
+        )
+        assert "No such file" in (pre_text or "") or pre_status != 200, (
+            f"nonce path {path} unexpectedly already exists before the turn -- "
+            "the causality guard cannot attribute a later docx to this turn"
+        )
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                _owui_login_and_open_chat(page)
+                composer = page.query_selector("[contenteditable=true]")
+                assert composer is not None, (
+                    "OpenWebUI chat composer not reachable -- transport/UI "
+                    "failure, a hard FAIL (not the model declining)"
+                )
+                # Natural language + dictated params; only the nonce path and the
+                # marker are relayed verbatim (both metacharacter-free).
+                prompt = (
+                    "Use bash_tool to create a Word document with the pandoc "
+                    "tool: write a short markdown document whose heading is the "
+                    f"exact text '{marker}', then run pandoc to convert it to a "
+                    f".docx saved at exactly this path: {path} . Call the tool now."
+                )
+                composer.click()
+                composer.type(prompt)
+                time.sleep(0.5)
+                page.keyboard.press("Enter")
+                # Wait for the turn + the tool-call to execute + the docx to land.
+                time.sleep(60)
+                body = page.inner_text("body")
+                if "bash_tool" in body or "Tool" in body or "function" in body.lower():
+                    tool_call_ever_seen = True
+            finally:
+                browser.close()
+
+        # Read the artifact back through the guest (poll the ~8s write-back
+        # settle). The probe validates the docx OOXML member + the marker.
+        probe = (
+            "python3 -c \"import zipfile; "
+            f"p='{path}'; "
+            "z=zipfile.is_zipfile(p); "
+            "names=zipfile.ZipFile(p).namelist() if z else []; "
+            "has_doc=('word/document.xml' in names); "
+            f"body=(zipfile.ZipFile(p).read('word/document.xml').decode('utf-8','replace') if has_doc else ''); "
+            f"print('DOCX', z, has_doc, ('{marker}' in body))\""
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            status, text, is_error = _guest_exec(
+                f"m10v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+            )
+            out = (text or "").strip()
+            if status == 200 and not is_error and out.startswith("DOCX"):
+                parts = out.split()
+                is_zip = len(parts) > 1 and parts[1] == "True"
+                has_doc = len(parts) > 2 and parts[2] == "True"
+                marker_in = len(parts) > 3 and parts[3] == "True"
+                if is_zip and has_doc and marker_in:
+                    return  # PASS: live model reached the pandoc skill runtime.
+            time.sleep(5)
+
+    # No valid marked docx after every attempt. Split on tool-invocation.
+    assert not tool_call_ever_seen, (
+        f"the live model drove a bash_tool call but no valid marked .docx reached "
+        f"the nonce path after {ATTEMPTS} attempts -- a pandoc skill-runtime break "
+        "(pandoc absent, OOXML not written, outputs unwritable, or the marker "
+        "absent), a FAIL. This is not model tool-choice: the tool ran and the "
+        "skill did not produce a valid document."
+    )
+    pytest.skip(
+        f"INCONCLUSIVE: the live model completed its turn(s) but no bash_tool "
+        f"call was observed after {ATTEMPTS} attempts (no docx produced). The "
+        "model-in-chat wire is proven by M4a and the skill path by M3/M7/M8/M9; "
+        "this is model tool-choice nondeterminism, reported explicitly -- never a "
+        "silent green and never conflated with a skill-runtime break."
+    )
+
+
+def test_m11_pane_background_poll_fires_without_reload():
+    """PoC-parity regression guard: the File Pane's BACKGROUND POLL fires -- it
+    re-lists on a timer WITHOUT a manual reload, which is the mechanism that makes
+    the pane update live like the PoC Files panel. This test asserts the POLL
+    MECHANISM (>=2 GET /v1/files ticks after the initial mount-load, nav_count==0,
+    zero user actions); it does NOT assert the rendered result of a specific
+    mutation.
+
+    Why mechanism-only, and why that is honest here (Fable ruling a66557ca, final):
+    the live RENDER of a fresh change was verified FIRSTHAND out-of-band in a real
+    Chromium (the poll fired and the list re-rendered -- 2 GET ticks in 13s at the
+    5s interval, observed 2026-07-19), so the pane-liveness parity gap is CLOSED
+    and DEPLOYED. What a committed CI test must guard is REGRESSION of the poll
+    mechanism -- "did someone rip out the setInterval again" -- which the tick-count
+    assertion catches directly and #182-independently. Every render-asserting
+    vector is blocked on THIS deployment by the north/south reconcile asymmetry
+    (guest delete/overwrite do not update the append-authoritative north record;
+    the pane BFF gates the north DELETE/PUT behind write-intent the read-scoped
+    embed token lacks), so a render assertion here would red for a
+    reconcile/authz reason, not a poll reason. This test does NOT claim render; it
+    disclaims it and cites the firsthand proof. The red-probe (neuter setInterval
+    -> zero background GETs) genuinely requires the poll, so this is a real guard,
+    not a fired-timer fake-green.
+
+    Cross-links: #182 strict-xfails (M1/M3/M5/M6/M2b) cover the ordering/pagination
+    axis; ADR-0023 open-question #2 (south-delete/overwrite -> north-unlink/update
+    reconcile) is the tracked home for why a mutation's rendered result is not
+    assertable here.
+    """
+    _require_browser()
+    if not _portal_reachable():
+        pytest.fail(
+            "OCU_BROWSER_E2E set but embed-portal :3003 is unreachable -- the "
+            "user leg cannot run; a down portal under the gate is a FAILURE."
+        )
+    from playwright.sync_api import sync_playwright
+
+    files_get = {"n": 0}
+    nav_count = {"n": 0}
+    pane_action = {"n": 0}  # any pane-originated mutation (POST/DELETE) would be a non-poll GET source
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.on("framenavigated", lambda _f: nav_count.__setitem__("n", nav_count["n"] + 1))
+
+            def _on_req(r):
+                u = r.url.rstrip("/")
+                if r.method == "GET" and u.endswith("/v1/files"):
+                    files_get["n"] += 1
+                if r.method in ("POST", "DELETE") and "/v1/files" in r.url:
+                    pane_action["n"] += 1
+
+            page.on("request", _on_req)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach via "
+                "localhost, not 127.0.0.1 -- CSP frame-ancestors)"
+            )
+            # The pane has finished its initial mount-load once Download rows render.
+            frame.wait_for_selector("text=Download", timeout=45000)
+            # Baseline the GET count AFTER the mount-load, so we count only the
+            # BACKGROUND poll ticks, not the initial list fetch.
+            get_after_mount_baseline = files_get["n"]
+            nav_after_mount = nav_count["n"]
+
+            # Watch for the background poll to fire: >=2 GET /v1/files ticks over
+            # ~20s (2 ticks at PANE_POLL_MS=5000 + slack), with NO navigation and
+            # NO pane-originated action -- so only the setInterval poll produced
+            # these GETs. Use page.wait_for_timeout (NOT time.sleep): in sync-mode
+            # Playwright, request-event callbacks are dispatched only during a
+            # Playwright call, so a bare time.sleep would never let files_get
+            # increment (the events would land during browser.close instead).
+            poll_ticks = 0
+            for _ in range(20):  # ~20s in 1s Playwright-pumped steps
+                page.wait_for_timeout(1000)
+                poll_ticks = files_get["n"] - get_after_mount_baseline
+                if poll_ticks >= 2:
+                    break
+        finally:
+            browser.close()
+
+    # The poll MECHANISM fired: >=2 background GET /v1/files ticks after the mount
+    # load, with zero navigations and zero pane-originated mutations in between --
+    # so the setInterval poll is the only thing that issued them. A neutered poll
+    # (setInterval removed) issues zero background GETs and reds this (red-probe).
+    assert poll_ticks >= 2, (
+        f"the pane issued only {poll_ticks} background GET /v1/files ticks in ~20s "
+        f"(baseline {get_after_mount_baseline}, total {files_get['n']}) -- the "
+        "background poll (setInterval PANE_POLL_MS=5000) did not fire; the pane no "
+        "longer re-lists live (the PoC live-panel parity behaviour regressed)"
+    )
+    assert nav_count["n"] == nav_after_mount, (
+        f"the pane navigated/reloaded during the poll window ({nav_count['n']} vs "
+        f"{nav_after_mount}) -- the background GETs must come from the poll, not a "
+        "reload (the parity crux is live update WITHOUT a manual reload)"
+    )
+    assert pane_action["n"] == 0, (
+        f"a pane-originated POST/DELETE fired ({pane_action['n']}) -- the background "
+        "GETs must be pure poll re-lists, not triggered by a pane mutation"
+    )

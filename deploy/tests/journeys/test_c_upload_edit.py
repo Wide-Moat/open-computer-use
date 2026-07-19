@@ -323,10 +323,18 @@ def test_c5_inputs_are_read_only(backend, expect):
     """C5: a write to my input file is denied (inputs are read-only).
 
     Invariant: the inputs surface is genuinely read-only. PoC: the :ro bind
-    fails the write with EROFS; fleet: the FUSE mount (dir 0555) denies it.
-    KEYSTONE: the PoC :ro bind ALSO denies (this is not a fleet-only property);
-    if the RO mechanism is inactive under the current driver, MARK it via
-    conftest.inactive_mechanism rather than shipping a fake green.
+    fails the write with EROFS; fleet: the FUSE mount is kernel read-only
+    (MS_RDONLY -- verified firsthand: /mnt/user-data/uploads shows `fuse ro` in
+    /proc/mounts, and python open('w')/touch surface a loud EROFS). The live
+    RO invariant IS exercised, through the pane-upload wire, by
+    test_j5b_guest_cannot_tamper_existing_upload (overwrite/append/unlink a real
+    upload -> original bytes survive). This c-harness arm stays xfail only
+    because its OWN fleet.upload fixture is a scaffold stub (NotImplementedError),
+    not because the RO mechanism is inactive. TRAP for whoever un-xfails this:
+    drive the write via python open('w') or touch, NOT a shell `>` redirect --
+    bash swallows the EROFS at close on a redirect (rc=0), so a `>`-based probe
+    would assert-fail on rc!=0 for a non-security reason (the O_TRUNC DX defect,
+    not the invariant).
     """
     meta = expect("C5")
     assert meta["bucket"] == "HARDENED"

@@ -131,7 +131,33 @@ def _operator_sock_reachable() -> bool:
 # that already drives the operator UDS and docker. See the KNOWN-BUG note in
 # conftest for why the counter must be reclaimed between fleet tests.
 # ---------------------------------------------------------------------------
-_CONTROL_DB = os.getenv("FLEET_CONTROL_DB_CONTAINER", "ocu-fleet-control-db-1")
+def _discover_control_db() -> str:
+    """The control-DB container name. Prefer an explicit env override; else
+    discover the running control-db container so the seed does not silently
+    no-op on a compose project whose name is not the hardcoded default (the
+    stand runs `ocu-donegate-control-db-1`, not `ocu-fleet-control-db-1`; a
+    `docker exec` on the wrong name fails and _psql swallows it to None, so the
+    counter seed never lands and a cap test reads a false `active`)."""
+    override = os.getenv("FLEET_CONTROL_DB_CONTAINER")
+    if override:
+        return override
+    docker = shutil.which("docker")
+    if docker:
+        try:
+            proc = subprocess.run(
+                [docker, "ps", "--filter", "name=control-db", "--format", "{{.Names}}"],
+                capture_output=True,
+                timeout=10,
+            )
+            names = [n for n in proc.stdout.decode().split() if n.endswith("control-db-1")]
+            if names:
+                return names[0]
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "ocu-fleet-control-db-1"
+
+
+_CONTROL_DB = _discover_control_db()
 _DB_USER = os.getenv("FLEET_CONTROL_DB_USER", "ocu")
 _DB_NAME = os.getenv("FLEET_CONTROL_DB_NAME", "ocu_control")
 _CONCURRENT_DIM = os.getenv("FLEET_CONCURRENT_DIM", "0")
@@ -180,6 +206,18 @@ def _fleet_concurrent_counter_vs_rows() -> tuple[Optional[int], int]:
     counter = int(counter_raw) if counter_raw and counter_raw.lstrip("-").isdigit() else None
     live_rows = int(rows_raw) if rows_raw and rows_raw.isdigit() else 0
     return counter, live_rows
+
+
+def _heal_concurrent_counter_to_live() -> None:
+    """Model boot Reconcile Direction 3 (ReconcileConcurrent): heal the
+    DimConcurrentSessions counter DOWN to the true live-row count. Control's boot
+    reconciler recomputes this cell from the durable session rows on restart; this
+    reproduces that heal without a full control restart, so the arranged-to-cap
+    counter (no real rows behind it) returns to reality and admission resumes.
+    Operator revoke/all is NOT the healer here -- it refunds per KILLED ROW and
+    cannot reconcile a counter value that has no rows behind it."""
+    _, live_rows = _fleet_concurrent_counter_vs_rows()
+    _set_fleet_concurrent_counter(live_rows)
 
 
 def _operator_post(path: str) -> int:
@@ -347,7 +385,7 @@ def test_e1_idle_reaper_releases_session(backend: Backend, expect) -> None:
 
     # Assert the released/deny envelope on the next op — status class, not a
     # specific reaped-at time (idle-TTL is envelope-until-contract-pins).
-    after = backend.exec(["true"])
+    after = backend.exec_sh("true")
     assert after.denied, "post-release exec must be denied (released-state envelope)"
 
     # Restore so a later test's create is not blocked by the deny latch.
@@ -384,7 +422,7 @@ def test_e2_kill_switch_revoke_all_denies_everyone(backend: Backend, expect) -> 
     assert revoke_status in (200, 204), f"revoke/all should accept, got {revoke_status}"
 
     # Arm 1: the existing session's exec is denied.
-    denied_exec = backend.exec(["echo", "should-be-denied"])
+    denied_exec = backend.exec_sh("echo should-be-denied")
     assert denied_exec.denied, "existing exec must be denied after revoke/all"
 
     # Arm 2: a new create is denied too (not just existing sessions).
@@ -436,7 +474,7 @@ def test_e3_resume_restores_new_but_keeps_revoked_denied(backend: Backend, expec
 
     assert _operator_post("/v1alpha/revoke/all") in (200, 204)
     # The pre-revoke session is now denied.
-    assert backend.exec(["true"]).denied, "pre-revoke session must be denied after revoke/all"
+    assert backend.exec_sh("true").denied, "pre-revoke session must be denied after revoke/all"
 
     assert _operator_post("/v1alpha/resume/all") in (200, 204)
 
@@ -779,13 +817,18 @@ def test_e7_quota_ceiling_capped_then_released(backend: Backend, expect) -> None
         f"must 409 at the ceiling, got {overflow.status}"
     )
 
-    # --- Live counter: reclaim to the true live count, a fresh create 201s. ---
+    # --- Live counter: heal to the true live count, a fresh create 201s. ---
     # This proves the cap is a live counter, not a permanent wall: once the
-    # counter reflects reality again, admission resumes.
-    _reclaim_fleet_concurrency_leak()
+    # counter reflects reality again, admission resumes. The counter was ARRANGED
+    # to the cap above (no real rows behind that value), so the healer is boot
+    # Reconcile Direction 3 (ReconcileConcurrent: heal the cell DOWN to the true
+    # live-row count), NOT operator revoke/all -- revoke/all refunds PER KILLED
+    # ROW and cannot reconcile a value that has no rows behind it. Model that
+    # heal by resetting the counter to the live-row count the reconciler computes.
+    _heal_concurrent_counter_to_live()
     freed = backend.create_session()
     assert freed.status == "active", (
-        "after the counter is reclaimed to the true live count a fresh create "
+        "after the counter is healed to the true live count a fresh create "
         f"must 201 again (live counter, not a permanent wall); got {freed.status}"
     )
 
@@ -794,9 +837,11 @@ def test_e7_quota_ceiling_capped_then_released(backend: Backend, expect) -> None
     # counter must track. At the deployed cap of 64 a leak of 1 is invisible to a
     # create (1 < 64), so a create-based probe is vacuous here; assert the
     # counter itself instead. Drive the operator revoke/all (which releases every
-    # row) and require the counter to fall to the true live-row count. This reds
-    # TODAY on the counter-leak REAL-FINDING (RevokeAll never refunds the
-    # DimConcurrentSessions counter), and GREENS the moment the refund lands.
+    # row) and require the counter to fall to the true live-row count. The refund
+    # LANDED (killswitch forceKillRow calls RefundConcurrent per killed row, canon
+    # #53 d6d9b78), so this GREENS: after revoke/all with every row killed the
+    # counter tracks the live-row count. It reds via real_finding only if the
+    # counter drifts ABOVE the live rows (the leak regresses).
     if not _operator_sock_reachable():
         pytest.skip(
             "operator UDS not reachable: cannot drive the release keystone. "
@@ -881,7 +926,7 @@ def test_e8_session_jwt_expiry_surfaces_cleanly(backend: Backend, expect) -> Non
     # KEYSTONE (within-exp path works): a fresh, currently-valid session exec
     # completes — the edge/exec path is not a blanket 401, so a later expiry-401
     # is attributable to expiry, not to the path being broken.
-    within = backend.exec(["true"])
+    within = backend.exec_sh("true")
     assert not within.denied, "a within-exp session op must complete (keystone)"
 
     short_exp = os.getenv("FLEET_SHORT_EXP_S")
@@ -899,7 +944,7 @@ def test_e8_session_jwt_expiry_surfaces_cleanly(backend: Backend, expect) -> Non
     # on the next edge-crossing op. Assert the STATUS CLASS (denied), not an
     # invented body — the 401 BoundedReason body is TBD-shaped at this layer.
     time.sleep(float(short_exp) + 1.0)
-    expired = backend.exec(["true"])
+    expired = backend.exec_sh("true")
     assert expired.denied, (
         "an expired session-JWT must surface a deny (401 class) at the edge, "
         "not a hang or 500"
