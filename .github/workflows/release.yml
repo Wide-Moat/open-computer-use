@@ -170,7 +170,10 @@ jobs:
           REPO: ${{ github.repository }}
           IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
-          REF: ${{ github.ref_name }}
+          # The tag, not the dispatch branch: a commit landing on the branch
+          # between the tag and this step would otherwise be what gets built,
+          # so the images would not match the commit the release points at.
+          REF: ${{ steps.version.outputs.version }}
         run: |
           gh workflow run build.yml --repo "$REPO" --ref "$REF" -f version="$IMAGE_TAG"
           gh workflow run release-chart.yml --repo "$REPO" --ref "$REF" -f version="$CHART_VERSION"
