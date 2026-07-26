@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-"""Tests for fix_tool_loop_errors.py against v0.9.1 middleware.py.
+"""Tests for fix_tool_loop_errors.py against the v0.10.2 middleware.py fixture.
 
 3-state coverage: fresh apply / idempotent re-run / broken fixture fails loud.
+The patch anchors target one upstream shape (openwebui/Dockerfile
+ARG OPENWEBUI_VERSION), so the fixture is pinned to that base.
 """
 import ast
 import os
@@ -16,7 +18,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_middleware_v091, load_middleware_v092  # noqa: E402
+from conftest import load_middleware_v0102  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -27,19 +29,20 @@ def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProces
     )
 
 
-class TestFixToolLoopErrors(unittest.TestCase):
+class TestFixToolLoopErrorsV0102(unittest.TestCase):
+    """3-state coverage against the real v0.10.2 middleware.py fixture."""
+
     PATCH_NAME = "fix_tool_loop_errors"
     NEW_MARKER = "FIX_TOOL_LOOP_ERRORS"
-    # Distinctive single line from SEARCH_TOOL_LOOP / SEARCH_ITER anchors
+    # Distinctive single line from the SEARCH_ITER anchor
     PRIMARY_ANCHOR = (
-        "                while len(tool_calls) > 0 and tool_call_retries < "
-        "CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES:"
+        "                    or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS"
     )
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v091(), encoding="utf-8")
+        self.target.write_text(load_middleware_v0102(), encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -52,6 +55,19 @@ class TestFixToolLoopErrors(unittest.TestCase):
         self.assertIn(self.NEW_MARKER, content)
         self.assertIn("TOOL_LOOP_ERRORS_UNIFIED", content)
         ast.parse(content)
+
+    def test_injected_code_calls_no_removed_helpers(self):
+        # Open WebUI 0.10.0 deleted serialize_output(); the error paths this
+        # patch injects sit inside broad `except` blocks, so a NameError there
+        # would be swallowed and the user-facing error banner lost.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+        self.assertNotIn(
+            "serialize_output",
+            content,
+            "patched middleware calls serialize_output(), removed upstream in 0.10.0",
+        )
 
     def test_idempotent_rerun(self):
         r1 = _run_patch(self.PATCH_NAME, self.target)
@@ -66,57 +82,7 @@ class TestFixToolLoopErrors(unittest.TestCase):
         content = self.target.read_text()
         self.assertIn(self.PRIMARY_ANCHOR, content, "test fixture assumption wrong")
         self.target.write_text(
-            content.replace(self.PRIMARY_ANCHOR, "                # ANCHOR_REMOVED_FOR_TEST")
-        )
-        r = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r.returncode, 1, f"expected exit 1; stdout={r.stdout} stderr={r.stderr}")
-        self.assertIn("ERROR:", r.stderr)
-        self.assertIn(self.PATCH_NAME, r.stderr)
-
-
-class TestFixToolLoopErrorsV092(unittest.TestCase):
-    """3-state coverage against real v0.9.2 middleware.py fixture."""
-
-    PATCH_NAME = "fix_tool_loop_errors"
-    NEW_MARKER = "FIX_TOOL_LOOP_ERRORS"
-    PRIMARY_ANCHOR = (
-        "                while len(tool_calls) > 0 and tool_call_retries < "
-        "CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES:"
-    )
-
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v092(), encoding="utf-8")
-
-    def tearDown(self):
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_fresh_apply_v092(self):
-        r = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}\nstdout={r.stdout}")
-        self.assertIn(f"PATCHED: {self.PATCH_NAME}", r.stdout)
-        content = self.target.read_text()
-        self.assertIn(self.NEW_MARKER, content)
-        self.assertIn("TOOL_LOOP_ERRORS_UNIFIED", content)
-        # v0.9.2 specific: the new 'metadata': metadata, key is emitted
-        self.assertIn("'metadata': metadata,", content)
-        ast.parse(content)
-
-    def test_idempotent_rerun_v092(self):
-        r1 = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r1.returncode, 0)
-        after_first = self.target.read_text()
-        r2 = _run_patch(self.PATCH_NAME, self.target)
-        self.assertEqual(r2.returncode, 0)
-        self.assertIn("ALREADY PATCHED", r2.stdout)
-        self.assertEqual(after_first, self.target.read_text())
-
-    def test_broken_fixture_fails_loud_v092(self):
-        content = self.target.read_text()
-        self.assertIn(self.PRIMARY_ANCHOR, content, "test fixture assumption wrong")
-        self.target.write_text(
-            content.replace(self.PRIMARY_ANCHOR, "                # ANCHOR_REMOVED_FOR_TEST")
+            content.replace(self.PRIMARY_ANCHOR, "                    or False")
         )
         r = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r.returncode, 1, f"expected exit 1; stdout={r.stdout} stderr={r.stderr}")
