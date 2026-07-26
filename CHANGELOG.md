@@ -6,6 +6,45 @@
 
 - **License migration: BUSL-1.1 → FSL-1.1-Apache-2.0.** All future releases ship under the Functional Source License, Version 1.1, Apache 2.0 Future License. Use, modification, forking, internal self-hosting, and redistribution remain permitted; offering a hosted or embedded service that competes with our paid version(s) requires a separate commercial agreement. Each release automatically converts to Apache-2.0 two years after publication under the Grant of Future License clause. Past releases retain their original BUSL-1.1 terms per the LICENSE file published at that tag. Affected: `LICENSE`, `NOTICE`, `README.md` badge + License section, `CLAUDE.md` License Headers section, `CONTRIBUTING.md`, `package.json`, SPDX headers across 176 source files, `helm/computer-use-server/`, `THIRD-PARTY-LICENSES.md`, `computer-use-server/cli-defaults/*.json`.
 
+## v0.10.2.0 — bump Open WebUI base to 0.10.2 (2026-07-26)
+
+Minor release: Open WebUI base bumped from `0.9.5` → `0.10.2` (upstream shipped 0.9.6, 0.10.0, 0.10.1, 0.10.2). Upstream's v0.10.0 moved tool-output rendering out of the backend into a client-side renderer, deleting `serialize_output()` from `middleware.py`. That made one patch obsolete and moved anchors in three others. Both frontend chunk patches applied to the bumped base without changes.
+
+### Removed
+
+- **`fix_large_tool_args` patch.** Its target, `serialize_output()` in `utils/middleware.py`, no longer exists: upstream commit `0443ab3` (first released in 0.10.0) replaced server-side HTML serialisation with `StructuredOutputRenderer.svelte` + `structuredOutput.ts`, which build tool-call attributes as objects on the client. The problem the patch solved — a >10 KB `arguments="…"` attribute inside the persisted message body, re-parsed by the markdown/HTML tokenizer on every stream chunk — has no code path left. Removed `openwebui/patches/fix_large_tool_args.py`, its `RUN` line in `openwebui/Dockerfile`, `tests/patches/test_fix_large_tool_args.py`, and its rows in `openwebui/README.md` and `openwebui/patches/README.md`.
+
+### Changed
+
+- **`openwebui/Dockerfile`** — `ARG OPENWEBUI_VERSION=0.9.5` → `0.10.2`.
+- **`fix_tool_loop_errors` Mod 1 (tool_loop)** — anchor no longer includes the trailing `if DETECT_CODE_INTERPRETER:`; upstream inserted a tool-call iteration-limit block ahead of it. The loop body itself is byte-identical to 0.9.5.
+- **`fix_tool_loop_errors` Mod 2 (code_interp)** — track `metadata.get('chat_id', '')` in place of `metadata['chat_id']` in the post-loop title guard.
+- **`fix_tool_loop_errors` Mod 4 (done_bg)** — `ctx['assistant_message']` no longer carries `'content': serialize_output(output)`; the frontend renders from `output` alone. Dropped from both SEARCH and REPLACE.
+- **`fix_tool_loop_errors` Mod 5 (iter)** — track the renamed counter (`tool_call_retries` → `tool_call_iterations`) and the multi-line `while` guarded by `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS`.
+- **`fix_large_tool_results` Mod 3 (history)** — upstream inserted `form_data['messages'] = sanitize_tool_pairs(form_data['messages'])` between `process_messages_with_output(...)` and `get_system_message(...)`. The anchor now spans it, and history truncation runs after the sanitiser rather than before it.
+- **`docker-compose.webui.yml`** — default `OPENWEBUI_VERSION:-0.9.2` → `0.10.2`. This default had been left behind by the v0.9.5.0 release, so `docker compose -f docker-compose.webui.yml up --build` on a fresh clone was building against 0.9.2 while the Dockerfile said 0.9.5.
+- **Version pins refreshed** to match the new base: `README.md` compatibility section and embed snippet, `docs/openwebui-filter.md`, `.env.example` (was `0.8.12`), `helm/computer-use-server/Chart.yaml` `appVersion` and `examples/helm/with-open-webui/values-open-webui.yaml` `tag` (both were `0.9.2.4`).
+- **`openwebui/patches/README.md` rewritten.** It claimed only `fix_artifacts_auto_show` was active and the rest were "commented out in `openwebui/Dockerfile`", and that patches "exit with code 0 even on failure". Both statements had been false since the fail-loud rewrite — every patch runs unconditionally and `sys.exit(1)` on an anchor miss. It also omitted `fix_tool_loop_errors` and `fix_preview_url_detection` entirely.
+
+### Fixed
+
+- **`pytest tests/patches/` was red on `main`** — 18 failures. The v0.9.5.0 release rewrote SEARCH/REPLACE anchors but kept only v0.9.1 / v0.9.2 fixtures, so every suite for a version-sensitive patch asserted against source shapes its own patch could no longer match. No CI workflow runs this directory, which is why it stayed unnoticed. Fixtures are now a single pair (`middleware_v0.10.2.py`, `retrieval_v0.10.2.py`) tracking the pinned base, and the duplicated per-version test classes collapse into one class per patch. The stale `v0.9.1` / `v0.9.2` fixtures are deleted (15,561 lines of vendored upstream source). `pytest tests/patches/` — 29 passed.
+
+### Verified
+
+- Cumulative dry-run in `openwebui/Dockerfile` order against a fresh `v0.10.2` source tree: all five backend patches apply, re-run clean (`ALREADY PATCHED`), and both resulting files pass `ast.parse`.
+- Both frontend patches locate and rewrite their chunks inside `ghcr.io/open-webui/open-webui:0.10.2` (`D4rfk4Lu.js`, `_UcCb4Vt.js`), including the cache-bust rename.
+- Image build of `open-webui-ocu:0.10.2.0-rc.1` from the production `openwebui/Dockerfile` succeeds with all seven hard-fail guards green; every patch marker is present in the built layers and both patched Python files parse inside the image.
+- Runtime smoke test of that image: container boots, `/api/version` returns `0.10.2`, `/health` returns `{"status":true}`, and `init.sh` completes its whole sequence — admin created, `ai_computer_use` tool created and marked public-read, `computer_use_filter` created, activated and made global, valves seeded, `DEFAULT_MODEL_PARAMS` set.
+- `init.sh` needs no change: every endpoint it calls (`/api/version`, `/api/models`, `auths/{signin,signup}`, `tools/{create,id/…,access/update,valves/update}`, `functions/{create,id/…,toggle,toggle/global,valves/update}`, `models/create`, `configs/models`) is present in 0.10.2. `tests/test_init_sh_unchanged.sh` still matches its pinned hash.
+
+### Upstream behavior changes worth knowing
+
+- Tool results and reasoning render from the structured `output` array via `StructuredOutputRenderer.svelte`; assistant messages no longer persist a serialised HTML `content` string for tool calls. Anything reading `content` off a stored assistant message for tool history gets nothing.
+- `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS` replaces `CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES`, and the upstream default rose from 30 to 256. `env.py` reads the old name as an explicit fallback, so existing deployments keep working; `docker-compose.webui.yml` and the README recipes now set the new name. `-1` disables the cap.
+- `sanitize_tool_pairs()` now drops orphaned tool calls and tool results from the outgoing message list.
+- `backend/start.sh` runs under `set -euo pipefail`. Our entrypoint wrapper is a separate script and is unaffected.
+
 ## v0.9.5.0 — bump Open WebUI base to 0.9.5 (2026-05-20)
 
 Minor release: Open WebUI base bumped from `0.9.2` → `0.9.5` (upstream shipped 0.9.3, 0.9.4, 0.9.5 on 2026-05-09). All eight patches re-audited against the new source tree — none became obsolete (upstream did not natively address any of the eight problem domains in 0.9.3–0.9.5). Frontend patches (`fix_artifacts_auto_show`, `fix_preview_url_detection`) applied to the bumped base without changes; four backend patches needed updated SEARCH/REPLACE anchors to track upstream refactors.
