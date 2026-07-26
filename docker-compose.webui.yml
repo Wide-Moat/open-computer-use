@@ -44,7 +44,7 @@ services:
       - ORCHESTRATOR_URL=http://computer-use-server:8081
       - MCP_API_KEY=${MCP_API_KEY:-}
       # Allow complex multi-step tasks (browser + doc creation) to complete
-      - CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=200
+      - CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=${CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS:-200}
       # Large tool result truncation (fix_large_tool_results patch)
       # Prevents context window exhaustion from large MCP tool outputs
       - TOOL_RESULT_MAX_CHARS=${TOOL_RESULT_MAX_CHARS:-50000}

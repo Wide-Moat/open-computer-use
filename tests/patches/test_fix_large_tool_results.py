@@ -423,8 +423,11 @@ class TestFixLargeToolResultsV0102(unittest.TestCase):
         self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
         self.assertIn(f"PATCHED: {self.PATCH_NAME}", r.stdout)
         content = self.target.read_text()
+        self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
         self.assertIn(self.NEW_MARKER, content)
         self.assertIn("'metadata': metadata,", content)
+        # The 0.10.2 base has no serialize_output(); injected code must not call it.
+        self.assertNotIn("serialize_output", content)
         ast.parse(content)
 
     def test_idempotent_rerun_v0102(self):
@@ -448,18 +451,6 @@ class TestFixLargeToolResultsV0102(unittest.TestCase):
         self.assertEqual(r.returncode, 1, f"stdout={r.stdout} stderr={r.stderr}")
         self.assertIn("ERROR:", r.stderr)
         self.assertIn(self.PATCH_NAME, r.stderr)
-
-    def test_cascade_with_patch_3_on_v0102(self):
-        r1 = _run_patch("fix_tool_loop_errors", self.target)
-        self.assertEqual(r1.returncode, 0, r1.stderr)
-        r2 = _run_patch("fix_large_tool_results", self.target)
-        self.assertEqual(r2.returncode, 0, r2.stderr)
-        content = self.target.read_text()
-        self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
-        self.assertIn("FIX_LARGE_TOOL_RESULTS", content)
-        self.assertIn("'metadata': metadata,", content)
-        ast.parse(content)
-
 
     def test_patch_fails_loud_without_fix_tool_loop_errors(self):
         # Mod 2 anchors on the TOOL_LOOP_ERRORS_UNIFIED marker, which only

@@ -56,6 +56,19 @@ class TestFixToolLoopErrorsV0102(unittest.TestCase):
         self.assertIn("TOOL_LOOP_ERRORS_UNIFIED", content)
         ast.parse(content)
 
+    def test_injected_code_calls_no_removed_helpers(self):
+        # Open WebUI 0.10.0 deleted serialize_output(); the error paths this
+        # patch injects sit inside broad `except` blocks, so a NameError there
+        # would be swallowed and the user-facing error banner lost.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+        self.assertNotIn(
+            "serialize_output",
+            content,
+            "patched middleware calls serialize_output(), removed upstream in 0.10.0",
+        )
+
     def test_idempotent_rerun(self):
         r1 = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r1.returncode, 0)
