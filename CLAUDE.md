@@ -94,6 +94,8 @@ To release:
 2. Commit: `chore: release vX.X.X.X`.
 3. Tag: `git tag vX.X.X.X && git push origin main --tags`.
 
+If the environment cannot push a tag — Claude Code on the web restricts git pushes to the working branch — run the **Release** workflow manually instead (`gh workflow run release.yml -f version=vX.X.X.X`, or the Actions tab). It validates the version, refuses to tag a version with no `CHANGELOG.md` heading, creates the tag, cuts the GitHub Release, and dispatches the image build and chart publish. `supply-chain.yml` (SBOM + cosign signing) stays manual either way: it signs as the project's Sigstore identity and requires `production`-environment approval.
+
 The `next/v1` branch will define its own versioning scheme in an ADR; until then it carries no tagged releases.
 
 ---
