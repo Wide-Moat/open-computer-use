@@ -6,6 +6,13 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag the images with, no leading v (e.g. 0.10.2.0). Empty builds without a version tag.'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -53,6 +60,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -135,6 +148,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -177,6 +196,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -219,6 +244,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
