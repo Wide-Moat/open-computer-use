@@ -150,6 +150,39 @@ jobs:
             -o spdx-json=sbom.spdx.json \
             -o cyclonedx-json=sbom.cdx.json
 
+      - name: Refuse to attest an empty SBOM
+        # syft exiting zero does not mean it resolved anything. Without this,
+        # a degenerate SBOM would be attested and the verification step below
+        # would pass, because it checks that an attestation exists and is
+        # signed by the right identity -- not that its predicate describes the
+        # image.
+        #
+        # Whether cosign itself rejects a degenerate predicate is not the
+        # answer here. It resolves the image reference before it reads the
+        # predicate file, so an empty, a well-formed-empty and a malformed
+        # predicate all fail identically against an unreachable image and
+        # identically pass the file to the registry against a reachable one.
+        # The property is asserted locally instead of inferred from a tool
+        # whose behaviour we have not established.
+        run: |
+          for f in sbom.spdx.json sbom.cdx.json; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is absent or empty; syft produced no SBOM" >&2
+              exit 1
+            fi
+            if ! jq -e . "$f" >/dev/null 2>&1; then
+              echo "::error::$f is not valid JSON" >&2
+              exit 1
+            fi
+          done
+          spdx_pkgs="$(jq '(.packages // []) | length' sbom.spdx.json)"
+          cdx_comps="$(jq '(.components // []) | length' sbom.cdx.json)"
+          echo "SPDX packages: ${spdx_pkgs}, CycloneDX components: ${cdx_comps}"
+          if [ "$spdx_pkgs" -eq 0 ] || [ "$cdx_comps" -eq 0 ]; then
+            echo "::error::an SBOM listing zero packages describes nothing; refusing to attest it" >&2
+            exit 1
+          fi
+
       - name: Sign image (keyless via Sigstore)
         env:
           IMAGE_REF: ${{ steps.ref.outputs.ref }}
