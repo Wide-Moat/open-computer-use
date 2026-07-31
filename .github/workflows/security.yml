@@ -334,3 +334,37 @@ jobs:
             style
             revert
           requireScope: false
+
+  release-signing-order:
+    name: release — signing precedes publish
+    runs-on: ubuntu-latest
+    # This gate reads workflow files, so unlike the release pipeline itself it
+    # can run on a pull request and can therefore be a required check. The
+    # signing pipeline is tag-triggered and produces no PR status at all; a
+    # job whose `if:` excludes pull_request would be skipped, and a skipped
+    # required check counts as passed, so requiring it would be worse than
+    # leaving it out. This one has no `if:` and no trigger exclusion.
+    #
+    # It currently FAILS on this branch, correctly: build.yml publishes four
+    # images on a tag, supply-chain.yml signs them on the same tag, and
+    # nothing orders the two. The failure is the finding, and switching the
+    # gate off because it reports a true thing is the defect this whole set of
+    # gates exists to prevent.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        # Version-pinned, not hash-pinned. A hash pin belongs here by the
+        # dependency policy, and inventing one unverified would be worse than
+        # stating its absence -- the pin lands when the digest is fetched
+        # rather than guessed.
+        run: pip install pyyaml==6.0.2
+      - name: Self-test the checker before trusting its verdict
+        run: python3 tests/security/check_signing_precedes_publish.py --self-test
+      - name: Check that no image is published before it is signed
+        run: python3 tests/security/check_signing_precedes_publish.py
