@@ -99,7 +99,7 @@ jobs:
           context: tests/security/rehearsal-subject
           outputs: type=image,name=127.0.0.1:5000/gate3-rehearsal,push-by-digest=true,name-canonical=true,push=true,registry.insecure=true
 
-      - name: The digest exists, and no tag does
+      - name: The digest exists, the artifact landed, and no tag points at it
         run: |
           digest="${{ steps.build.outputs.digest }}"
           if [ -z "$digest" ]; then
@@ -107,14 +107,44 @@ jobs:
             exit 1
           fi
           echo "digest: ${digest}"
-          tags="$(curl -fsS "http://${REG}/v2/gate3-rehearsal/tags/list")"
-          echo "tag list after the digest push: ${tags}"
-          # `"tags":null` is what a repository with no tags returns. If a tag
-          # exists at this point the push was not by digest and the window this
-          # whole design closes is open again.
-          case "$tags" in
-            *'"tags":null'*|*'"tags": null'*|*'"tags":[]'*) ;;
-            *) echo "::error::a tag exists before signing: ${tags}" >&2; exit 1 ;;
+
+          # Two questions, asked separately on purpose. The first run of this
+          # conflated them: `tags/list` answered 404 and the step died on
+          # curl's exit 22, which reads identically whether the registry means
+          # "this repository has no tags" or "nothing was ever pushed here".
+          # One of those is the result being asserted; the other would be a
+          # finding about the pipeline.
+
+          # 1. Did the artifact land? A manifest reachable by digest says yes.
+          man=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                  -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+                  -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+                  "http://${REG}/v2/gate3-rehearsal/manifests/${digest}")
+          echo "manifest by digest -> HTTP ${man}"
+          if [ "$man" != "200" ]; then
+            echo "::error::the digest push did not land: manifest returned ${man}" >&2
+            exit 1
+          fi
+
+          # 2. Is any tag pointing at it? 404 here means the registry knows no
+          # tagged repository by that name, which is the same answer as an
+          # empty list and is what a digest-only push should produce.
+          code=$(curl -sS -o /tmp/tags.json -w '%{http_code}' \
+                   "http://${REG}/v2/gate3-rehearsal/tags/list")
+          body=$(cat /tmp/tags.json 2>/dev/null || true)
+          echo "tags/list -> HTTP ${code}  body: ${body}"
+          case "$code" in
+            404) echo "ok: no tagged repository exists yet" ;;
+            200)
+              case "$body" in
+                *'"tags":null'*|*'"tags": null'*|*'"tags":[]'*|*'"tags": []'*)
+                  echo "ok: the repository exists and carries no tag" ;;
+                *)
+                  echo "::error::a tag exists before signing: ${body}" >&2
+                  exit 1 ;;
+              esac ;;
+            *) echo "::error::unexpected ${code} from tags/list" >&2; exit 1 ;;
           esac
 
       - name: Generate the SBOM
