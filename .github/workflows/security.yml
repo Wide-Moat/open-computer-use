@@ -356,7 +356,7 @@ jobs:
           requireScope: false
 
   release-signing-order:
-    name: release — signing precedes publish
+    name: release — pipeline integrity (signing order, cross-job wiring)
     runs-on: ubuntu-latest
     # This gate reads workflow files, so unlike the release pipeline itself it
     # can run on a pull request and can therefore be a required check. The
@@ -388,3 +388,15 @@ jobs:
         run: python3 tests/security/check_signing_precedes_publish.py --self-test
       - name: Check that no image is published before it is signed
         run: python3 tests/security/check_signing_precedes_publish.py
+
+      - name: Self-test the cross-job wiring checker
+        run: python3 tests/security/check_cross_job_outputs.py --self-test
+
+      - name: Check that every cross-job output reference resolves
+        # `${{ needs.<job>.outputs.<key> }}` evaluates to the empty string when
+        # the producer is missing, misspelled, or declares something else. The
+        # release pipeline carries the image digest across three jobs on
+        # exactly this mechanism, and the gate3 rehearsal cannot reach it --
+        # the rehearsal is one job, because its registry is a service
+        # container that does not outlive the job.
+        run: python3 tests/security/check_cross_job_outputs.py
