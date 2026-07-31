@@ -183,6 +183,13 @@ jobs:
           # Diff-aware semgrep needs history back to the merge-base.
           fetch-depth: 0
           persist-credentials: false
+      - name: Self-test the hand-written rules before trusting their verdict
+        # `semgrep test` checks each `ruleid:`/`ok:` annotation in the fixture
+        # against the rule that actually fired, so a finding raised for the
+        # wrong reason fails here rather than passing as coverage. A rule whose
+        # own fixture does not hold should not be allowed to gate anything.
+        run: semgrep --metrics=off --test --config .semgrep/ .semgrep/
+
       - name: Semgrep CI (community rules)
         env:
           # Required for diff-aware scanning + PR commenting. Without it,
@@ -200,7 +207,20 @@ jobs:
           # without first probing /c/p/<name>. Bash-in-YAML coverage
           # comes from p/security-audit + p/github-actions; Docker
           # socket misuse from p/dockerfile.
+          #
+          # `--config .semgrep/` adds the hand-written rules. They exist
+          # because the six packs below load 694 rules, run 205 of them
+          # against this repository's Python, and cover none of the one
+          # idiomatic regression its own code can produce. Measured, not
+          # assumed: see the header of the rule file.
+          #
+          # `--exclude` keeps the rule fixtures out of the scan. They contain
+          # the real vulnerable forms by construction, so without this the
+          # gate reddens on its own test data -- verified: 4 findings with the
+          # fixture in scope, 0 with it excluded.
           semgrep ci \
+            --exclude '*.fixture.py' \
+            --config ".semgrep/" \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
