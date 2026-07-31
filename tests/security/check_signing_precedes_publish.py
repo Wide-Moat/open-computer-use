@@ -57,30 +57,53 @@ def steps_of(job):
 
 
 def job_publishes(job):
-    """Return a reason string when the job publishes a consumer-reachable ref."""
+    """Return a reason string when the job creates a CONSUMER-REACHABLE reference.
+
+    What matters is the tag, not the push. Cosign signs a digest, so the image
+    must reach the registry before it can be signed at all -- a digest-only
+    push is the sole way to have something to sign and is not a violation. The
+    violation is attaching a tag a consumer would pull, before a signature
+    exists for it.
+
+    `push: true` and `outputs: type=image,...,push=true` are the same act
+    spelled two ways, and the second is the ordinary spelling for digest-based
+    publishing. Reading only the first passes a tagged publish silently.
+    """
     for step in steps_of(job):
         if not isinstance(step, dict):
             continue
         uses = str(step.get("uses") or "")
         run = str(step.get("run") or "")
         with_ = step.get("with") or {}
+
         if any(a in uses for a in PUBLISH_ACTIONS):
             push = with_.get("push")
-            # `push:` absent defaults to false for build-push-action; an
-            # expression is unresolvable here and is reported rather than
-            # assumed either way.
-            if push is None or push is False or str(push).lower() == "false":
+            outputs = str(with_.get("outputs") or "")
+            pushes_via_outputs = "push=true" in outputs.replace(" ", "")
+            digest_only = "push-by-digest=true" in outputs.replace(" ", "")
+            push_absent = push is None or push is False or str(push).lower() == "false"
+            if push_absent and not pushes_via_outputs and not digest_only:
                 continue
+
             tags = str(with_.get("tags") or "")
+            if not tags.strip():
+                # No tag: the reference is a digest nobody has been handed.
+                continue
             if STAGING_MARKER in tags:
                 continue
+
+            how = f"outputs: {outputs[:60]}" if (pushes_via_outputs or digest_only) else f"push: {push}"
             if "${{" in str(push):
-                return f"step `{uses.split('@')[0]}` push is the expression {push!r}, which may be true"
-            return f"step `{uses.split('@')[0]}` with push: {push}"
+                how = f"push is the expression {push!r}, which may be true"
+            return f"step `{uses.split('@')[0]}` attaches tag(s) {tags.strip().splitlines()[0][:60]!r} with {how}"
+
         for marker in PUBLISH_SHELL:
             if marker in run:
                 line = next((l.strip() for l in run.splitlines() if marker in l), marker)
                 if STAGING_MARKER in line:
+                    continue
+                # A bare digest reference in a shell push is not consumer-reachable.
+                if marker == "docker push" and "@sha256:" in line and "--tag" not in line:
                     continue
                 return f"run step contains `{marker}`: {line[:80]}"
     return None
@@ -214,12 +237,18 @@ def analyse(workflows):
 
 
 SELF_TESTS = [
+    # These two carry `tags:` because a real publishing job does. Written
+    # without it they were shorthand for "a job that publishes", and the
+    # shorthand stopped being true once the check learned that the tag, not
+    # the push, is what makes a reference reachable.
     ("publish with no signer anywhere", 1, {
         "build.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
-            "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {"push": True}}]}}}}),
+            "image": {"steps": [{"uses": "docker/build-push-action@v7",
+                                 "with": {"push": True, "tags": "ghcr.io/o/i:v1"}}]}}}}),
     ("publish and sign in separate workflows on the same tag", 1, {
         "build.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
-            "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {"push": True}}]}}},
+            "image": {"steps": [{"uses": "docker/build-push-action@v7",
+                                 "with": {"push": True, "tags": "ghcr.io/o/i:v1"}}]}}},
         "supply-chain.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "sign": {"steps": [{"run": "cosign sign --yes $REF"}]}}}}),
     ("publish without needs on the signer in the same workflow", 1, {
@@ -240,6 +269,24 @@ SELF_TESTS = [
     ("pull-request build that does not push", 0, {
         "w.yml": {"on": {"pull_request": None}, "jobs": {
             "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {"push": False}}]}}}}),
+    # The same publish spelled through `outputs:`. Reading only `with.push`
+    # passed this silently, which is how it was found -- against a peer's
+    # corrected pipeline, where the tagless form of it is the correct answer.
+    ("tagged publish spelled through outputs: is a violation", 1, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "publish": {"steps": [{"uses": "docker/build-push-action@v7", "with": {
+                "outputs": "type=image,name=ghcr.io/o/i,push=true", "tags": "ghcr.io/o/i:v1.2.3"}}]},
+            "sign": {"steps": [{"run": "cosign sign --yes ghcr.io/o/i:v1.2.3"}]}}}}),
+    ("push-by-digest with no tag is not a consumer reference", 0, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {
+                "outputs": "type=image,name=ghcr.io/o/i,push-by-digest=true"}}]},
+            "sign": {"needs": "image", "steps": [{"run": "cosign sign --yes ghcr.io/o/i@$DIGEST"}]},
+            "promote": {"needs": "sign", "steps": [
+                {"run": "docker buildx imagetools create --tag ghcr.io/o/i:v1 ghcr.io/o/i@$DIGEST"}]}}}}),
+    ("push: true with no tag is likewise not a consumer reference", 0, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {"push": True}}]}}}}),
 ]
 
 
