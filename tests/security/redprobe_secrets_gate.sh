@@ -110,10 +110,30 @@ clean_rc="$(run_gate clean)"
 dirty_rc="$(run_gate dirty)"
 
 bytes_of() { sed -n 's/.*scanned ~\([0-9]*\) bytes.*/\1/p' "$WORK/$1.out" | head -1; }
+commits_of() { sed -n 's/.*[^0-9]\([0-9]*\) commits scanned.*/\1/p' "$WORK/$1.out" | head -1; }
 clean_bytes="$(bytes_of clean)"; dirty_bytes="$(bytes_of dirty)"
 
 fail=0
 note() { echo "$1"; }
+
+# Scope check. The expectation comes from `git rev-list`, a different source
+# than the scanner's own counter -- comparing a run against a previous run of
+# the same tool catches drift but not systematic error, and both defects this
+# harness has had were systematic: a replayed one-commit history, and a clone
+# carrying every branch. Two independent sources agreeing is what makes the
+# count evidence rather than decoration.
+expected_commits="$(git -C "$WORK/clean" rev-list --count HEAD)"
+scanned_commits="$(commits_of clean)"
+if [ -z "$scanned_commits" ]; then
+  note "FAIL scope: the scanner reported no commit count; it did not walk a history"
+  fail=1
+elif [ "$scanned_commits" != "$expected_commits" ]; then
+  note "FAIL scope: scanner walked $scanned_commits commits, git says $REF reaches $expected_commits."
+  note "     The scan surface is not the ref under test, so neither leg answers for $REF."
+  fail=1
+else
+  note "ok   scope: $scanned_commits commits, matching git rev-list for $REF"
+fi
 
 # Delivery check first. A dirty leg that scanned no more bytes than the clean
 # leg never received the payload, and its result -- green or red -- is about
