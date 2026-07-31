@@ -11,8 +11,16 @@ image still pulls.
 The check reads the workflow graph rather than the shell inside a step. It
 answers one question: for every trigger on which some job publishes a
 consumer-reachable image reference, is a signing job ordered before that
-publish? Ordering means a `needs:` edge inside one workflow, or a
-`workflow_run` dependency between two.
+publish? Ordering means a `needs:` edge, so the signer has to live in the
+same workflow as the publish it precedes.
+
+Ordering across two workflows is not accepted, and not because it is hard to
+read. A signature is over a digest, and the digest exists only once the build
+has run: a signing workflow scheduled ahead of the building one has nothing to
+sign, and one scheduled after it signs what is already public. Neither order
+satisfies the invariant, so there is no arrangement of `workflow_run` to
+accept. The way out is push-by-digest, which publishes no tag, followed by
+`needs:`-ordered sign and promote jobs in that same workflow.
 
 Two deliberate refusals, both because a silent "ok" here would be the
 comforting nothing this check exists to prevent:
@@ -198,13 +206,6 @@ def analyse(workflows):
     violations = []
     examined = 0
 
-    # A workflow that waits on another via workflow_run runs strictly after it.
-    runs_after = {}
-    for name, wf in workflows.items():
-        on = wf.get("on", wf.get(True)) or {}
-        if isinstance(on, dict) and isinstance(on.get("workflow_run"), dict):
-            runs_after[name] = set(on["workflow_run"].get("workflows") or [])
-
     signing_workflows = {}
     for name, wf in workflows.items():
         jobs = wf.get("jobs") or {}
@@ -242,20 +243,25 @@ def analyse(workflows):
                     f"signature. ({reason})")
                 continue
 
-            # No signer in this workflow. Look for one elsewhere on a shared
-            # trigger -- and say plainly that sharing a trigger is a race,
-            # not an ordering.
+            # No signer in this workflow. Name the one that exists elsewhere,
+            # so the report does not read as "nothing signs this" when
+            # something does -- the remedy differs between the two.
             elsewhere = [
                 other for other, (_, other_trig, _) in signing_workflows.items()
                 if other != name and (wf_triggers & other_trig)
-                and name not in runs_after.get(other, set())
             ]
+            # A signer that does not share this trigger is still a signer. Say
+            # so: "nothing signs it" and "the signer is in another workflow"
+            # have different remedies, and only the second is true here.
+            if not elsewhere:
+                elsewhere = [other for other in signing_workflows if other != name]
             if elsewhere:
                 violations.append(
-                    f"{name}: job `{jid}` publishes on {sorted(wf_triggers)} and the signing "
-                    f"job lives in {elsewhere} on the same trigger with no workflow_run "
-                    f"dependency. Two workflows on one trigger race; they are not ordered. "
-                    f"({reason})")
+                    f"{name}: job `{jid}` publishes on {sorted(wf_triggers)} and the only "
+                    f"signing job is in {elsewhere}, a separate workflow. No trigger order "
+                    f"between two workflows fixes this: scheduled first the signer has no "
+                    f"digest to sign, scheduled second it signs what is already public. Move "
+                    f"the signature into this workflow behind `needs:`. ({reason})")
             else:
                 violations.append(
                     f"{name}: job `{jid}` publishes a consumer-reachable reference and nothing "
@@ -277,7 +283,27 @@ SELF_TESTS = [
             "image": {"steps": [{"uses": "docker/build-push-action@v7",
                                  "with": {"push": True, "tags": "ghcr.io/o/i:v1"}}]}}},
         "supply-chain.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
-            "sign": {"steps": [{"run": "cosign sign --yes $REF"}]}}}}),
+            "sign": {"steps": [{"run": "cosign sign --yes $REF"}]}}}},
+     "a separate workflow", "nothing in this repository signs it"),
+    # `workflow_run` used to be documented as an accepted ordering. No
+    # arrangement of it can be correct, so both directions stay violations and
+    # both must name the separate workflow rather than deny it exists.
+    ("publisher scheduled after the signer via workflow_run, by display name", 1, {
+        "build.yml": {"name": "Build", "on": {"workflow_run": {
+            "workflows": ["supply-chain"], "types": ["completed"]}}, "jobs": {
+            "image": {"steps": [{"uses": "docker/build-push-action@v7",
+                                 "with": {"push": True, "tags": "ghcr.io/o/i:v1"}}]}}},
+        "supply-chain.yml": {"name": "supply-chain", "on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "sign": {"steps": [{"run": "cosign sign --yes $REF"}]}}}},
+     None, "nothing in this repository signs it"),
+    ("signer scheduled after the publisher via workflow_run", 1, {
+        "build.yml": {"name": "Build", "on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "image": {"steps": [{"uses": "docker/build-push-action@v7",
+                                 "with": {"push": True, "tags": "ghcr.io/o/i:v1"}}]}}},
+        "supply-chain.yml": {"name": "supply-chain", "on": {"push": {"tags": ["v*"]},
+            "workflow_run": {"workflows": ["Build"], "types": ["completed"]}}, "jobs": {
+            "sign": {"steps": [{"run": "cosign sign --yes $REF"}]}}}},
+     "a separate workflow", "nothing in this repository signs it"),
     ("publish without needs on the signer in the same workflow", 1, {
         "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "image": {"steps": [{"run": "docker push ghcr.io/o/i:1"}]},
@@ -331,13 +357,25 @@ SELF_TESTS = [
 
 def self_test():
     failed = 0
-    for label, expected, wfs in SELF_TESTS:
+    for entry in SELF_TESTS:
+        label, expected, wfs = entry[0], entry[1], entry[2]
+        # A case may pin a fragment of the reason. Asserting only the count let
+        # a violation be reported for the wrong reason, which is how the
+        # cross-workflow cases came to say "nothing signs it" about a
+        # repository that does sign it.
+        want, unwanted = (entry[3] if len(entry) > 3 else None), (entry[4] if len(entry) > 4 else None)
         violations, _ = analyse(wfs)
         got = 1 if violations else 0
         if got != expected:
             failed += 1
             print(f"SELF-TEST FAILED: {label} -- expected {'a violation' if expected else 'no violation'}, "
                   f"got {violations or 'none'}")
+        elif want and not any(want in v for v in violations):
+            failed += 1
+            print(f"SELF-TEST FAILED: {label} -- reported, but no reason contains {want!r}: {violations}")
+        elif unwanted and any(unwanted in v for v in violations):
+            failed += 1
+            print(f"SELF-TEST FAILED: {label} -- reason wrongly claims {unwanted!r}: {violations}")
         else:
             print(f"ok   self-test: {label}")
     if failed:
