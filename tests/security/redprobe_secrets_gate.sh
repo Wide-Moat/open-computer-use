@@ -90,18 +90,67 @@ rm -rf "$WORK/dirty"
 cp -R "$WORK/clean" "$WORK/dirty"
 
 rand() { LC_ALL=C tr -dc "$1" < /dev/urandom | head -c "$2"; }
-printf 'aws_access_key_id = AKIA%s\naws_secret_access_key = %s\n' \
-  "$(rand 'A-Z0-9' 16)" "$(rand 'A-Za-z0-9/+' 40)" > "$WORK/dirty/planted_aws.txt"
-printf 'GITHUB_TOKEN=ghp_%s\n' "$(rand 'A-Za-z0-9' 36)" > "$WORK/dirty/planted_pat.env"
-openssl genrsa 2048 2>/dev/null > "$WORK/dirty/planted_key.pem"
+draw_payloads() {
+  printf 'aws_access_key_id = AKIA%s\naws_secret_access_key = %s\n' \
+    "$(rand 'A-Z0-9' 16)" "$(rand 'A-Za-z0-9/+' 40)" > "$1/planted_aws.txt"
+  printf 'GITHUB_TOKEN=ghp_%s\n' "$(rand 'A-Za-z0-9' 36)" > "$1/planted_pat.env"
+  openssl genrsa 2048 2>/dev/null > "$1/planted_key.pem"
+}
 
+# Preflight: every payload must fire on its own before it is planted.
+#
+# The AWS rule applies an entropy threshold to the candidate secret, and a
+# random 40-character draw misses it in roughly one run in fifteen. Without
+# this step the probe of a merge-blocking gate is itself flaky, and a flaky
+# probe teaches people to re-run it -- which is how a genuinely dead payload
+# eventually passes unnoticed. Re-drawing separates "this class is not
+# detected at all", which is a finding, from "this draw was unlucky", which
+# is noise. Found by component-06 at 14 detections in 15 isolated runs.
+PREFLIGHT="$WORK/preflight"
+attempt=0
+while :; do
+  attempt=$((attempt + 1))
+  rm -rf "$PREFLIGHT"; mkdir -p "$PREFLIGHT"
+  draw_payloads "$PREFLIGHT"
+  git -C "$PREFLIGHT" init -q .
+  git -C "$PREFLIGHT" add -A
+  git -C "$PREFLIGHT" -c user.email=probe@local -c user.name=probe commit -qm payloads
+  # --verbose is what prints the per-finding File: lines. Without it gitleaks
+  # reports only a count, and a per-file check silently matches nothing.
+  docker run --rm --read-only --user "$(id -u):$(id -g)" \
+    -v "$PREFLIGHT:/repo:ro" -v "$WORK/config:/config:ro" \
+    "$GITLEAKS_IMAGE" detect --source=/repo --no-banner --redact --verbose --exit-code 1 \
+    --config=/config/.gitleaks.toml > "$WORK/preflight.out" 2>&1
+  rc=$?
+  # 0 = nothing found, 1 = findings. Anything else means the scanner did not
+  # run, which must not be re-drawn as if it were an unlucky payload.
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+    echo "FAIL preflight: the scanner exited $rc, so it did not scan."
+    sed -n '1,15p' "$WORK/preflight.out"
+    exit 1
+  fi
+  missing=""
+  for p in planted_aws.txt planted_pat.env planted_key.pem; do
+    grep -q "$p" "$WORK/preflight.out" || missing="$missing $p"
+  done
+  [ -z "$missing" ] && break
+  if [ "$attempt" -ge 5 ]; then
+    echo "FAIL preflight: after $attempt draws these classes are still undetected:$missing"
+    echo "     Not a bad draw at this point -- the rule is absent, or the class is allowlisted."
+    exit 1
+  fi
+done
+[ "$attempt" -gt 1 ] && echo "note preflight: re-drew payloads $((attempt - 1)) time(s) before all three fired"
+echo "ok   preflight: all three payload classes fire in isolation"
+
+cp "$PREFLIGHT"/planted_*.txt "$PREFLIGHT"/planted_*.env "$PREFLIGHT"/planted_*.pem "$WORK/dirty/"
 git -C "$WORK/dirty" add -A
 git -C "$WORK/dirty" -c user.email=probe@local -c user.name=probe commit -qm "tree at $REF plus planted credentials"
 
 run_gate() {
   docker run --rm --read-only --user "$(id -u):$(id -g)" \
     -v "$WORK/$1:/repo:ro" -v "$WORK/config:/config:ro" \
-    "$GITLEAKS_IMAGE" detect --source=/repo --no-banner --redact --exit-code 1 \
+    "$GITLEAKS_IMAGE" detect --source=/repo --no-banner --redact --verbose --exit-code 1 \
     --config=/config/.gitleaks.toml > "$WORK/$1.out" 2>&1
   echo $?
 }
@@ -171,11 +220,22 @@ else
     note "FAIL dirty leg: exit 1 but no finding count reported -- the scanner failed rather than detected."
     sed -n '1,20p' "$WORK/dirty.out"
     fail=1
-  elif [ "$found" -lt 3 ]; then
-    note "FAIL dirty leg: only $found of 3 planted classes detected -- at least one detector is allowlisted or absent"
-    fail=1
   else
-    note "ok   dirty leg: gate reddened on all planted classes (exit 1, leaks found: $found)"
+    # Attribute rather than count. A finding total of three proves the gate
+    # reddened; it does not prove it reddened on the planted payload, and a
+    # pre-existing secret elsewhere would satisfy a count check while leaving
+    # the planted classes undetected.
+    unattributed=""
+    for p in planted_aws.txt planted_pat.env planted_key.pem; do
+      grep -q "$p" "$WORK/dirty.out" || unattributed="$unattributed $p"
+    done
+    if [ -n "$unattributed" ]; then
+      note "FAIL dirty leg: the gate reddened, but not on these planted files:$unattributed"
+      note "     Something else in the tree produced the findings, so the probe proves nothing."
+      fail=1
+    else
+      note "ok   dirty leg: gate reddened, all three planted files named (exit 1, leaks found: $found)"
+    fi
   fi
 fi
 
