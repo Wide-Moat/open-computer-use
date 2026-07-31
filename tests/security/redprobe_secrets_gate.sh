@@ -63,14 +63,19 @@ else
   printf '[extend]\nuseDefault = true\n' > "$WORK/config/.gitleaks.toml"
 fi
 
-git archive "$REF" | tar -x -C "$WORK/clean"
-git -C "$WORK/clean" init -q .
-git -C "$WORK/clean" add -A
-git -C "$WORK/clean" -c user.email=probe@local -c user.name=probe commit -qm "tree at $REF"
+# Clone the REAL history rather than replaying the tree into one synthetic
+# commit. gitleaks and trufflehog both scan commit diffs, and the two
+# constructions do not agree: on this repository a single-commit replay of
+# origin/main reports four findings that a real-history clone of the same
+# commit does not report at all. A synthetic history measures the harness,
+# not the gate.
+SRC="$(git rev-parse --show-toplevel)"
+git clone --no-local --quiet --no-checkout "$SRC" "$WORK/clean"
+git -C "$WORK/clean" fetch --quiet "$SRC" "+$REF:refs/heads/probe-base"
+git -C "$WORK/clean" checkout --quiet probe-base
 
-cp -R "$WORK/clean/." "$WORK/dirty/"
-rm -rf "$WORK/dirty/.git"
-git -C "$WORK/dirty" init -q .
+rm -rf "$WORK/dirty"
+cp -R "$WORK/clean" "$WORK/dirty"
 
 rand() { LC_ALL=C tr -dc "$1" < /dev/urandom | head -c "$2"; }
 printf 'aws_access_key_id = AKIA%s\naws_secret_access_key = %s\n' \
