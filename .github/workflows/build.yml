@@ -348,6 +348,10 @@ jobs:
       REPO: ${{ github.repository }}
 
     steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -356,17 +360,10 @@ jobs:
 
       - name: Resolve the reference, refusing an absent digest
         id: ref
-        # A build job that pushed nothing leaves its output empty, and an
-        # empty digest would make the reference `ghcr.io/x@` -- which cosign
-        # rejects with a parse error rather than a statement about signing.
-        # Fail here, where the reason is legible.
-        run: |
-          if [ -z "$DIGEST" ]; then
-            echo "::error::no digest from the build job; there is nothing to sign" >&2
-            exit 1
-          fi
-          repo_lower="$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
-          printf 'ref=ghcr.io/%s%s@%s\n' "$repo_lower" "$SUFFIX" "$DIGEST" >> "$GITHUB_OUTPUT"
+        # Shared with gate3-rehearsal.yml, which exercises this exact file
+        # against a throwaway registry. An inline copy here would mean the
+        # rehearsal proves the copy.
+        run: bash tests/security/resolve_ref_guard.sh
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409  # v3.7.0
@@ -380,25 +377,9 @@ jobs:
         run: syft "$IMAGE_REF" -o spdx-json=sbom.spdx.json
 
       - name: Refuse to attest an SBOM that describes nothing
-        # syft exiting zero does not mean it resolved anything. Without this a
-        # degenerate SBOM is attested and verification still passes, because
-        # verification checks that an attestation exists and is signed by the
-        # right identity -- not that its predicate describes the image.
-        run: |
-          if [ ! -s sbom.spdx.json ]; then
-            echo "::error::sbom.spdx.json is absent or empty; syft produced no SBOM" >&2
-            exit 1
-          fi
-          if ! jq -e . sbom.spdx.json >/dev/null 2>&1; then
-            echo "::error::sbom.spdx.json is not valid JSON" >&2
-            exit 1
-          fi
-          pkgs="$(jq '(.packages // []) | length' sbom.spdx.json)"
-          echo "SPDX packages: ${pkgs}"
-          if [ "$pkgs" -eq 0 ]; then
-            echo "::error::an SBOM listing zero packages describes nothing; refusing to attest it" >&2
-            exit 1
-          fi
+        # Shared with gate3-rehearsal.yml, which drives this script through
+        # three fixtures that each violate one of its conditions.
+        run: bash tests/security/sbom_guard.sh sbom.spdx.json
 
       - name: Sign the digest (keyless via Sigstore)
         env:

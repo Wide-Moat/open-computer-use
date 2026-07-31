@@ -80,6 +80,23 @@ def shell_code(run):
     )
 
 
+def is_local_registry(ref):
+    """True when the reference names a registry only the runner can reach.
+
+    A rehearsal that pushes to a registry started as a job service proves the
+    mechanism without creating anything anyone can pull: the host dies with the
+    job. Treating that as a publish would force the check to reject the only
+    way to exercise the pipeline it is guarding.
+
+    Matched on the registry host, which is the first path segment when it
+    carries a port or is a bare localhost form -- not on a substring, so an
+    image called `localhost-tools` on a real registry is unaffected.
+    """
+    head = ref.strip().split("/", 1)[0]
+    host = head.rsplit(":", 1)[0] if ":" in head else head
+    return host in ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
 def steps_of(job):
     return job.get("steps") or [] if isinstance(job, dict) else []
 
@@ -136,6 +153,11 @@ def job_publishes(job):
             if digest_only:
                 continue
 
+            if is_local_registry(str(with_.get("tags") or "")) or \
+               any(is_local_registry(part[len("name="):])
+                   for part in outputs.split(",") if part.strip().startswith("name=")):
+                continue
+
             tags = str(with_.get("tags") or "").strip()
             hidden = tag_inside_outputs(outputs) if not tags else None
             if not tags and not hidden:
@@ -156,6 +178,8 @@ def job_publishes(job):
             if marker in run:
                 line = next((l.strip() for l in run.splitlines() if marker in l), marker)
                 if STAGING_MARKER in line:
+                    continue
+                if any(is_local_registry(tok) for tok in line.split()):
                     continue
                 # A bare digest reference in a shell push is not consumer-reachable.
                 if marker == "docker push" and "@sha256:" in line and "--tag" not in line:
@@ -306,6 +330,17 @@ SELF_TESTS = [
             "sign": {"steps": [{"run": "# cosign sign --yes ghcr.io/o/i:v1\necho disabled\n"}]},
             "publish": {"needs": "sign", "steps": [{"run": "docker push ghcr.io/o/i:v1"}]}}}},
      "nothing in this repository signs it"),
+    ("a push to a registry only the runner can reach is not a publish", 0, {
+        "w.yml": {"on": {"pull_request": None}, "jobs": {
+            "rehearse": {"steps": [
+                {"run": "docker buildx imagetools create --tag localhost:5000/probe:v1 localhost:5000/probe@$D"}]}}}}),
+    ("the same push to a real registry is a publish", 1, {
+        "w.yml": {"on": {"pull_request": None}, "jobs": {
+            "rehearse": {"steps": [
+                {"run": "docker buildx imagetools create --tag ghcr.io/o/probe:v1 ghcr.io/o/probe@$D"}]}}}}),
+    ("a repository merely named localhost-something is still a publish", 1, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "p": {"steps": [{"run": "docker push ghcr.io/o/localhost-tools:v1"}]}}}}),
     ("publish with no signer anywhere", 1, {
         "build.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "image": {"steps": [{"uses": "docker/build-push-action@v7",
