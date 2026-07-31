@@ -56,6 +56,23 @@ def steps_of(job):
     return job.get("steps") or [] if isinstance(job, dict) else []
 
 
+def tag_inside_outputs(outputs):
+    """A tag can hide in `outputs: type=image,name=<ref>,...` with no `tags:` key.
+
+    A colon in the LAST path segment is a tag. A colon before it is a registry
+    port -- `localhost:5000/org/repo` carries no tag -- and reading that as one
+    trades a false negative for a false positive, which is not an improvement.
+    """
+    for part in outputs.split(","):
+        part = part.strip()
+        if not part.startswith("name="):
+            continue
+        ref = part[len("name="):]
+        if ":" in ref.rsplit("/", 1)[-1]:
+            return ref
+    return None
+
+
 def job_publishes(job):
     """Return a reason string when the job creates a CONSUMER-REACHABLE reference.
 
@@ -85,17 +102,27 @@ def job_publishes(job):
             if push_absent and not pushes_via_outputs and not digest_only:
                 continue
 
-            tags = str(with_.get("tags") or "")
-            if not tags.strip():
-                # No tag: the reference is a digest nobody has been handed.
-                continue
-            if STAGING_MARKER in tags:
+            # push-by-digest short-circuits before any tag reasoning. It is the
+            # corrected form, and without this the check can flag the very
+            # shape it exists to recommend.
+            if digest_only:
                 continue
 
-            how = f"outputs: {outputs[:60]}" if (pushes_via_outputs or digest_only) else f"push: {push}"
+            tags = str(with_.get("tags") or "").strip()
+            hidden = tag_inside_outputs(outputs) if not tags else None
+            if not tags and not hidden:
+                # No tag anywhere: the reference is a digest nobody was handed.
+                continue
+            label = tags.splitlines()[0][:60] if tags else hidden
+            if STAGING_MARKER in (tags or hidden or ""):
+                continue
+
+            how = f"outputs: {outputs[:60]}" if pushes_via_outputs else f"push: {push}"
+            if hidden:
+                how = f"the tag is inside outputs, with no `tags:` key: {outputs[:60]}"
             if "${{" in str(push):
                 how = f"push is the expression {push!r}, which may be true"
-            return f"step `{uses.split('@')[0]}` attaches tag(s) {tags.strip().splitlines()[0][:60]!r} with {how}"
+            return f"step `{uses.split('@')[0]}` attaches tag(s) {label!r} with {how}"
 
         for marker in PUBLISH_SHELL:
             if marker in run:
@@ -287,6 +314,18 @@ SELF_TESTS = [
     ("push: true with no tag is likewise not a consumer reference", 0, {
         "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "image": {"steps": [{"uses": "docker/build-push-action@v7", "with": {"push": True}}]}}}}),
+    # The mirror of the outputs hole, found by component-02 in its own checker
+    # and present here too: a tag with neither a `tags:` key nor a `push:` key.
+    ("a tag hidden inside outputs, with no tags: key", 1, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "publish": {"steps": [{"uses": "docker/build-push-action@v7", "with": {
+                "outputs": "type=image,name=ghcr.io/org/repo:v1.2.3,push=true"}}]},
+            "sign": {"steps": [{"run": "cosign sign --yes ghcr.io/org/repo:v1.2.3"}]}}}}),
+    ("a registry port is not a tag", 0, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "publish": {"steps": [{"uses": "docker/build-push-action@v7", "with": {
+                "outputs": "type=image,name=localhost:5000/org/repo,push=true"}}]},
+            "sign": {"needs": "publish", "steps": [{"run": "cosign sign --yes localhost:5000/org/repo@$D"}]}}}}),
 ]
 
 
