@@ -72,7 +72,19 @@ fi
 SRC="$(git rev-parse --show-toplevel)"
 git clone --no-local --quiet --no-checkout "$SRC" "$WORK/clean"
 git -C "$WORK/clean" fetch --quiet "$SRC" "+$REF:refs/heads/probe-base"
+
+# Drop every ref except the one under test. A clone carries all of the
+# source's branches, and the scanners walk refs rather than the checkout, so
+# without this the clean leg answers "clean across whatever branches happened
+# to be in the clone" while claiming to answer for REF. It also makes the
+# scanned-commit count reproducible between machines, which is what lets the
+# count be used as evidence at all.
+git -C "$WORK/clean" for-each-ref --format='%(refname)' \
+  | grep -v '^refs/heads/probe-base$' \
+  | while read -r r; do git -C "$WORK/clean" update-ref -d "$r"; done
 git -C "$WORK/clean" checkout --quiet probe-base
+git -C "$WORK/clean" reflog expire --expire=now --all
+git -C "$WORK/clean" gc --prune=now --quiet
 
 rm -rf "$WORK/dirty"
 cp -R "$WORK/clean" "$WORK/dirty"
