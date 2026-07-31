@@ -60,6 +60,26 @@ SIGN_ACTIONS = ("actions/attest-build-provenance", "sigstore/gh-action-sigstore-
 STAGING_MARKER = "unsigned"
 
 
+def shell_code(run):
+    """The lines of a `run:` block that the shell would execute.
+
+    Whole-line comments are dropped. Both directions of this matter and the
+    second is the dangerous one: a commented-out `docker push` is noise, but a
+    commented-out `cosign sign` makes a job read as a signer, and a publish
+    that depends on that job then reports zero violations for a pipeline whose
+    signing is switched off.
+
+    Only lines whose first non-blank character is `#` are removed. A trailing
+    comment on a real command is left in place: cutting at the first `#`
+    anywhere would also cut a `#` inside a quoted string, and the failure there
+    is to stop seeing a publish that is really happening.
+    """
+    return "\n".join(
+        line for line in str(run or "").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+
+
 def steps_of(job):
     return job.get("steps") or [] if isinstance(job, dict) else []
 
@@ -98,7 +118,7 @@ def job_publishes(job):
         if not isinstance(step, dict):
             continue
         uses = str(step.get("uses") or "")
-        run = str(step.get("run") or "")
+        run = shell_code(step.get("run"))
         with_ = step.get("with") or {}
 
         if any(a in uses for a in PUBLISH_ACTIONS):
@@ -148,7 +168,7 @@ def job_signs(job):
     for step in steps_of(job):
         if not isinstance(step, dict):
             continue
-        run = str(step.get("run") or "")
+        run = shell_code(step.get("run"))
         uses = str(step.get("uses") or "")
         if any(m in run for m in SIGN_SHELL) or any(a in uses for a in SIGN_ACTIONS):
             return True
@@ -274,6 +294,18 @@ SELF_TESTS = [
     # without it they were shorthand for "a job that publishes", and the
     # shorthand stopped being true once the check learned that the tag, not
     # the push, is what makes a reference reachable.
+    ("a publish that exists only inside a shell comment is not a publish", 0, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "image": {"steps": [{"run": "# the old pipeline ran:\n#   docker push ghcr.io/o/i:v1\necho building\n"}]}}}}),
+    # The dangerous direction. Before comment lines were skipped this returned
+    # no violation: the commented-out cosign made `sign` read as a signer, and
+    # the publish depending on it looked ordered behind a signature that is
+    # switched off.
+    ("a publish behind a signer whose cosign is commented out", 1, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "sign": {"steps": [{"run": "# cosign sign --yes ghcr.io/o/i:v1\necho disabled\n"}]},
+            "publish": {"needs": "sign", "steps": [{"run": "docker push ghcr.io/o/i:v1"}]}}}},
+     "nothing in this repository signs it"),
     ("publish with no signer anywhere", 1, {
         "build.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "image": {"steps": [{"uses": "docker/build-push-action@v7",
