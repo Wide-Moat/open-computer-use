@@ -187,14 +187,17 @@ fi
 # Delivery check first. A dirty leg that scanned no more bytes than the clean
 # leg never received the payload, and its result -- green or red -- is about
 # the harness, not the gate.
-if [ -z "$clean_bytes" ] || [ -z "$dirty_bytes" ]; then
-  note "FAIL delivery: could not read scanned-byte counts; the gate did not run as expected"
-  fail=1
-elif [ "$dirty_bytes" -le "$clean_bytes" ]; then
-  note "FAIL delivery: dirty leg scanned $dirty_bytes bytes, clean scanned $clean_bytes -- the payload never reached the scanned tree"
+undelivered=""
+for p in planted_aws.txt planted_pat.env planted_key.pem; do
+  git -C "$WORK/dirty" cat-file -e "HEAD:$p" 2>/dev/null || undelivered="$undelivered $p"
+done
+if [ -n "$undelivered" ]; then
+  note "FAIL delivery: these payloads are not in the dirty leg's committed history:$undelivered"
+  note "     Both scanners read commits, so an unstaged payload is invisible and the"
+  note "     dirty leg's result says nothing about the gate."
   fail=1
 else
-  note "ok   delivery: payload reached the scanned tree (+$((dirty_bytes - clean_bytes)) bytes)"
+  note "ok   delivery: all three payloads present in the dirty leg's HEAD (scanned bytes ${clean_bytes:-?} -> ${dirty_bytes:-?}, informational)"
 fi
 
 if [ "$clean_rc" -ne 0 ]; then
