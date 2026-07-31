@@ -2,11 +2,38 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 #
 # trufflehog path-exclude regexes (one per line), passed via --exclude-paths.
-# Only generated render artifacts that cannot carry a credential belong here.
+#
+# An entry belongs here only when the flagged bytes cannot be a credential --
+# a placeholder, a variable reference, or a synthetic fixture -- and the line
+# that was read is quoted in the reason. An entry added because a scan was
+# inconvenient is how a real secret gets hidden, so "it is noisy" is never a
+# reason on its own.
 #
 # architecture-overview.svg is a draw.io export of the component-map source
 # (architecture-overview.drawio). It embeds font glyph data as long base64/hex
 # runs, which the Box / generic high-entropy detectors match as unverified
-# secrets — a structural false positive on a generated diagram render that
+# secrets -- a structural false positive on a generated diagram render that
 # holds no credential. The .drawio source and every other file stay in scope.
 docs/architecture/diagrams/architecture-overview\.svg$
+
+# Reasons below describe the flagged construct rather than reproducing it. An
+# earlier revision of this file quoted each offending line verbatim to justify
+# its exclusion, and CI caught the result: the quotes tripped the same three
+# detectors, in this file, which is not itself excluded. Documenting a false
+# positive recreated it.
+
+# 09-agentbox.md line 57 documents a proxy environment variable whose value is
+# a user:password@host URI with a literal angle-bracket placeholder where the
+# token would go. There is no value to leak; the URI detector matches the form.
+docs/future-architecture/research/09-agentbox\.md$
+
+# values-open-webui.yaml line 34 sets a Postgres connection string whose
+# password position holds a shell-style environment-variable reference,
+# resolved from a Kubernetes Secret at render time rather than committed. The
+# Postgres detector matches the connection-string form.
+examples/helm/with-open-webui/values-open-webui\.yaml$
+
+# test_path_traversal_docker.py line 16 defines a hand-written sequential UUID
+# constant used as a path-traversal fixture. The Dockerhub detector matches
+# UUID shape.
+tests/security/test_path_traversal_docker\.py$
