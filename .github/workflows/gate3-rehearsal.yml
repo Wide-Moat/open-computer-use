@@ -5,12 +5,19 @@
 # and dies with the job, so the mechanism is observed rather than reasoned
 # about.
 #
-# Why this exists. The signing pipeline in build.yml has never executed. Across
-# the whole fleet, measured 2026-07-31, not one component has ever produced a
-# signature: canon carries 36 tags per image and zero cosign artifacts. The
-# release path only runs on a tag push, and a tag push publishes. So the gate
-# that is supposed to refuse an unsigned artifact has never been asked to
-# refuse anything, and "the workflow is correct" rests on reading it.
+# Why this exists. The signing pipeline in build.yml has never executed. This
+# repository carries 36 tags per published image and zero cosign artifacts,
+# measured 2026-07-31 by enumerating the tags rather than by constructing a
+# reference, which is spelling-independent. The release path only runs on a tag
+# push, and a tag push publishes. So the gate that is supposed to refuse an
+# unsigned artifact has never been asked to refuse anything, and "the workflow
+# is correct" rests on reading it.
+#
+# An earlier version of this comment said no component in the fleet had ever
+# produced a signature. That was wrong and is corrected here rather than
+# quietly dropped: a sibling repository has five signed releases and one
+# unsigned one, measured the same way. The true statement is narrower and is
+# about this repository only.
 #
 # What is proven here: that push-by-digest yields a digest, that an empty SBOM
 # stops the pipeline, that an absent digest is refused before cosign turns it
