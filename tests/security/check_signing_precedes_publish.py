@@ -264,6 +264,16 @@ def analyse(workflows):
         examined += 1
         wf_triggers = triggers_of(wf)
         for jid, job in jobs.items():
+            # A job body that is not a mapping was silently skipped, and a
+            # skipped job reads exactly like an examined one that had nothing
+            # to say. Indentation slips do this, and the result was a clean
+            # verdict over a job nobody looked at.
+            if not isinstance(job, dict):
+                violations.append(
+                    f"{name}: job `{jid}` has a body of type {type(job).__name__}, not a "
+                    f"mapping, so nothing about it can be checked. Refusing to report clean "
+                    f"over a job that was never examined.")
+                continue
             reason = job_publishes(job)
             if not reason:
                 continue
@@ -341,6 +351,10 @@ SELF_TESTS = [
     ("a repository merely named localhost-something is still a publish", 1, {
         "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "p": {"steps": [{"run": "docker push ghcr.io/o/localhost-tools:v1"}]}}}}),
+    ("a job body that is not a mapping is refused, not skipped", 1, {
+        "w.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
+            "publish": "docker push ghcr.io/o/i:v1"}}},
+     "never examined"),
     ("publish with no signer anywhere", 1, {
         "build.yml": {"on": {"push": {"tags": ["v*"]}}, "jobs": {
             "image": {"steps": [{"uses": "docker/build-push-action@v7",

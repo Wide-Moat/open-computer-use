@@ -56,7 +56,14 @@ def analyse(workflows):
     for name, wf in workflows.items():
         jobs = (wf or {}).get("jobs") or {}
         for jid, job in jobs.items():
+            # Same refusal as the signing check: a body that is not a mapping
+            # cannot be read, and silently skipping it produces a clean verdict
+            # over a job nobody looked at.
             if not isinstance(job, dict):
+                violations.append(
+                    f"{name}: job `{jid}` has a body of type {type(job).__name__}, not a "
+                    f"mapping, so its references cannot be read. Refusing to report clean "
+                    f"over a job that was never examined.")
                 continue
             needs = needs_of(job)
             # Serialising the job back to text finds the reference wherever it
@@ -85,6 +92,8 @@ def analyse(workflows):
 
 
 SELF_TESTS = [
+    ("a job body that is not a mapping is refused, not skipped", 1, {
+        "w.yml": {"jobs": {"sign": ["steps", "went", "wrong"]}}}),
     ("a reference that resolves", 0, {
         "w.yml": {"jobs": {
             "build": {"outputs": {"digest": "${{ steps.b.outputs.digest }}"}, "steps": []},
