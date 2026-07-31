@@ -400,3 +400,14 @@ jobs:
         # the rehearsal is one job, because its registry is a service
         # container that does not outlive the job.
         run: python3 tests/security/check_cross_job_outputs.py
+
+      - name: Self-test the exception-ledger checker
+        run: python3 tests/security/check_security_exceptions.py --self-test
+
+      - name: Enforce the HIGH-exception ledger
+        # The ledger carried a schema with `since`, `expires`, an owner and a
+        # remediation, and a note saying CI enforced none of it. An exception
+        # file nothing reads is not a control: entries outlive their reasons
+        # because nothing asks whether they are still needed. This is the same
+        # standard being asked of sibling repositories, applied here.
+        run: python3 tests/security/check_security_exceptions.py

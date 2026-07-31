@@ -16,8 +16,15 @@
 #       reason: one-line justification
 #       remediation: one-line plan
 #
-# CI does NOT yet enforce this file format programmatically — that's a
-# follow-up task once we have actual exceptions to track. For now the file
-# is documentation + a future-CI input.
+# CI enforces this file on every run: tests/security/check_security_exceptions.py
+# refuses an entry past its `expires`, a window longer than 14 days, a
+# CRITICAL severity, a tool nobody runs, and any malformed or non-mapping
+# entry -- rather than skipping it, because a lenient reader's silence is
+# indistinguishable from a working one's. Every admitted exception prints on
+# every run; a silent exception reads like no exception at all.
+#
+# An empty list is the target state, not a stub. Adding an entry is a claim
+# that needs an argument in review, and it stops being accepted on its own
+# expiry date without anyone remembering to remove it.
 
 exceptions: []
