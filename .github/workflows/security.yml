@@ -172,6 +172,9 @@ jobs:
 
   sast-semgrep:
     name: SAST — semgrep
+    # Temporarily non-blocking by owner direction 2026-08-01. Remove this flag and
+    # the line below to restore the gate; the job still runs and still reports.
+    continue-on-error: true
     runs-on: ubuntu-latest
     container:
       # Org renamed from `returntocorp/semgrep` to `semgrep/semgrep`. Same
@@ -230,6 +233,9 @@ jobs:
 
   sca-trivy-fs:
     name: SCA — trivy (filesystem)
+    # Temporarily non-blocking by owner direction 2026-08-01. Remove this flag and
+    # the line below to restore the gate; the job still runs and still reports.
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
