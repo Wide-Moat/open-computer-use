@@ -238,6 +238,14 @@ jobs:
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
+          # Pinning the action pins the wrapper, not the scanner. Without
+          # this input the action fetches whatever release its own default
+          # names, so two runs over an unchanged tree can reach different
+          # verdicts and neither is reproducible from the repository. Held
+          # at the value that default resolves to today, so this commit
+          # changes determinism and nothing else; moving the scanner is a
+          # separate decision that can change findings.
+          version: v0.70.0
           scan-type: fs
           scan-ref: .
           # Block merge on CRITICAL. HIGH gets a 14-day grace via the
@@ -276,6 +284,10 @@ jobs:
       - name: Trivy filesystem scan (HIGH, informational)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
+          # Same scanner build as the CRITICAL pass above. If the two passes
+          # drift apart, the exception ledger starts describing findings the
+          # blocking pass never produced.
+          version: v0.70.0
           scan-type: fs
           scan-ref: .
           severity: HIGH
