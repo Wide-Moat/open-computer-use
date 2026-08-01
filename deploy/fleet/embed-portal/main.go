@@ -71,6 +71,13 @@ type config struct {
 	controlClientCert string // OCU_CONTROL_CLIENT_CERT - mTLS client leaf (PEM)
 	controlClientKey  string // OCU_CONTROL_CLIENT_KEY - mTLS client key (PEM)
 	controlCACert     string // OCU_CONTROL_CA_CERT - CA that signs control's gateway leaf (PEM)
+
+	// resolveOverride, when set, replaces the status-verb call. Only a test sets
+	// it: the production path is mTLS-only and must stay that way, so a test that
+	// wants a RESOLVED chat cannot reach it over plain HTTP without weakening the
+	// real client. Without this seam the only reachable case would be the miss,
+	// and a refusal that fired on everything would look correct.
+	resolveOverride func(ctx context.Context, chatID string) (string, bool)
 }
 
 func loadConfig() (config, error) {
@@ -140,7 +147,11 @@ func (c config) resolveScope(ctx context.Context, chatID string) (scope string, 
 		// No chat context: the base is the correct, fully-resolved answer.
 		return c.filesystemID, true
 	}
-	if c.controlStatusURL != "" {
+	if c.resolveOverride != nil {
+		if s, ok := c.resolveOverride(ctx, chatID); ok {
+			return s, true
+		}
+	} else if c.controlStatusURL != "" {
 		if s, ok := c.resolveScopeViaStatusVerb(ctx, chatID); ok {
 			return s, true
 		}
@@ -253,6 +264,15 @@ func (c config) controlTLSConfig() (*tls.Config, error) {
 // The filesystem_id is the chat's status-verb-resolved scope (per-chat), or the
 // BASE when resolution missed. On a miss the token carries a "scope_pending":true
 // marker so the miss is visible and never mistaken for a resolved per-chat scope.
+// canResolveScope reports whether chatID resolves to its own storage scope.
+// It exists so the token route can refuse BEFORE minting: the base scope is a
+// legal token, so a caller cannot tell a resolved chat scope from the fallback
+// by looking at the token alone.
+func (c config) canResolveScope(ctx context.Context, chatID string) bool {
+	_, resolved := c.resolveScope(ctx, chatID)
+	return resolved
+}
+
 func (c config) mintToken(ctx context.Context, chatID string) (string, error) {
 	scope, resolved := c.resolveScope(ctx, chatID)
 	now := time.Now()
@@ -351,6 +371,23 @@ func main() {
 		log.Fatalf("embed-portal: config error: %v", err)
 	}
 
+	mux := newMux(cfg)
+
+	srv := &http.Server{
+		Addr:              cfg.listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	log.Printf("embed-portal: listening on %s, iframing pane %s, minting aud=%q fs=%q intent=%q ttl=%s",
+		cfg.listen, cfg.paneOrigin, cfg.audience, cfg.filesystemID, cfg.intent, cfg.tokenTTL)
+	log.Fatal(srv.ListenAndServe())
+}
+
+// newMux assembles the portal's routes for a config. It exists as a seam so the
+// routes can be driven in a test: the refusal below is a property of the ROUTE,
+// and a test that only called the helper would not notice the route handing out
+// a base-scope token anyway.
+func newMux(cfg config) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// GET / — the embedding portal page.
@@ -375,6 +412,23 @@ func main() {
 		if chatID == "" {
 			chatID = cfg.demoChatID
 		}
+		// Fail closed when a chat was named and its scope did not resolve. The
+		// base scope is every chat's objects at once, so minting it here would
+		// answer "the files for THIS chat" with somebody else's -- measured on
+		// the stand: 923 objects from every chat and every past test run, shown
+		// under a panel titled for the chat in front of the user. A refusal the
+		// pane can render is the honest answer; a wrong list is not.
+		if chatID != "" && !cfg.canResolveScope(r.Context(), chatID) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "scope_pending",
+				"detail": "this chat's storage scope is not resolved yet; " +
+					"showing another chat's files instead would be worse than showing none",
+			})
+			return
+		}
 		tok, err := cfg.mintToken(r.Context(), chatID)
 		if err != nil {
 			http.Error(w, "mint failed", http.StatusInternalServerError)
@@ -391,12 +445,5 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	srv := &http.Server{
-		Addr:              cfg.listen,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	log.Printf("embed-portal: listening on %s, iframing pane %s, minting aud=%q fs=%q intent=%q ttl=%s",
-		cfg.listen, cfg.paneOrigin, cfg.audience, cfg.filesystemID, cfg.intent, cfg.tokenTTL)
-	log.Fatal(srv.ListenAndServe())
+	return mux
 }
