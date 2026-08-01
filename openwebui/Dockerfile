@@ -38,6 +38,25 @@ RUN python3 /tmp/patches/fix_skip_embedding_chat_files.py
 # computer_use tool is enabled, avoiding unnecessary processing.
 RUN python3 /tmp/patches/fix_skip_rag_files_native_fc.py
 
+# The File Pane, in the chat, on the right. The pane's session cookie is minted
+# on the pane's own origin by the portal's embed-token exchange; a user who only
+# opens the chat never performs it, so a download link the model emitted answered
+# 401 and no preview could appear. The panel embeds the portal, the portal embeds
+# the pane as it already does, and the session exists because the pane is really
+# running in the page. Point OCU_FILE_PANE_PORTAL_URL at the browser-facing
+# portal origin -- it is a browser URL, not a service name.
+ARG OCU_FILE_PANE_PORTAL_URL=http://localhost:3003
+ARG OCU_FILE_PANE_WIDTH=420
+RUN OCU_FILE_PANE_PORTAL_URL="${OCU_FILE_PANE_PORTAL_URL}" \
+    OCU_FILE_PANE_WIDTH="${OCU_FILE_PANE_WIDTH}" \
+    python3 /tmp/patches/add_file_pane_panel.py
+
+# The shell carries every patch above, so it must not be served without freshness
+# information: a browser then caches it heuristically and a returning visitor
+# keeps the pre-patch shell. Measured: same URL, 15413 bytes fresh vs 11028 bytes
+# from cache -- the panel was absent on / and present on /?anything.
+RUN python3 /tmp/patches/revalidate_app_shell.py
+
 RUN rm -rf /tmp/patches/
 
 # Copy Computer Use tool, function, init script, and the system prompt into the
