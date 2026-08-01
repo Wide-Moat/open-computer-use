@@ -20,9 +20,13 @@ import yaml
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WORKFLOW_DIR = os.path.join(REPO_ROOT, ".github", "workflows")
 
-# action name fragment -> the input that names the tool build it fetches
+# action name fragment -> the input that names the tool build it fetches.
+# Every entry is read from the action definition at the pinned SHA, never
+# guessed: an input name that does not exist is accepted silently by Actions
+# and pins nothing.
 PINNED_INPUT = {
     "aquasecurity/trivy-action": "version",
+    "anchore/sbom-action/download-syft": "syft-version",
 }
 
 
@@ -84,6 +88,30 @@ def command_position(binary):
     return rf"(^|[|;&]|\$\()\s*{COMMAND_PREFIX}{re.escape(binary)}\s"
 
 
+def outside_quotes(line):
+    """Blank out quoted spans, keeping length so nothing else shifts.
+
+    `;` and `|` are command separators in shell and ordinary punctuation
+    inside a string. An error message reading `... is empty; syft produced
+    no SBOM` puts a separator immediately before the tool's name and turns a
+    sentence into an apparent invocation. The distinction is whether the
+    separator is quoted, so the quoted spans go before the match runs.
+    """
+    out = []
+    quote = None
+    for ch in line:
+        if quote:
+            out.append(" ")
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            out.append(" ")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 MATCHER_CASES = (
     ("trivy fs --format cyclonedx .", True),
     ("RUN trivy fs --format cyclonedx .", True),
@@ -97,6 +125,13 @@ MATCHER_CASES = (
     # the flag value for the command would satisfy it just as well.
     ("RUN --mount=type=cache,target=/usr/local/bin/trivy echo hi", False),
     ("RUN --mount=target=/opt/trivy/bin npm ci", False),
+    # A separator inside a quoted string is punctuation, not a pipeline.
+    # This exact shape fired against the real tree before quotes were read.
+    ('  echo "::error::${f} is absent or empty; syft produced no SBOM" >&2',
+     False, "syft"),
+    ("  echo 'scan failed; trivy found nothing' >&2", False),
+    # ... while the same separator unquoted really does start a command.
+    ("false; trivy image x", True),
     # Installing the tool is not running it.
     ("RUN apt-get install -y trivy", False),
     # A mention is not a call, in either comment form.
@@ -114,10 +149,12 @@ def self_test():
     on reporting a subset as the whole -- the defect it exists to catch.
     """
     failures = []
-    for text, want in MATCHER_CASES:
+    for case in MATCHER_CASES:
+        text, want = case[0], case[1]
+        probe = case[2] if len(case) > 2 else "trivy"
         stripped = text.strip()
         got = False if stripped.startswith("#") else bool(
-            re.search(command_position("trivy"), stripped)
+            re.search(command_position(probe), outside_quotes(stripped))
         )
         if got != want:
             failures.append(f"{text!r} -- expected {want}, got {got}")
@@ -160,8 +197,9 @@ def bare_invocations(root=REPO_ROOT):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
+                bare = outside_quotes(stripped)
                 for binary in SCANNER_BINARIES:
-                    if re.search(command_position(binary), stripped):
+                    if re.search(command_position(binary), bare):
                         found.append(
                             (os.path.relpath(path, root), lineno, binary)
                         )

@@ -370,6 +370,11 @@ jobs:
 
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+        with:
+          # Pinning `uses:` pins the action, not the scanner it fetches.
+          # Held at the build the pipeline already resolved to, so this
+          # changes determinism and not the SBOM's contents.
+          syft-version: v1.16.0
 
       - name: Generate SBOM (SPDX JSON)
         env:
