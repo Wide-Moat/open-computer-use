@@ -1245,6 +1245,14 @@ services:
       - FILESTORE_URL=${FILESTORE_URL:-https://filestore:7080}
       - OCU_FILESYSTEM_ID=${OCU_FILESYSTEM_ID:-fs-fleet}
       - FILESTORE_CA_CERT=${FILESTORE_CA_CERT:-/etc/ocu/ca.pem}
+      # Browser-facing base of the download links the outlet mints. It is a
+      # BROWSER origin, not a service name, and it must be the same origin the
+      # pane is embedded under: the session cookie the /download route needs is
+      # set on that origin, and localhost and 127.0.0.1 are different origins to
+      # the cookie jar. Pinned here rather than left to a default so it moves
+      # together with NEXT_PUBLIC_OCU_PARENT_ORIGIN and OCU_FRAME_ANCESTORS,
+      # which name the same host for the same reason.
+      - OCU_DOWNLOAD_BASE_URL=${OCU_DOWNLOAD_BASE_URL:-http://localhost:3000}
     volumes:
       - open-webui-data:/app/backend/data
       # The fleet CA that signs filestore's TLS leaf; the attachment sync path
