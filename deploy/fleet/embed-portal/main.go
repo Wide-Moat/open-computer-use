@@ -174,35 +174,54 @@ func (c config) resolveScopeViaStatusVerbURL(ctx context.Context, url, chatID st
 }
 
 // statusVerbRoundTrip is the shared POST {session_hint} -> effective_scope core.
+//
+// Every refusal names itself. Four of these branches used to return a bare
+// false, so a 403 from control, a body that did not parse, and a 200 carrying
+// an empty scope all arrived at the caller as the same silence -- and the
+// caller's only line said "scope pending", which answers where and never why.
+// Diagnosing one of those cost an evening of guessing at the wrong layer.
 func (c config) statusVerbRoundTrip(ctx context.Context, client *http.Client, url, chatID string) (string, bool) {
+	miss := func(format string, args ...any) (string, bool) {
+		log.Printf("embed-portal: status verb miss for chat %q: "+format,
+			append([]any{chatID}, args...)...)
+		return "", false
+	}
+
 	body, _ := json.Marshal(map[string]string{"session_hint": chatID})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", false
+		return miss("building the request to %q: %v", url, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Chat-Id", chatID)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("embed-portal: status verb miss for chat %q: %v", chatID, err)
-		return "", false
+		return miss("%v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", false
+		// The first bytes of the body, bounded: control answers a refusal with a
+		// short reason, and without it the status code alone rarely says which
+		// of several refusals this was.
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, statusVerbSnippetBytes))
+		return miss("control answered %d: %s", resp.StatusCode, bytes.TrimSpace(snippet))
 	}
 	var out struct {
 		EffectiveScope string `json:"effective_scope"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&out); err != nil {
-		return "", false
+		return miss("decoding the %d response: %v", resp.StatusCode, err)
 	}
 	if out.EffectiveScope == "" {
-		return "", false
+		return miss("control answered %d with no effective_scope", resp.StatusCode)
 	}
 	return out.EffectiveScope, true
 }
+
+// statusVerbSnippetBytes bounds the refusal text echoed into the log: the
+// reason is short, and an unbounded copy would let one refusal pad the log.
+const statusVerbSnippetBytes = 256
 
 // controlTLSConfig builds the mTLS client config from the configured cert/key/CA.
 func (c config) controlTLSConfig() (*tls.Config, error) {
