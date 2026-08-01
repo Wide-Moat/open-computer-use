@@ -71,6 +71,65 @@ SCANNER_BINARIES = ("trivy", "syft", "grype")
 
 SCRIPT_SUFFIXES = (".sh", ".bash")
 
+# Tokens that stand before a command without being the command: the
+# Dockerfile instruction, its flags, and a privilege wrapper. A matcher
+# written for shell command position alone misses `RUN trivy ...`, which is
+# the idiomatic form in exactly the files this walk was added to cover --
+# the enumeration was wider than the language the pattern was written in.
+COMMAND_PREFIX = r"((RUN|sudo)\s+|--[\w=/,.:@-]+\s+)*"
+
+
+def command_position(binary):
+    """Pattern matching `binary` where it is invoked, not merely named."""
+    return rf"(^|[|;&]|\$\()\s*{COMMAND_PREFIX}{re.escape(binary)}\s"
+
+
+MATCHER_CASES = (
+    ("trivy fs --format cyclonedx .", True),
+    ("RUN trivy fs --format cyclonedx .", True),
+    ("RUN --mount=type=cache trivy image x", True),
+    ("RUN --mount=type=cache,target=/usr/local/bin/trivy trivy image y", True),
+    ("sudo trivy image x", True),
+    ("cat x | trivy sbom -", True),
+    ("$(trivy --version)", True),
+    # The binary's name inside a flag value is not a call. Without these the
+    # positive case above passes for the wrong reason -- a matcher that took
+    # the flag value for the command would satisfy it just as well.
+    ("RUN --mount=type=cache,target=/usr/local/bin/trivy echo hi", False),
+    ("RUN --mount=target=/opt/trivy/bin npm ci", False),
+    # Installing the tool is not running it.
+    ("RUN apt-get install -y trivy", False),
+    # A mention is not a call, in either comment form.
+    ("# trivy fs .", False),
+    ("# RUN trivy fs .", False),
+    ("echo trivy is nice", False),
+    ("RUN echo trivy", False),
+)
+
+
+def self_test():
+    """Pin the matcher's own behaviour.
+
+    Without this the next widening silently drops a form, and the guard goes
+    on reporting a subset as the whole -- the defect it exists to catch.
+    """
+    failures = []
+    for text, want in MATCHER_CASES:
+        stripped = text.strip()
+        got = False if stripped.startswith("#") else bool(
+            re.search(command_position("trivy"), stripped)
+        )
+        if got != want:
+            failures.append(f"{text!r} -- expected {want}, got {got}")
+    for failure in failures:
+        print(f"FAIL matcher {failure}", file=sys.stderr)
+    print(
+        f"self-test: {len(MATCHER_CASES)} command-position cases; a Dockerfile "
+        f"`RUN` form and a flagged `RUN` form count as calls, while installing "
+        f"the tool, naming it, and both comment forms do not"
+    )
+    return 1 if failures else 0
+
 
 def bare_invocations(root=REPO_ROOT):
     """Yield (file, line, binary) for scanner calls made outside a workflow.
@@ -102,9 +161,7 @@ def bare_invocations(root=REPO_ROOT):
                 if not stripped or stripped.startswith("#"):
                     continue
                 for binary in SCANNER_BINARIES:
-                    # A command position: start of line, or after a pipe,
-                    # `&&`, `;` or `$(`. Not a substring of another word.
-                    if re.search(rf"(^|[|;&]|\$\()\s*{re.escape(binary)}\s", stripped):
+                    if re.search(command_position(binary), stripped):
                         found.append(
                             (os.path.relpath(path, root), lineno, binary)
                         )
@@ -167,5 +224,12 @@ def test_scanner_version_pinned():
     assert check() == 0
 
 
+def test_matcher_self_test():
+    assert self_test() == 0
+
+
 if __name__ == "__main__":
-    sys.exit(check())
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(self_test())
+    rc = self_test()
+    sys.exit(rc or check())
