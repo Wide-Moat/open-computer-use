@@ -31,6 +31,21 @@ ADMIN_NAME="${ADMIN_NAME:-Admin}"
 # PUBLIC_BASE_URL env var and is delivered to the filter via response header.
 ORCHESTRATOR_URL="${ORCHESTRATOR_URL:-http://computer-use-server:8081}"
 MCP_API_KEY="${MCP_API_KEY:-}"
+# OCU_FILESYSTEM_ID: the BASE attested storage scope chat attachments are written
+# under (X-OCU-Filesystem-Id). Compose-driven so the deploy pins one base; with
+# control's -derive-chat-scope on, the tool resolves a per-chat "<base>-<hex>"
+# scope from the status verb and writes under that, keeping the base available.
+# Seeded into the Tool Valve so the base is not a dead code-default (D5).
+OCU_FILESYSTEM_ID="${OCU_FILESYSTEM_ID:-fs-fleet}"
+# OCU_DOWNLOAD_BASE_URL: browser-facing base of the File Pane origin that serves
+# /download/{scope}/{filename} (#191, ADR-0034, shape per ADR-0035). The filter's
+# outlet rewrites the model's [[ocu-download:NAME]] markers into a link under this
+# base; the download authorizes on the same attested pane session (SSO), so this
+# must be the SAME origin the pane is embedded under - a different spelling of the
+# same address (127.0.0.1 vs localhost) is a different cookie jar and answers 401.
+# On the stand the pane is on :3000; a real deploy sets the customer pane origin.
+# Empty -> markers degrade to the bare filename (broken links are worse than none).
+OCU_DOWNLOAD_BASE_URL="${OCU_DOWNLOAD_BASE_URL:-http://localhost:3000}"
 MARKER_FILE="/app/backend/data/.computer-use-initialized"
 
 # Sanity checks — run EVERY start (before marker-gate), so stale-default
@@ -167,15 +182,21 @@ else
 fi
 
 # Configure filter valves. ORCHESTRATOR_URL is the internal URL used for
-# server→server fetch of /system-prompt. The public URL (for browser-facing
-# iframe/archive links) lives only on the server as PUBLIC_BASE_URL env and is
-# returned to the filter via the X-Public-Base-URL response header — no Valve
-# for it here.
+# server→server fetch of /system-prompt. In next/v1 there is no orchestrator
+# prompt service (#191, ADR-0034): the system prompt is config-baked into
+# DEFAULT_MODEL_PARAMS.system (below), so INJECT_SYSTEM_PROMPT is false — the
+# dead fetch stays off. DOWNLOAD_BASE_URL is the browser-facing pane base the
+# outlet mints [[ocu-download:NAME]] markers into, and DOWNLOAD_SCOPE is the
+# {scope} segment of that link: the pane serves /download/{scope}/{filename} and
+# binds the path scope against the session's filesystem_id claim, so the value
+# here is the SAME OCU_FILESYSTEM_ID the portal mints into the embed token.
+# ARCHIVE_BUTTON is off (the legacy archive link used the retired capability-URL
+# cache).
 echo "[init] Configuring filter valves..."
 if curl -sf -X POST "$WEBUI_URL/api/v1/functions/id/computer_use_filter/valves/update" \
     -H "$AUTH" -H "Content-Type: application/json" \
-    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"on\", \"INJECT_SYSTEM_PROMPT\": true}" >/dev/null 2>&1; then
-    echo "[init] Filter valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL"
+    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"off\", \"INJECT_SYSTEM_PROMPT\": false, \"DOWNLOAD_BASE_URL\": \"$OCU_DOWNLOAD_BASE_URL\", \"DOWNLOAD_SCOPE\": \"$OCU_FILESYSTEM_ID\"}" >/dev/null 2>&1; then
+    echo "[init] Filter valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL DOWNLOAD_BASE_URL=$OCU_DOWNLOAD_BASE_URL DOWNLOAD_SCOPE=$OCU_FILESYSTEM_ID"
 else
     echo "[init] ERROR: Could not seed filter valves — ORCHESTRATOR_URL will fall back to the code default until the next successful init. Init will retry on next restart."
     INIT_FAILED=1
