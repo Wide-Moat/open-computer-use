@@ -119,6 +119,16 @@ OPENWEBUI_TEMPLATE_VARS = [
 # Pattern: {{ VAR }} or {{VAR}} (with/without spaces, Jinja2-style)
 TEMPLATE_PATTERN = r"^.*\{\{\s*(?:" + "|".join(OPENWEBUI_TEMPLATE_VARS) + r")\s*\}\}.*$"
 
+# File-download marker the model emits per the <sharing_files> prompt block
+# (#191, ADR-0034): [[ocu-download:report.docx]]. outlet() rewrites each into a
+# markdown download link. The capture excludes "]" (so a markdown label built
+# from it cannot be broken) and newlines (a marker is a single-line token), and
+# is length-bounded to a filename. The quantifier is {0,255} so an EMPTY marker
+# [[ocu-download:]] still matches and is caught by the fail-closed validation
+# in _replace_marker (empty name -> plain text) rather than leaking the literal
+# sentinel to the user; {1,255} would let the empty marker slip through unmatched.
+_DOWNLOAD_MARKER_RE = re.compile(r"\[\[ocu-download:([^\]\n]{0,255})\]\]")
+
 # Cache TTL and size (module-level so tests can patch them)
 _PROMPT_TTL_SECONDS = 300
 _PROMPT_CACHE_MAX_SIZE = 100
@@ -207,6 +217,32 @@ class Filter:
         ARCHIVE_BUTTON_TEXT: str = Field(
             default="📦 Download all files as archive",
             description="Text for the archive-download button (when ARCHIVE_BUTTON is on).",
+        )
+        DOWNLOAD_BASE_URL: str = Field(
+            default="",
+            description=(
+                "Browser-facing base of the File Pane origin that serves "
+                "/download/{scope}/{filename} (#191, ADR-0034, shape per "
+                "ADR-0035). outlet() rewrites the model's [[ocu-download:NAME]] "
+                "markers into a markdown link under this base; the model never "
+                "authors the base. Trailing slash tolerated. Empty -> markers "
+                "degrade to the bare filename as plain text (broken links are "
+                "worse than no links)."
+            ),
+        )
+        DOWNLOAD_SCOPE: str = Field(
+            default="",
+            description=(
+                "The storage scope handle that becomes the {scope} path segment "
+                "of a download link. It must equal the filesystem_id claim the "
+                "pane's own session carries -- the download route rejects a "
+                "mismatch with 401, and the value the pane holds is the one the "
+                "portal minted into the embed token, not one this filter can "
+                "derive. init.sh seeds it from OCU_FILESYSTEM_ID, the same base "
+                "the tool sends on X-OCU-Filesystem-Id. Empty -> markers degrade "
+                "to the bare filename, because a one-segment path is not a route "
+                "the pane serves."
+            ),
         )
 
     def __init__(self):
@@ -385,74 +421,70 @@ class Filter:
         __user__: Optional[dict] = None,
         __metadata__: Optional[dict] = None,
     ) -> dict:
-        """Append preview button and/or archive button to assistant messages with file links.
+        """Rewrite [[ocu-download:NAME]] markers into download links (#191, ADR-0034).
 
-        - PREVIEW_MODE="button" (default): markdown link to the preview page. The
-          frontend fix_preview_url_detection patch rewrites this URL into an inline
-          artifact; stock Open WebUI leaves it as a plain clickable link.
-        - PREVIEW_MODE="off":      no preview link.
-        - ARCHIVE_BUTTON="on" (default): markdown link to the archive endpoint (only when files exist).
+        The model, per the <sharing_files> system-prompt block, emits a marker
+        [[ocu-download:report.docx]] naming a file it saved. This turns each valid
+        marker into a markdown link to
+        DOWNLOAD_BASE_URL/download/{scope}/{urlencoded-name} — a top-level
+        first-party link that opens under the user's existing pane session (the
+        /download route authorizes on the same attested cookie the File Pane
+        established). The URL carries a SELECTOR (filename) and zero authority;
+        the model contributes only the name, this filter contributes the base and
+        the scope (a model-authored base would be a prompt-injection vector).
 
-        The public URL used in browser-facing links comes from the cached
-        X-Public-Base-URL response header captured by inlet()/_fetch_system_prompt().
-        If no cache entry exists (outlet without prior inlet, e.g. re-render of an
-        old message after server restart), decoration is skipped — broken links are
-        worse than no links.
+        The {scope} segment is load-bearing, not decoration: the route is
+        /download/{scope}/{filename} and its parser returns null for anything
+        else, the retired one-segment form included (ADR-0035). A link without it
+        is a 404, which is how this filter shipped -- a marker the model emitted
+        correctly, rewritten into a link that could never resolve. The value must
+        equal the filesystem_id claim on the pane's session, so it comes from the
+        DOWNLOAD_SCOPE valve (seeded from the same OCU_FILESYSTEM_ID the portal
+        mints into the embed token) and never from anything the model wrote.
+
+        Security (Fable-ruled): the marker is the same decision as
+        _content_has_browser_tool — a defined sentinel, never a scan of free prose,
+        so a filename mentioned in passing does NOT mint a link. Per-capture
+        validation is fail-closed (a traversal/separator/empty name drops the
+        marker to plain text, no link). urllib.parse.quote(safe="") encodes spaces
+        AND parens so the URL cannot break out of the markdown link syntax.
 
         Invariants:
-        1. Only role=="assistant" messages are touched.
+        1. Only role=="assistant" messages are touched (a user-authored marker is
+           left intact — the mint is scoped to assistant output).
         2. Non-string content is skipped.
-        3. file_url_pattern is scoped to the current chat_id (no cross-chat decoration).
-        4. public_url is rstripped before URL construction (no //preview/ or //files/).
-        5. Substring-based idempotency — repeated outlet() calls do not duplicate.
+        3. The base is outlet-owned; the model never authors it.
+        4. Idempotent: the marker is consumed on the first pass, so a re-render is
+           the identity transform.
+        5. Base-unavailable OR scope-unavailable (empty valve) -> the marker
+           degrades to the bare filename as plain text. Both are the same
+           judgement: a link missing either part cannot resolve, and a broken
+           link is worse than no link.
         """
-        wants_button = self.valves.PREVIEW_MODE == "button"
-        wants_archive = self.valves.ARCHIVE_BUTTON == "on"
+        base = self.valves.DOWNLOAD_BASE_URL.rstrip("/")
+        scope = self.valves.DOWNLOAD_SCOPE.strip().strip("/")
 
-        if not (wants_button or wants_archive):
-            return body
-
-        chat_id = __metadata__.get("chat_id") if __metadata__ else None
-        if not chat_id:
-            return body
-
-        # Pull the public URL from cache (populated by inlet() via the server's
-        # X-Public-Base-URL header). outlet() may run on re-renders where
-        # __user__ isn't passed, so the email-keyed cache entry inlet() wrote
-        # isn't directly reachable. Probe the exact (chat_id, user_email) and
-        # (chat_id, "") keys first, then fall back to ANY same-chat entry —
-        # outlet only needs public_url, not the prompt, so borrowing a URL
-        # from a different user's entry for the same chat is safe (public_url
-        # is chat-independent — it comes from the server's PUBLIC_BASE_URL env).
-        user_email = __user__.get("email", "") if __user__ else ""
-        cached = self._prompt_cache.get((chat_id, user_email)) or self._prompt_cache.get(
-            (chat_id, "")
-        )
-        if not cached:
-            for (cached_chat_id, _), entry in self._prompt_cache.items():
-                if cached_chat_id == chat_id:
-                    cached = entry
-                    break
-        if not cached:
-            # Cold-cache fallback: an Open WebUI restart wipes self._prompt_cache,
-            # and a re-render of an old assistant message can hit outlet() without
-            # inlet() running first (no new user message → no inlet pass). Rather
-            # than silently dropping preview/archive buttons, re-fetch from the
-            # orchestrator. This re-uses _fetch_system_prompt's own stale-cache
-            # fallback and url-scheme validation. Still respects the "broken links
-            # are worse than no links" invariant: if the server is unreachable AND
-            # we have no stale entry, _fetch_system_prompt returns None and we
-            # skip decoration.
-            cached_pair = self._fetch_system_prompt(chat_id, user_email)
-            if not cached_pair:
-                return body
-            public_url, _prompt = cached_pair
-        else:
-            public_url, _prompt = cached[1]
-        base = public_url.rstrip("/")
-        file_url_pattern = re.escape(base) + r"/files/" + re.escape(chat_id) + r"/[^\s\)]+"
-        preview_url = f"{base}/preview/{chat_id}"
-        archive_url = f"{base}/files/{chat_id}/archive"
+        def _replace_marker(match: "re.Match[str]") -> str:
+            name = match.group(1).strip()
+            # Fail-closed basename validation: no separators, traversal, or empty.
+            if (
+                not name
+                or "/" in name
+                or "\\" in name
+                or "\x00" in name
+                or name in (".", "..")
+            ):
+                return name  # drop the marker to plain text, no link
+            if not base or not scope:
+                return name  # incomplete link -> bare filename, never a 404
+            href = (
+                base
+                + "/download/"
+                + urllib.parse.quote(scope, safe="")
+                + "/"
+                + urllib.parse.quote(name, safe="")
+            )
+            return f"[{name}]({href})"
 
         for message in body.get("messages", []):
             if message.get("role") != "assistant":
@@ -460,28 +492,8 @@ class Filter:
             content = message.get("content")
             if not content or not isinstance(content, str):
                 continue
-
-            # Two independent triggers:
-            # 1. A file URL scoped to the current chat_id — legacy v3.2.0 path.
-            # 2. A <details type="tool_calls"> block that references a browser
-            #    tool — covers sessions that exercised playwright/chromium
-            #    without producing a downloadable file (e.g. pure navigation).
-            has_file_link = bool(re.search(file_url_pattern, content))
-            has_browser_tool = _content_has_browser_tool(content)
-            if not (has_file_link or has_browser_tool):
+            if "[[ocu-download:" not in content:
                 continue
-
-            links: list[str] = []
-            if wants_button and preview_url not in content:
-                links.append(f"[{self.valves.PREVIEW_BUTTON_TEXT}]({preview_url})")
-            # Archive download only makes sense when files actually exist for
-            # this chat — gate it on has_file_link, not on the browser-tool
-            # trigger.
-            if wants_archive and has_file_link and archive_url not in content:
-                links.append(f"[{self.valves.ARCHIVE_BUTTON_TEXT}]({archive_url})")
-            if links:
-                content += "\n\n" + "\n".join(links)
-
-            message["content"] = content
+            message["content"] = _DOWNLOAD_MARKER_RE.sub(_replace_marker, content)
 
         return body
