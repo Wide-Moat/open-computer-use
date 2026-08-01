@@ -12,6 +12,7 @@ under pytest. Exit 0 = every invocation is pinned, 1 = at least one is not.
 """
 
 import os
+import re
 import sys
 
 import yaml
@@ -63,6 +64,54 @@ def invocations(workflow_dir=WORKFLOW_DIR):
     return found
 
 
+# Scanner binaries a script can call directly. An action's `version:` input
+# has no equivalent here: a bare `trivy ...` runs whatever build is on PATH,
+# and the repository does not say which.
+SCANNER_BINARIES = ("trivy", "syft", "grype")
+
+SCRIPT_SUFFIXES = (".sh", ".bash")
+
+
+def bare_invocations(root=REPO_ROOT):
+    """Yield (file, line, binary) for scanner calls made outside a workflow.
+
+    Walking only `.github/workflows` answers a narrower question than the one
+    a reader takes from a green result. A scan driven from a shell script or
+    a Dockerfile is a scan, and its build is no more pinned for living
+    somewhere the workflow walk does not reach.
+    """
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [
+            d for d in dirnames if d not in (".git", "node_modules", ".venv")
+        ]
+        # Workflow files are the other arm's business.
+        if os.path.relpath(dirpath, root).startswith(os.path.join(".github", "workflows")):
+            continue
+        for name in filenames:
+            if not (name.endswith(SCRIPT_SUFFIXES) or name.startswith("Dockerfile")):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                with open(path, errors="replace") as fh:
+                    lines = fh.readlines()
+            except OSError:
+                continue
+            for lineno, line in enumerate(lines, 1):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                for binary in SCANNER_BINARIES:
+                    # A command position: start of line, or after a pipe,
+                    # `&&`, `;` or `$(`. Not a substring of another word.
+                    if re.search(rf"(^|[|;&]|\$\()\s*{re.escape(binary)}\s", stripped):
+                        found.append(
+                            (os.path.relpath(path, root), lineno, binary)
+                        )
+                        break
+    return sorted(found)
+
+
 def check(workflow_dir=WORKFLOW_DIR):
     calls = invocations(workflow_dir)
     if not calls:
@@ -94,11 +143,22 @@ def check(workflow_dir=WORKFLOW_DIR):
                 f"{sorted(versions)}"
             )
 
+    # A scanner called from a script runs whatever build is on PATH. The
+    # repository cannot say which, so the pin above describes a subset while
+    # reading as the whole.
+    bare = bare_invocations()
+    for path, lineno, binary in bare:
+        problems.append(
+            f"{path}:{lineno} calls {binary} directly; the build it runs comes "
+            f"from PATH and is not stated anywhere in the repository"
+        )
+
     for problem in problems:
         print(f"FAIL {problem}", file=sys.stderr)
+    unpinned = len([p for p in problems if "without naming" in p])
     print(
-        f"ok {len(calls)} scanner invocation(s) examined; "
-        f"{len(calls) - len([p for p in problems if 'without naming' in p])} pinned"
+        f"ok {len(calls)} action invocation(s) examined, {len(calls) - unpinned} "
+        f"pinned; {len(bare)} direct call(s) outside a workflow"
     )
     return 1 if problems else 0
 
