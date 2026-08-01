@@ -520,7 +520,16 @@ services:
       # feeds both the CSP frame-ancestors header and the pane's postMessage
       # parent-origin trust set. Absent = 'none' + empty trust set = the pane
       # neither frames nor bootstraps. The demo portal's origin is the default.
-      OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-http://localhost:3003}
+      # COMMA-separated: parseAllowedOrigins splits on "," and drops any entry that
+      # does not URL-parse, so a space-separated list collapses to one unparseable
+      # entry, the allowlist comes back empty, and the pane fails closed to
+      # frame-ancestors 'none' -- correct of it, and measured here the hard way.
+      # frame-ancestors is checked against the WHOLE ancestor chain, not just the
+      # immediate parent. The chat embeds the portal and the portal embeds the
+      # pane, so the chat's origin has to be named here too or the pane refuses to
+      # render inside it -- measured: "Framing 'http://localhost:3000/' violates
+      # frame-ancestors http://localhost:3003". Space-separated CSP source list.
+      OCU_FRAME_ANCESTORS: ${OCU_FRAME_ANCESTORS:-http://localhost:3003,http://localhost:3001}
       # The append-only OCSF audit journal. Deny-by-default: the BFF hard-fails
       # a file-op at request time if this path is unset (NFR-SEC-79 — no file-op
       # serves 2xx without a committed local durable record). The local commit
