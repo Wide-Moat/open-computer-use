@@ -16,7 +16,7 @@
     "markdown-toc": "^1.2.0",
     "markdownlint-cli": "^0.49.0",
     "markdownlint-cli2": "^0.23.1",
-    "marked": "^16.4.0",
+    "marked": "^18.0.7",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
     "playwright": "1.61.1",
