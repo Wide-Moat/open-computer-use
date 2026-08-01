@@ -1,0 +1,241 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Runs the release pipeline's shape end to end against a registry that lives
+# and dies with the job, so the mechanism is observed rather than reasoned
+# about.
+#
+# Why this exists. The signing pipeline in build.yml has never executed. This
+# repository carries 36 tags per published image and zero cosign artifacts,
+# measured 2026-07-31 by enumerating the tags rather than by constructing a
+# reference, which is spelling-independent. The release path only runs on a tag
+# push, and a tag push publishes. So the gate that is supposed to refuse an
+# unsigned artifact has never been asked to refuse anything, and "the workflow
+# is correct" rests on reading it.
+#
+# An earlier version of this comment said no component in the fleet had ever
+# produced a signature. That was wrong and is corrected here rather than
+# quietly dropped: a sibling repository has five signed releases and one
+# unsigned one, measured the same way. The true statement is narrower and is
+# about this repository only.
+#
+# What is proven here: that push-by-digest yields a digest, that an empty SBOM
+# stops the pipeline, that an absent digest is refused before cosign turns it
+# into a parse error, that a signature verifies, and that a promoted tag
+# resolves to the digest that was signed rather than to some other one.
+#
+# What is NOT proven here, stated so it is not read as more: this uses a key
+# pair generated in the job, not Sigstore keyless with the workflow's OIDC
+# identity, and writes nothing to a transparency log. The certificate-identity
+# anchoring that a real release depends on is covered separately by
+# tests/security/check_cosign_identity_anchor.sh. A first real release still
+# has to be made deliberately and watched.
+#
+# Nothing leaves the runner: the only registry is 127.0.0.1:5000, started as a
+# service container. tests/security/check_signing_precedes_publish.py knows
+# that a runner-local registry is not a consumer-reachable reference, so this
+# file does not need an exemption to pass its own gate.
+
+name: gate3-rehearsal
+
+on:
+  pull_request:
+  push:
+    branches: [next/v1]
+
+permissions:
+  contents: read
+
+jobs:
+  rehearsal:
+    name: release — gate 3 rehearsal (nothing published)
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
+    env:
+      REG: 127.0.0.1:5000
+      IMG: 127.0.0.1:5000/gate3-rehearsal
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
+        with:
+          # push-by-digest is not implemented for the `docker` driver -- it
+          # errors out rather than falling back to a tagged push. Measured
+          # locally before this file was written. The container driver is what
+          # makes a tagless push possible at all.
+          driver-opts: network=host
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409  # v3.7.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+
+      - name: Wait for the throwaway registry
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "http://${REG}/v2/" >/dev/null 2>&1; then
+              echo "registry up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the rehearsal registry never came up" >&2
+          exit 1
+
+      - name: Generate an ephemeral key pair
+        env:
+          COSIGN_PASSWORD: ""
+        run: |
+          # A key pair, not keyless. Keyless would mint a Sigstore certificate
+          # against this workflow's OIDC identity and write a permanent public
+          # transparency-log entry for an image that exists for ninety seconds.
+          cosign generate-key-pair
+          test -s cosign.key && test -s cosign.pub
+
+      - name: Build a subject and push it by digest, with no tag
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: tests/security/rehearsal-subject
+          outputs: type=image,name=127.0.0.1:5000/gate3-rehearsal,push-by-digest=true,name-canonical=true,push=true,registry.insecure=true
+
+      - name: The digest exists, the artifact landed, and no tag points at it
+        run: |
+          digest="${{ steps.build.outputs.digest }}"
+          if [ -z "$digest" ]; then
+            echo "::error::push-by-digest produced no digest" >&2
+            exit 1
+          fi
+          echo "digest: ${digest}"
+
+          # Two questions, asked separately on purpose. The first run of this
+          # conflated them: `tags/list` answered 404 and the step died on
+          # curl's exit 22, which reads identically whether the registry means
+          # "this repository has no tags" or "nothing was ever pushed here".
+          # One of those is the result being asserted; the other would be a
+          # finding about the pipeline.
+
+          # 1. Did the artifact land? A manifest reachable by digest says yes.
+          man=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  -H 'Accept: application/vnd.oci.image.index.v1+json' \
+                  -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+                  -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+                  "http://${REG}/v2/gate3-rehearsal/manifests/${digest}")
+          echo "manifest by digest -> HTTP ${man}"
+          if [ "$man" != "200" ]; then
+            echo "::error::the digest push did not land: manifest returned ${man}" >&2
+            exit 1
+          fi
+
+          # 2. Is any tag pointing at it? 404 here means the registry knows no
+          # tagged repository by that name, which is the same answer as an
+          # empty list and is what a digest-only push should produce.
+          code=$(curl -sS -o /tmp/tags.json -w '%{http_code}' \
+                   "http://${REG}/v2/gate3-rehearsal/tags/list")
+          body=$(cat /tmp/tags.json 2>/dev/null || true)
+          echo "tags/list -> HTTP ${code}  body: ${body}"
+          case "$code" in
+            404) echo "ok: no tagged repository exists yet" ;;
+            200)
+              case "$body" in
+                *'"tags":null'*|*'"tags": null'*|*'"tags":[]'*|*'"tags": []'*)
+                  echo "ok: the repository exists and carries no tag" ;;
+                *)
+                  echo "::error::a tag exists before signing: ${body}" >&2
+                  exit 1 ;;
+              esac ;;
+            *) echo "::error::unexpected ${code} from tags/list" >&2; exit 1 ;;
+          esac
+
+      - name: Generate the SBOM
+        run: |
+          syft "${IMG}@${{ steps.build.outputs.digest }}" \
+            -o spdx-json=sbom.spdx.json
+          jq '(.packages // []) | length' sbom.spdx.json
+
+      - name: RED LEG - an SBOM describing nothing must stop the pipeline
+        run: |
+          # The same three conditions build.yml applies, run against fixtures
+          # that each violate exactly one of them. A guard nobody has seen
+          # refuse anything is a comment.
+          printf '' > empty.json
+          printf 'not json at all' > garbage.json
+          printf '{"packages":[]}' > nopkgs.json
+          for f in empty.json garbage.json nopkgs.json; do
+            if bash tests/security/sbom_guard.sh "$f"; then
+              echo "::error::the SBOM guard accepted ${f}" >&2
+              exit 1
+            fi
+            echo "ok: guard refused ${f}"
+          done
+          bash tests/security/sbom_guard.sh sbom.spdx.json
+          echo "ok: guard accepted the real SBOM"
+
+      - name: RED LEG - an absent digest must be refused before cosign sees it
+        run: |
+          if DIGEST="" SUFFIX="" REPO="x/y" \
+             bash tests/security/resolve_ref_guard.sh; then
+            echo "::error::an empty digest was accepted" >&2
+            exit 1
+          fi
+          echo "ok: refused an empty digest"
+
+      - name: Sign the digest
+        env:
+          COSIGN_PASSWORD: ""
+        run: |
+          cosign sign --yes --key cosign.key --tlog-upload=false \
+            --allow-insecure-registry "${IMG}@${{ steps.build.outputs.digest }}"
+
+      - name: The signature verifies
+        run: |
+          cosign verify --key cosign.pub --insecure-ignore-tlog=true \
+            --allow-insecure-registry "${IMG}@${{ steps.build.outputs.digest }}"
+
+      - name: RED LEG - a different digest must not verify against this signature
+        run: |
+          # Signing one artifact must not vouch for another. Without this the
+          # green leg above only proves that some signature exists somewhere in
+          # the repository.
+          other="$(printf 'unsigned-subject' | sha256sum | cut -d' ' -f1)"
+          if cosign verify --key cosign.pub --insecure-ignore-tlog=true \
+               --allow-insecure-registry "${IMG}@sha256:${other}" 2>/dev/null; then
+            echo "::error::verification passed for a digest that was never signed" >&2
+            exit 1
+          fi
+          echo "ok: an unsigned digest does not verify"
+
+      - name: Promote a tag onto the signed digest
+        run: |
+          # The reference stands here literally, not behind ${IMG}. A
+          # reviewer asking "what leaves this job" reads one line, and the
+          # signing-order check can see that the destination is a registry
+          # that dies with the job.
+          # On one line on purpose. A line-oriented reader -- the signing-order
+          # check, and a person scanning for what leaves this job -- sees the
+          # destination beside the verb. Split across continuations, the verb
+          # is on one line and the reference on another, and the check reported
+          # a publish it could not resolve. It was right to.
+          docker buildx imagetools create --tag 127.0.0.1:5000/gate3-rehearsal:rehearsal "127.0.0.1:5000/gate3-rehearsal@${{ steps.build.outputs.digest }}"
+
+      - name: The promoted tag resolves to the digest that was signed
+        run: |
+          want="${{ steps.build.outputs.digest }}"
+          got="$(docker buildx imagetools inspect "${IMG}:rehearsal" \
+                 --format '{{.Manifest.Digest}}')"
+          echo "tag -> ${got}"
+          echo "signed ${want}"
+          if [ "$got" != "$want" ]; then
+            echo "::error::the promoted tag resolves to ${got}, not the signed ${want}" >&2
+            exit 1
+          fi
+          cosign verify --key cosign.pub --insecure-ignore-tlog=true \
+            --allow-insecure-registry "${IMG}:rehearsal"
+          echo "ok: the tag a consumer would pull carries the signature"
