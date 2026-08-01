@@ -590,10 +590,19 @@ services:
       # per-chat scope locally (the north face is client-cooperative in v1). The
       # portal is on the frontend network only in this compose; wiring the live call
       # also needs the portal on control's gateway network with an mTLS client cert.
-      OCU_CONTROL_STATUS_URL: ${OCU_CONTROL_STATUS_URL:-}
-      OCU_CONTROL_CLIENT_CERT: ${OCU_CONTROL_CLIENT_CERT:-}
-      OCU_CONTROL_CLIENT_KEY: ${OCU_CONTROL_CLIENT_KEY:-}
-      OCU_CONTROL_CA_CERT: ${OCU_CONTROL_CA_CERT:-}
+      OCU_CONTROL_STATUS_URL: ${OCU_CONTROL_STATUS_URL:-https://control:9466/v1alpha/sessions/status}
+      OCU_CONTROL_CLIENT_CERT: ${OCU_CONTROL_CLIENT_CERT:-/run/portal-pki/portal.pem}
+      OCU_CONTROL_CLIENT_KEY: ${OCU_CONTROL_CLIENT_KEY:-/run/portal-pki/portal.key}
+      OCU_CONTROL_CA_CERT: ${OCU_CONTROL_CA_CERT:-/run/portal-pki/ca.pem}
+    volumes:
+      # The portal's own client identity (CN=embed-portal-client, SPIFFE
+      # .../embed-portal), signed by the same CA control checks callers against.
+      # Deliberately not the gateway's cert: two components sharing one identity
+      # cannot be told apart in an audit trail.
+      - type: bind
+        source: ./gateway-pki
+        target: /run/portal-pki
+        read_only: true
     ports:
       - "127.0.0.1:3003:3003"
     networks:
