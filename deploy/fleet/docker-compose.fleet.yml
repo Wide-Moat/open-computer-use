@@ -499,6 +499,15 @@ services:
     build:
       context: ../../../ocu-webui
       dockerfile: web/Dockerfile
+      # NEXT_PUBLIC_* is inlined by Next.js at BUILD time, so these cannot be
+      # passed as runtime environment: absent here, the pane ships with the
+      # feature compiled out. Measured — a rebuild through this file without
+      # them dropped the Preview control from every row while Info and Download
+      # stayed, which reads as a code regression and is not one. The previous
+      # image had them only because it was built by hand outside compose.
+      args:
+        NEXT_PUBLIC_PREVIEW_RENDER_ENABLED: ${OCU_PREVIEW_RENDER_ENABLED:-true}
+        NEXT_PUBLIC_DELETE_ENABLED: ${OCU_DELETE_ENABLED:-false}
     image: ocu-webui:fleet
     depends_on:
       cert-init:
