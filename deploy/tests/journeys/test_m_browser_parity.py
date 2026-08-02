@@ -1699,6 +1699,13 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
       RESOLVE_SCOPE_URL valve emptied  -> the per-chat-scope assertion, verbatim
       foreign scope replaced by the caller's own
                                        -> the foreign-scope refusal, verbatim
+      OCU_FRAME_ANCESTORS minus the chat's origin
+                                       -> "the pane frame never attached"
+
+    That last one is why the allowlist names two origins. frame-ancestors is
+    checked against the WHOLE ancestor chain: the chat (:3001) frames the portal
+    (:3003) which frames the pane (:3000), so dropping the chat's origin leaves
+    the portal's entry in place and the pane still refuses to render.
 
     The row-count assertion is measured, not assumed: the same panel opened on
     the base scope offers 925 Download controls and on a fresh chat scope 0, so
