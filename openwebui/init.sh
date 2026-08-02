@@ -264,10 +264,17 @@ if [ -n "$OCU_RESOLVE_SCOPE_URL" ] && [ -z "$OCU_RESOLVE_SCOPE_BEARER" ]; then
     echo "[init] WARNING: OCU_RESOLVE_SCOPE_URL is set but no bearer was supplied;" \
          "per-chat download links will degrade to plain filenames"
 fi
+# The valve write REPLACES the stored object, so every key the filter owns has to
+# appear here. Listing only the ones this change cares about silently dropped
+# PREVIEW_MODE and both label valves, and with no PREVIEW_MODE the outlet appends
+# no preview link at all — the panel stops offering it and nothing says why.
+OCU_PREVIEW_MODE="${OCU_PREVIEW_MODE:-button}"
+OCU_PREVIEW_BUTTON_TEXT="${OCU_PREVIEW_BUTTON_TEXT:-🖥️ Open preview}"
+OCU_ARCHIVE_BUTTON_TEXT="${OCU_ARCHIVE_BUTTON_TEXT:-📦 Download all files as archive}"
 echo "[init] Configuring filter valves..."
 if curl -sf -X POST "$WEBUI_URL/api/v1/functions/id/computer_use_filter/valves/update" \
     -H "$AUTH" -H "Content-Type: application/json" \
-    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"off\", \"INJECT_SYSTEM_PROMPT\": false, \"DOWNLOAD_BASE_URL\": \"$OCU_DOWNLOAD_BASE_URL\", \"DOWNLOAD_SCOPE\": \"$OCU_FILESYSTEM_ID\", \"RESOLVE_SCOPE_URL\": \"$OCU_RESOLVE_SCOPE_URL\", \"RESOLVE_SCOPE_BEARER\": \"$OCU_RESOLVE_SCOPE_BEARER\"}" >/dev/null 2>&1; then
+    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"off\", \"INJECT_SYSTEM_PROMPT\": false, \"DOWNLOAD_BASE_URL\": \"$OCU_DOWNLOAD_BASE_URL\", \"DOWNLOAD_SCOPE\": \"$OCU_FILESYSTEM_ID\", \"RESOLVE_SCOPE_URL\": \"$OCU_RESOLVE_SCOPE_URL\", \"RESOLVE_SCOPE_BEARER\": \"$OCU_RESOLVE_SCOPE_BEARER\", \"PREVIEW_MODE\": \"$OCU_PREVIEW_MODE\", \"PREVIEW_BUTTON_TEXT\": \"$OCU_PREVIEW_BUTTON_TEXT\", \"ARCHIVE_BUTTON_TEXT\": \"$OCU_ARCHIVE_BUTTON_TEXT\"}" >/dev/null 2>&1; then
     echo "[init] Filter valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL DOWNLOAD_BASE_URL=$OCU_DOWNLOAD_BASE_URL DOWNLOAD_SCOPE=$OCU_FILESYSTEM_ID RESOLVE_SCOPE_URL=${OCU_RESOLVE_SCOPE_URL:-<unset>}"
 else
     echo "[init] ERROR: Could not seed filter valves — ORCHESTRATOR_URL will fall back to the code default until the next successful init. Init will retry on next restart."
