@@ -1313,11 +1313,28 @@ services:
       # together with NEXT_PUBLIC_OCU_PARENT_ORIGIN and OCU_FRAME_ANCESTORS,
       # which name the same host for the same reason.
       - OCU_DOWNLOAD_BASE_URL=${OCU_DOWNLOAD_BASE_URL:-http://localhost:3000}
+      # Where init.sh points the link filter to learn a chat's storage scope.
+      # Under per-chat isolation OCU_FILESYSTEM_ID above is the FALLBACK only:
+      # the pane session's filesystem_id is <base>-<hex> per chat, so a link
+      # built from the base renders its download page and returns no bytes.
+      # Seeding these two here is what keeps a later init run from dropping
+      # them and silently restoring that broken link.
+      - OCU_RESOLVE_SCOPE_URL=${OCU_RESOLVE_SCOPE_URL:-http://mcp-gateway:8080/}
+      # A PATH, not the value: a container's environment is readable by anything
+      # that can inspect it. The credential is confined gateway-side to
+      # resolve_scope (see -resolve-only-key-ids) because rendering chat text
+      # must not carry the authority to execute tools.
+      - OCU_RESOLVE_SCOPE_BEARER_FILE=${OCU_RESOLVE_SCOPE_BEARER_FILE:-/run/ocu-gw/filter-bearer.txt}
     volumes:
       - open-webui-data:/app/backend/data
       # The fleet CA that signs filestore's TLS leaf; the attachment sync path
       # verifies https://filestore:7080 against /etc/ocu/ca.pem (read-only).
       - tls-certs:/etc/ocu:ro
+      # Read-only: the resolve-only bearer init.sh seeds into the filter valve.
+      - type: bind
+        source: ./secrets/gateway
+        target: /run/ocu-gw
+        read_only: true
     ports:
       # 3000 is taken by the fleet webui BFF; the OpenWebUI client binds 3001.
       - "127.0.0.1:${OPENWEBUI_PORT:-3001}:8080"

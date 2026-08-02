@@ -65,26 +65,48 @@ def hash_bearer(salt_hex, bearer):
     return h.hexdigest()
 
 
-def build_boot_set(bearer, deployment, tenant, key_id, created_at):
-    """Build a one-record active boot-set that resolves the given bearer for the
-    given deployment. A record whose deployment does not match the set's
-    deployment fails to resolve (ADR-0027 absent-from-set 401), so both are the
-    same deployment here."""
+def _record(bearer, deployment, tenant, key_id, created_at):
+    """One active boot-set record resolving the given bearer."""
     salt_hex = secrets.token_bytes(16).hex()  # >= 8 bytes, satisfies the schema
     return {
-        "version": 1,
-        "records": [
-            {
-                "key_id": key_id,
-                "key_hash": hash_bearer(salt_hex, bearer),
-                "salt": salt_hex,
-                "tenant": tenant,
-                "deployment": deployment,
-                "status": "active",
-                "created_at": created_at,
-            }
-        ],
+        "key_id": key_id,
+        "key_hash": hash_bearer(salt_hex, bearer),
+        "salt": salt_hex,
+        "tenant": tenant,
+        "deployment": deployment,
+        "status": "active",
+        "created_at": created_at,
     }
+
+
+# Callers that only need to LEARN which storage scope a chat is bound to, never to
+# execute a tool: the embed portal (to mint a pane token for the right subtree) and
+# the chat download-link filter (to build /download/{scope}/{name}). Each gets a
+# credential of its own — two components sharing one cannot be told apart in an
+# audit trail — and the gateway confines both to resolve_scope via
+# -resolve-only-key-ids. They stay in the CALLER'S TENANT: the gateway derives its
+# session hint from the resolved principal's tenant, so a foreign-tenant key would
+# resolve a different session and hand back a scope matching no guest. Narrow the
+# tool set, never the tenant.
+RESOLVE_ONLY_KEY_IDS = ("kid-portal-resolve", "kid-filter-resolve")
+
+
+def build_boot_set(bearer, deployment, tenant, key_id, created_at):
+    """Build an active boot-set that resolves the given bearer for the given
+    deployment, plus one resolve-only record per RESOLVE_ONLY_KEY_IDS. A record
+    whose deployment does not match the set's deployment fails to resolve
+    (ADR-0027 absent-from-set 401), so all share the deployment here.
+
+    The resolve-only bearers are returned alongside so the caller can write them
+    where the portal and the filter read them; they are never stored in the
+    boot-set, only their salted hashes."""
+    records = [_record(bearer, deployment, tenant, key_id, created_at)]
+    resolve_only = {}
+    for kid in RESOLVE_ONLY_KEY_IDS:
+        b = mint_bearer()
+        resolve_only[kid] = b
+        records.append(_record(b, deployment, tenant, kid, created_at))
+    return {"version": 1, "records": records}, resolve_only
 
 
 def provisioning_policy():
@@ -180,11 +202,21 @@ def main(argv):
     if not bearer.startswith(BEARER_PREFIX):
         ap.error(f"--bearer must start with {BEARER_PREFIX!r}")
 
-    boot_set = build_boot_set(bearer, args.deployment, args.tenant, args.key_id, args.created_at)
+    boot_set, resolve_only = build_boot_set(
+        bearer, args.deployment, args.tenant, args.key_id, args.created_at
+    )
     validate_against_schema(boot_set)
 
     os.makedirs(args.out_dir, exist_ok=True)
     write_file(os.path.join(args.out_dir, "boot-set.json"), json.dumps(boot_set, indent=2) + "\n")
+    # The resolve-only bearers DO go to files: the portal and the filter read them
+    # from a path rather than an environment value, because a container's
+    # environment is readable by anything that can inspect it. They are
+    # credentials, so they land beside the boot-set in the gitignored secrets
+    # directory and never in an artifact that is committed or printed.
+    for kid, b in resolve_only.items():
+        name = "portal-bearer.txt" if "portal" in kid else "filter-bearer.txt"
+        write_file(os.path.join(args.out_dir, name), b + "\n")
     write_file(os.path.join(args.out_dir, "service-credential.token"), args.service_token + "\n")
     write_file(
         os.path.join(args.out_dir, "provisioning-policy.json"),

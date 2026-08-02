@@ -190,11 +190,31 @@ fi
 # here is the SAME OCU_FILESYSTEM_ID the portal mints into the embed token.
 # ARCHIVE_BUTTON is off (the legacy archive link used the retired capability-URL
 # cache).
+#
+# DOWNLOAD_SCOPE is the FALLBACK only. Where the deployment derives a per-chat
+# scope, the pane session's filesystem_id is <base>-<hex> and differs per chat,
+# so no single value here can be right for more than one of them: a link built
+# from the base renders its download page and returns no bytes. The filter asks
+# the session's owner instead, through the gateway's resolve_scope, and falls
+# back to this value only when the answer is empty (no derivation configured).
+# Seeding both valves here is what stops a later init run from dropping them and
+# silently restoring the base-scope link.
+OCU_RESOLVE_SCOPE_URL="${OCU_RESOLVE_SCOPE_URL:-}"
+OCU_RESOLVE_SCOPE_BEARER="${OCU_RESOLVE_SCOPE_BEARER:-}"
+if [ -n "$OCU_RESOLVE_SCOPE_BEARER_FILE" ] && [ -r "$OCU_RESOLVE_SCOPE_BEARER_FILE" ]; then
+    # Prefer a path over an environment value: a container's environment is
+    # readable by anything that can inspect it.
+    OCU_RESOLVE_SCOPE_BEARER="$(tr -d '\r\n' < "$OCU_RESOLVE_SCOPE_BEARER_FILE")"
+fi
+if [ -n "$OCU_RESOLVE_SCOPE_URL" ] && [ -z "$OCU_RESOLVE_SCOPE_BEARER" ]; then
+    echo "[init] WARNING: OCU_RESOLVE_SCOPE_URL is set but no bearer was supplied;" \
+         "per-chat download links will degrade to plain filenames"
+fi
 echo "[init] Configuring filter valves..."
 if curl -sf -X POST "$WEBUI_URL/api/v1/functions/id/computer_use_filter/valves/update" \
     -H "$AUTH" -H "Content-Type: application/json" \
-    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"off\", \"INJECT_SYSTEM_PROMPT\": false, \"DOWNLOAD_BASE_URL\": \"$OCU_DOWNLOAD_BASE_URL\", \"DOWNLOAD_SCOPE\": \"$OCU_FILESYSTEM_ID\"}" >/dev/null 2>&1; then
-    echo "[init] Filter valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL DOWNLOAD_BASE_URL=$OCU_DOWNLOAD_BASE_URL DOWNLOAD_SCOPE=$OCU_FILESYSTEM_ID"
+    -d "{\"ORCHESTRATOR_URL\": \"$ORCHESTRATOR_URL\", \"ARCHIVE_BUTTON\": \"off\", \"INJECT_SYSTEM_PROMPT\": false, \"DOWNLOAD_BASE_URL\": \"$OCU_DOWNLOAD_BASE_URL\", \"DOWNLOAD_SCOPE\": \"$OCU_FILESYSTEM_ID\", \"RESOLVE_SCOPE_URL\": \"$OCU_RESOLVE_SCOPE_URL\", \"RESOLVE_SCOPE_BEARER\": \"$OCU_RESOLVE_SCOPE_BEARER\"}" >/dev/null 2>&1; then
+    echo "[init] Filter valves set: ORCHESTRATOR_URL=$ORCHESTRATOR_URL DOWNLOAD_BASE_URL=$OCU_DOWNLOAD_BASE_URL DOWNLOAD_SCOPE=$OCU_FILESYSTEM_ID RESOLVE_SCOPE_URL=${OCU_RESOLVE_SCOPE_URL:-<unset>}"
 else
     echo "[init] ERROR: Could not seed filter valves — ORCHESTRATOR_URL will fall back to the code default until the next successful init. Init will retry on next restart."
     INIT_FAILED=1
