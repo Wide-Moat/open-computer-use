@@ -83,9 +83,9 @@ Node.js uses parent-directory resolution: if a package isn't found in `/home/ass
 
 ## Versioning (current `main`-line scheme)
 
-Format: `v0.9.X.Y` — the first three segments (`0.9.X`) track the **Open WebUI** base version this project is built on. Never bump them independently.
+Format: `v0.11.X.Y` — the first three segments (`0.11.X`) track the **Open WebUI** base version this project is built on. Never bump them independently.
 
-- **Patch release** (`Y+1`): bug fixes, security patches, dependency bumps, test additions → e.g. `v0.9.5.0` → `v0.9.5.1`
+- **Patch release** (`Y+1`): bug fixes, security patches, dependency bumps, test additions → e.g. `v0.11.0.0` → `v0.11.0.1`
 - **Minor release** (`X+1`, reset `Y=0`): new features, new tools, significant changes → only when Open WebUI base version also bumps
 
 To release:

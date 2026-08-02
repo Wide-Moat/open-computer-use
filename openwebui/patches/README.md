@@ -2,7 +2,7 @@
 
 Source surgery applied to the Open WebUI base image at Docker build time. Each patch is a standalone Python script performing literal SEARCH/REPLACE against upstream files; `openwebui/Dockerfile` runs all of them, in order, unconditionally.
 
-Target base: Open WebUI 0.10.2 (`ARG OPENWEBUI_VERSION` in `openwebui/Dockerfile`).
+Target base: Open WebUI 0.11.0 (`ARG OPENWEBUI_VERSION` in `openwebui/Dockerfile`).
 
 ## Patches
 

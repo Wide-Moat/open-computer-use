@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-"""Tests for fix_attached_files_position.py against the v0.10.2 middleware.py fixture."""
+"""Tests for fix_attached_files_position.py against the v0.11.0 middleware.py fixture."""
 import ast
 import os
 import shutil
@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_middleware_v0102  # noqa: E402
+from conftest import load_middleware_v0110  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -24,8 +24,8 @@ def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProces
     )
 
 
-class TestFixAttachedFilesPositionV0102(unittest.TestCase):
-    """3-state coverage against the real v0.10.2 middleware.py fixture."""
+class TestFixAttachedFilesPositionV0110(unittest.TestCase):
+    """3-state coverage against the real v0.11.0 middleware.py fixture."""
 
     PATCH_NAME = "fix_attached_files_position"
     NEW_MARKER = "FIX_ATTACHED_FILES_POSITION"
@@ -36,7 +36,7 @@ class TestFixAttachedFilesPositionV0102(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v0102(), encoding="utf-8")
+        self.target.write_text(load_middleware_v0110(), encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)

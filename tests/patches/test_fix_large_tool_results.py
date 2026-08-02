@@ -387,7 +387,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_middleware_v0102  # noqa: E402
+from conftest import load_middleware_v0110  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -398,8 +398,8 @@ def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProces
     )
 
 
-class TestFixLargeToolResultsV0102(unittest.TestCase):
-    """3-state coverage + cascade tests against the real v0.10.2 middleware.py fixture."""
+class TestFixLargeToolResultsV0110(unittest.TestCase):
+    """3-state coverage + cascade tests against the real v0.11.0 middleware.py fixture."""
 
     PATCH_NAME = "fix_large_tool_results"
     NEW_MARKER = "FIX_LARGE_TOOL_RESULTS"
@@ -410,12 +410,12 @@ class TestFixLargeToolResultsV0102(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.target = Path(self.tmp) / "middleware.py"
-        self.target.write_text(load_middleware_v0102(), encoding="utf-8")
+        self.target.write_text(load_middleware_v0110(), encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_fresh_apply_v0102(self):
+    def test_fresh_apply_v0110(self):
         # Cascade dependency: fix_tool_loop_errors must run first
         r1 = _run_patch("fix_tool_loop_errors", self.target)
         self.assertEqual(r1.returncode, 0, f"patch3 stderr={r1.stderr}")
@@ -426,11 +426,11 @@ class TestFixLargeToolResultsV0102(unittest.TestCase):
         self.assertIn("FIX_TOOL_LOOP_ERRORS", content)
         self.assertIn(self.NEW_MARKER, content)
         self.assertIn("'metadata': metadata,", content)
-        # The 0.10.2 base has no serialize_output(); injected code must not call it.
+        # The 0.11.0 base has no serialize_output(); injected code must not call it.
         self.assertNotIn("serialize_output", content)
         ast.parse(content)
 
-    def test_idempotent_rerun_v0102(self):
+    def test_idempotent_rerun_v0110(self):
         _run_patch("fix_tool_loop_errors", self.target)
         r1 = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r1.returncode, 0)
@@ -440,7 +440,7 @@ class TestFixLargeToolResultsV0102(unittest.TestCase):
         self.assertIn("ALREADY PATCHED", r2.stdout)
         self.assertEqual(after_first, self.target.read_text())
 
-    def test_broken_fixture_fails_loud_v0102(self):
+    def test_broken_fixture_fails_loud_v0110(self):
         _run_patch("fix_tool_loop_errors", self.target)
         content = self.target.read_text()
         self.assertIn(self.PRIMARY_ANCHOR, content)

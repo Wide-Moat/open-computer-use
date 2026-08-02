@@ -227,9 +227,9 @@ The Computer Use Server speaks standard **MCP over Streamable HTTP** — any MCP
 
 > **[Open WebUI](https://github.com/open-webui/open-webui)** is an extensible, self-hosted AI interface. We use it as the primary frontend because it supports tool calling, function filters, and artifacts — everything needed for Computer Use.
 
-**Compatibility:** This build is strictly built and verified against Open WebUI 0.10.2. The first 3 segments of our build version (`v0.10.2.X`) always match the Open WebUI base version it targets. If you run a different Open WebUI version, pick the Open Computer Use build whose first 3 version segments match yours — e.g., for Open WebUI 0.8.12 use a `v0.8.12.Y` build.
+**Compatibility:** This build is strictly built and verified against Open WebUI 0.11.0. The first 3 segments of our build version (`v0.11.0.X`) always match the Open WebUI base version it targets. If you run a different Open WebUI version, pick the Open Computer Use build whose first 3 version segments match yours — e.g., for Open WebUI 0.8.12 use a `v0.8.12.Y` build.
 
-**Why not a fork?** We intentionally did not fork Open WebUI. Instead, everything is bolted on via the official plugin API (tools + functions) and build-time patches for missing features. This means you can use stock [Open WebUI](https://github.com/open-webui/open-webui) 0.10.2 with this build (the version that the first 3 segments of our build version `v0.10.2.X` match) — just install the tool and filter. Patches are applied at Docker build time; strongly recommended — 4 of them affect user-visible UX (artifacts panel, preview iframe, error banners, large tool-result handling). Pulling `ghcr.io/open-webui/open-webui` directly skips all of them — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack) for the full checklist.
+**Why not a fork?** We intentionally did not fork Open WebUI. Instead, everything is bolted on via the official plugin API (tools + functions) and build-time patches for missing features. This means you can use stock [Open WebUI](https://github.com/open-webui/open-webui) 0.11.0 with this build (the version that the first 3 segments of our build version `v0.11.0.X` match) — just install the tool and filter. Patches are applied at Docker build time; strongly recommended — 4 of them affect user-visible UX (artifacts panel, preview iframe, error banners, large tool-result handling). Pulling `ghcr.io/open-webui/open-webui` directly skips all of them — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack) for the full checklist.
 
 Running Claude Code through a corporate gateway (LiteLLM, Azure, Bedrock)? See [docs/claude-code-gateway.md](docs/claude-code-gateway.md) for the three-path operator recipe.
 
@@ -297,7 +297,7 @@ services:
       context: ./openwebui   # path into this repo
       dockerfile: Dockerfile
       args:
-        OPENWEBUI_VERSION: "0.10.2"
+        OPENWEBUI_VERSION: "0.11.0"
     image: open-webui-with-cu-patches:latest   # local tag, do not pull
 ```
 

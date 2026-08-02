@@ -25,7 +25,7 @@ Config env vars:
   ORCHESTRATOR_URL -- internal URL of computer-use-server for large-result uploads
 
 Must run AFTER fix_tool_loop_errors.py (Mod 2 targets its marker).
-Target: Open WebUI 0.10.2
+Target: Open WebUI 0.11.0
 """
 
 import os
