@@ -30,6 +30,7 @@ unset, they skip loudly (the browser rig is opt-in, run in the VM jvenv).
 
 import os
 import pathlib
+import re
 import subprocess
 import time
 import uuid
@@ -48,22 +49,13 @@ pytestmark = pytest.mark.fleet
 
 _BROWSER_GATE = os.getenv("OCU_BROWSER_E2E", "") in ("1", "true", "yes", "on")
 
-# Shared xfail reason for the pane-list-reader tests blocked by defect #182. These
-# gate on the pane's page-1-only GET /v1/files before their preview/download leg;
-# at >=100 objects the newest file sorts onto page-2+ (ascending CreatedAt) and the
-# pane never lists it. Fable-ruled disposition: strict xfail with the >=100 seed
-# retained (NOT a skip-guard -- skipping-when-saturated deletes the only non-vacuous
-# condition; NOT raw RED -- four duplicate reds normalize a red suite and bury new
-# regressions). The canonical strict signal is j8; these mirror it. When the
-# order=desc fix ships (ADR-0031 amends 0028), all XPASS-strict and strict=True
-# forces every marker's removal.
-_182_XFAIL_REASON = (
-    "task #182: the F9 list sorts ASCENDING CreatedAt and the pane fetches only "
-    "page-1, so a just-written file (the newest) is off page-1 once the scope holds "
-    ">=100 objects -- the pane never lists it and the preview/download leg is "
-    "unreachable. Fix: additive order=asc|desc param, pane sends desc (ADR-0031). "
-    "XPASSes when that ships; strict=True then forces this marker's removal."
-)
+# The pane-list-reader tests (M1/M2b/M3/M5/M6) were strict-xfail under defect #182
+# (F9 list sorted ascending CreatedAt + pane page-1-only -> a just-written file was
+# off page-1 at >=100 objects). The order=desc fix shipped (ADR-0031 amends 0028):
+# the pane and the _pane_list helper now send order=desc, so the newest file is on
+# page-1. The markers are removed; the tests are live regression guards. The >=100
+# saturation guard is KEPT so the guard stays non-vacuous (an under-100 scope would
+# pass even with the order fix reverted).
 
 
 def _require_browser():
@@ -109,10 +101,11 @@ def _portal_reachable():
 
 
 def _wait_file_listed(filename, deadline_s=60):
-    """Poll the pane's own GET /v1/files (the same endpoint the pane calls on
-    mount) until `filename` is in the list, or the deadline passes. Returns the
-    FileObject or None. Reuses test_j's pane bootstrap + scope-header list so
-    the poll sees exactly what the browser mount will see.
+    """Poll the pane's own GET /v1/files?order=desc (the same newest-first call the
+    pane makes on mount, #182) until `filename` is in the list, or the deadline
+    passes. Returns the FileObject or None. Reuses test_j's pane bootstrap +
+    scope-header list (which sends order=desc) so the poll sees exactly what the
+    browser mount will see.
     """
     import tempfile
     import test_j_file_flow as J
@@ -123,14 +116,17 @@ def _wait_file_listed(filename, deadline_s=60):
 
 
 def _ensure_scope_saturated_for_182():
-    """Make the #182 defect condition DETERMINISTIC for the xfail-marked pane-list
-    tests (M1/M3/M5/M6): the scope must hold >= maxListLimit (100) objects so a
-    just-written file sorts onto page-2+ and is invisible in the pane's page-1-only
-    list. The shared fs-fleet scope already carries >=100 from accumulated runs
-    (117 observed), so this is normally a no-op guard; it pads only if a fresh
-    scope is under-populated. Without this, the xfail would flake to XPASS on a
-    rare under-100 scope and strict=True would (correctly) fail -- the guard keeps
-    the marker honest. Mirrors j8's saturation (test_j_file_flow)."""
+    """Arm the #182 condition so the pane-list regression guards (M1/M3/M5/M6) stay
+    NON-VACUOUS: the scope must hold >= maxListLimit (100) objects so a just-written
+    file is the newest and, under the OLD ascending order, would sort onto page-2+
+    and be invisible in the pane's page-1-only list. With the order=desc fix the
+    newest file is now on page-1, so these tests pass -- but ONLY because the fix
+    works: revert it and, at >=100 objects, the newest file drops off page-1 and the
+    tests red. An under-100 scope would let a fresh file land on page-1 trivially, so
+    the guard would stay green even with the fix reverted -- that is why the
+    saturation is load-bearing, not cosmetic. The shared fs-fleet scope already
+    carries >=100 from accumulated runs; it pads only if under-populated. Mirrors
+    j8's saturation (test_j_file_flow)."""
     import tempfile
     import test_j_file_flow as J
 
@@ -144,8 +140,8 @@ def _ensure_scope_saturated_for_182():
     saturated = len(J._pane_list(jar))
     assert saturated >= PAGE, (
         f"could not saturate the scope past {PAGE} objects (have {saturated}) -- the "
-        "#182 blindness is only reachable at >=100; an under-populated scope would "
-        "make the xfail vacuously XPASS"
+        "#182 regression is only reachable at >=100; an under-populated scope would "
+        "let a fresh file land on page-1 trivially, making the guard vacuous"
     )
 
 
@@ -177,10 +173,6 @@ def _wait_content_contains(file_id, marker, deadline_s=45):
 # M1 -- a model-written image renders in the pane preview (P-A)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_182_XFAIL_REASON,
-)
 def test_m1_agent_image_renders_in_pane_preview():
     """P-A: an image written to outputs renders as an <img> in the pane preview
     with the file's real pixel dimensions -- not just a 200 on the content URL
@@ -357,10 +349,6 @@ def test_m2_chat_upload_reaches_guest():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_182_XFAIL_REASON,
-)
 def test_m2b_chat_upload_visible_in_pane():
     """The uploads-branch pane-list leg of #182 (split out of M2 per Fable's
     ruling): a user uploads a file through the pane's real file input, and the
@@ -464,10 +452,6 @@ def _preview_image_in_pane(name, expected_w, expected_h):
             browser.close()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_182_XFAIL_REASON,
-)
 def test_m3_skill_fires_and_artifact_previews():
     """P-C: the guest runs a skill toolchain (matplotlib charting -- a real
     skill runtime, Agg backend so it needs no browser under gVisor) that
@@ -567,10 +551,6 @@ def _preview_text_in_pane(name, must_contain, must_not_contain=None):
             browser.close()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_182_XFAIL_REASON,
-)
 def test_m5_str_replace_edit_reflects_in_pane_preview():
     """P-A (edit path): a file created in outputs previews its text in the pane,
     then str_replace edits it IN PLACE and the pane preview reflects the NEW
@@ -643,10 +623,6 @@ def test_m5_str_replace_edit_reflects_in_pane_preview():
 # byte-match (the pane's fourth code path, untested in-browser before this)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_182_XFAIL_REASON,
-)
 def test_m6_non_previewable_artifact_downloads_bytewise():
     """P-C (non-image artifact): a skill-produced PDF in outputs takes the pane's
     UNSUPPORTED-preview path (it is neither an image nor text/plain), and the user
@@ -1559,6 +1535,7 @@ def test_m11_pane_background_poll_fires_without_reload():
     from playwright.sync_api import sync_playwright
 
     files_get = {"n": 0}
+    files_get_desc = {"n": 0}  # GET /v1/files requests that carry ?order=desc (#182)
     nav_count = {"n": 0}
     pane_action = {"n": 0}  # any pane-originated mutation (POST/DELETE) would be a non-poll GET source
 
@@ -1569,9 +1546,16 @@ def test_m11_pane_background_poll_fires_without_reload():
             page.on("framenavigated", lambda _f: nav_count.__setitem__("n", nav_count["n"] + 1))
 
             def _on_req(r):
-                u = r.url.rstrip("/")
+                # Strip any query string before matching the path: the pane now
+                # sends GET /v1/files?order=desc (#182), so an endswith on the full
+                # URL would miss the poll ticks. Match on the path only.
+                u = r.url.split("?", 1)[0].rstrip("/")
                 if r.method == "GET" and u.endswith("/v1/files"):
                     files_get["n"] += 1
+                    # #182 wire guard: the pane must request newest-first so a
+                    # just-written file lands on page-1. Assert the query verbatim.
+                    if "order=desc" in r.url:
+                        files_get_desc["n"] += 1
                 if r.method in ("POST", "DELETE") and "/v1/files" in r.url:
                     pane_action["n"] += 1
 
@@ -1617,6 +1601,15 @@ def test_m11_pane_background_poll_fires_without_reload():
         "background poll (setInterval PANE_POLL_MS=5000) did not fire; the pane no "
         "longer re-lists live (the PoC live-panel parity behaviour regressed)"
     )
+    # #182 wire guard: every GET the pane issues must carry order=desc so a
+    # just-written file lands on page-1. This is a DIRECT assertion that the pane
+    # sends the fix (not just a DOM-timing signal): if the webui pane leg regresses
+    # to ascending, this reds even though the poll still fires.
+    assert files_get_desc["n"] == files_get["n"], (
+        f"only {files_get_desc['n']} of {files_get['n']} pane GET /v1/files carried "
+        "?order=desc -- the pane must request newest-first (#182); a bare ascending "
+        "list leaves a just-written file off page-1 at >=100 objects"
+    )
     assert nav_count["n"] == nav_after_mount, (
         f"the pane navigated/reloaded during the poll window ({nav_count['n']} vs "
         f"{nav_after_mount}) -- the background GETs must come from the poll, not a "
@@ -1626,3 +1619,216 @@ def test_m11_pane_background_poll_fires_without_reload():
         f"a pane-originated POST/DELETE fired ({pane_action['n']}) -- the background "
         "GETs must be pure poll re-lists, not triggered by a pane mutation"
     )
+
+
+# ---------------------------------------------------------------------------
+# M12 -- the OWNER'S scenario, end to end, in the chat.
+#
+# Every browser test above drives the PORTAL (127.0.0.1:3003) and asserts the
+# pane. None of them opens the CHAT. That gap is exactly where the owner found
+# two live defects this suite could not have caught:
+#
+#   * the model stopped emitting the download link by itself, and
+#   * the Preview control vanished from every pane row
+#     (the valves write REPLACES the object, so a write that listed only the
+#     keys a change cared about dropped PREVIEW_MODE, and with no PREVIEW_MODE
+#     the outlet appends nothing).
+#
+# Both failures are invisible from below: gateway, portal, store and audit all
+# answer correctly the whole time. Only the rendered chat shows them. So this
+# test starts where the user starts -- an empty chat -- and asserts each hop it
+# can see, refusing to accept the presence of a control as proof it works.
+# ---------------------------------------------------------------------------
+
+
+def _chat_panel_frame(page, deadline_s=40):
+    """Open the in-chat Files panel and return its pane frame.
+
+    The panel is a slide-in: Playwright's is_visible() reports True while it is
+    still parked at translateX(+width), so a DOM read through it looks like a
+    populated panel when nothing is on screen. Openness is decided on the
+    bounding box against the viewport, never on is_visible.
+    """
+    def is_open():
+        return page.evaluate(
+            "() => { const p = document.getElementById('ocu-file-pane-panel');"
+            "        return p ? p.getBoundingClientRect().x < window.innerWidth : null; }"
+        )
+
+    deadline = time.monotonic() + deadline_s
+    while time.monotonic() < deadline:
+        if is_open() is True:
+            break
+        toggle = page.query_selector("#ocu-file-pane-panel-toggle")
+        assert toggle is not None, (
+            "the chat carries no Files toggle -- the panel patch is not in the "
+            "running OpenWebUI image (a stale patch drops it silently)"
+        )
+        toggle.click()
+        time.sleep(3)
+    assert is_open() is True, "the Files panel never came on screen"
+
+    src = page.evaluate(
+        "() => { const f = document.querySelector('#ocu-file-pane-panel iframe');"
+        "        return f ? f.getAttribute('src') : null; }"
+    )
+    assert src and "chat=" in src, (
+        f"the panel embeds the portal WITHOUT a chat context (src={src!r}); the "
+        "portal then binds the BASE scope, so the panel shows every chat's files"
+    )
+    frame = next((f for f in page.frames if f.url.startswith("http://localhost:3000")), None)
+    assert frame is not None, "the pane frame never attached inside the panel"
+    return frame
+
+
+def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
+    """M12 (KEYSTONE): the whole thing, from an empty chat, as the owner runs it.
+
+    save-request -> model emits the marker ITSELF -> filter mints a per-chat
+    link -> panel opens IN THE CHAT -> lists this chat's file and no other's ->
+    Preview renders the real content -> Download returns the store's bytes ->
+    the chat-emitted link returns the same bytes -> no-session and wrong-scope
+    are both refused.
+
+    Red-probe shape: break any hop and exactly that assertion reds. Only the
+    two probes below were RUN; the rest of the map would be a claim, not a
+    record, so it is not written here.
+
+      build webui with NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=false
+                                       -> the Preview assertion, verbatim
+      RESOLVE_SCOPE_URL valve emptied  -> the per-chat-scope assertion, verbatim
+
+    The filter's PREVIEW_MODE valve does NOT red this test, in either of its
+    broken forms (key absent, and key set to "off"): it governs the preview
+    button the filter appends to a chat MESSAGE, a different surface from the
+    panel row's Preview control, which is gated at BUILD time by the flag
+    above. Two valve-level probes were run and both stayed green before that
+    distinction was measured.
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "chat gate is opt-in. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    marker = f"OWNER{uuid.uuid4().hex[:8].upper()}"
+    name = f"m12-{uuid.uuid4().hex[:8]}.txt"
+    body = f"owner scenario {marker}"
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(accept_downloads=True)
+            _owui_login_and_open_chat(page)
+
+            composer = page.query_selector("[contenteditable=true]")
+            assert composer is not None, "OpenWebUI chat composer not reachable"
+            composer.click()
+            # Deliberately does NOT ask for a link: the system prompt is what
+            # must make the model offer one. Asking would test the ask, not the
+            # behaviour the owner lost.
+            composer.type(
+                f"Save a file at /mnt/user-data/outputs/{name} whose content is "
+                f"exactly: {body}"
+            )
+            time.sleep(0.5)
+            page.keyboard.press("Enter")
+
+            # No wait on /c/<id> here: OpenWebUI settles that URL on its own
+            # schedule and this test never needs the id. Waiting on it turns a
+            # timing detail into a failure that reads like a product defect.
+
+            # HOP 1: the model offers the link on its own.
+            deadline = time.monotonic() + 180
+            hrefs = []
+            while time.monotonic() < deadline:
+                hrefs = page.eval_on_selector_all(
+                    "a[href*='/download/']", "els => els.map(e => e.getAttribute('href'))"
+                )
+                if hrefs:
+                    break
+                time.sleep(3)
+            assert hrefs, (
+                "the model never offered a download link on its own. Either the "
+                "<sharing_files> block is not reaching it (check the model "
+                "record's params.system, and INJECT_SYSTEM_PROMPT), or the "
+                "outlet received the marker and dropped it (scope resolution "
+                "failing mints NO link by design)."
+            )
+
+            # HOP 2: that link carries THIS chat's scope, not the base.
+            link = hrefs[0]
+            m = re.search(r"/download/([^/]+)/", link)
+            assert m, f"the minted link has no scope segment: {link!r}"
+            scope = m.group(1)
+            assert scope != "fs-fleet", (
+                f"the link carries the BASE scope {scope!r}. Under per-chat "
+                "isolation the base is every chat's tree, and the link resolves "
+                "to nothing: it renders a download page and returns no bytes."
+            )
+
+            # HOP 3: the panel opens IN THE CHAT and shows this chat's file.
+            pane = _chat_panel_frame(page)
+            deadline = time.monotonic() + 60
+            listed = False
+            while time.monotonic() < deadline:
+                if pane.get_by_text(name).count() > 0:
+                    listed = True
+                    break
+                time.sleep(3)
+            assert listed, f"{name} never appeared in the in-chat panel"
+
+            row = pane.get_by_text(name).first.locator(
+                "xpath=ancestor::*[.//*[normalize-space(text())='Download']][1]"
+            )
+            row_text = row.inner_text()
+
+            # HOP 4: Preview is OFFERED and WORKS. Presence alone is not proof;
+            # the control is clicked and the real content asserted.
+            assert "Preview" in row_text, (
+                "the row offers no Preview control. PREVIEW_MODE is a build- and "
+                "valve-level flag: a valve write that omits it, or a pane image "
+                "built without NEXT_PUBLIC_PREVIEW_RENDER_ENABLED, removes the "
+                f"control silently. Row was: {row_text!r}"
+            )
+            row.get_by_text("Preview", exact=True).first.click()
+            time.sleep(3)
+            assert pane.get_by_text(body).count() > 0, (
+                "Preview opened but did not render the file's real content"
+            )
+
+            # HOP 5: Download from the panel returns the store's bytes.
+            with page.expect_download(timeout=30000) as dl_info:
+                row.get_by_text("Download", exact=True).first.click()
+            panel_bytes = pathlib.Path(dl_info.value.path()).read_bytes()
+
+            # HOP 6: the chat-emitted link returns the same bytes.
+            page.goto(link)
+            with page.expect_download(timeout=30000) as dl2:
+                page.get_by_role("button", name="Download").click()
+            link_bytes = pathlib.Path(dl2.value.path()).read_bytes()
+
+            assert panel_bytes == link_bytes, (
+                "the panel and the chat link disagree on the file's bytes"
+            )
+            assert body.encode() in panel_bytes, (
+                f"the delivered bytes are not the file the model wrote: {panel_bytes[:120]!r}"
+            )
+
+            # HOP 7: the refusals still hold on this build.
+            ctx = browser.new_context()  # no pane session
+            try:
+                r = ctx.request.get(link)
+                assert r.status == 401, (
+                    f"a browser with no pane session downloaded the file (status {r.status})"
+                )
+                r2 = ctx.request.get(link.replace(scope, "fs-fleet-deadbeefdeadbeef"))
+                assert r2.status == 401, (
+                    f"a foreign scope was served (status {r2.status})"
+                )
+            finally:
+                ctx.close()
+        finally:
+            browser.close()
