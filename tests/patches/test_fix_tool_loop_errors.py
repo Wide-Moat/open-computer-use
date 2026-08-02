@@ -8,6 +8,7 @@ ARG OPENWEBUI_VERSION), so the fixture is pinned to that base.
 """
 import ast
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
 from conftest import load_middleware_v0110  # noqa: E402
+
+
+def _error_block(content: str, marker: str) -> str:
+    """Slice one injected error-handling block, from `marker` to its `break`.
+
+    Every block this patch injects bails out of the tool loop, so the first
+    `break` line after the marker terminates it. Bounding on that rather than
+    a character count keeps the window tied to the block even if the patch
+    grows or shrinks the code it injects.
+    """
+    start = content.index(marker)
+    end = re.search(r"\n[ \t]+break\n", content[start:])
+    assert end is not None, f"no terminating break after {marker!r}"
+    return content[start:start + end.end()]
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -87,7 +102,7 @@ class TestFixToolLoopErrorsV0110(unittest.TestCase):
             ("TOOL_LOOP_ERRORS_UNIFIED: handle non-streaming error", "non-streaming branch"),
         ):
             self.assertIn(marker, content, f"{label} block missing from patched output")
-            block = content[content.index(marker):][:2600]
+            block = _error_block(content, marker)
             self.assertEqual(
                 block.count("await emit_message_error("), 1,
                 f"{label} must emit exactly one error banner",
@@ -99,7 +114,11 @@ class TestFixToolLoopErrorsV0110(unittest.TestCase):
             )
 
         # The code-interpreter except is a separate injection site.
-        ci = content[content.index("CODE_INTERP_ERROR"):][:1400]
+        self.assertIn(
+            "CODE_INTERP_ERROR", content,
+            "code-interpreter except block missing from patched output",
+        )
+        ci = _error_block(content, "CODE_INTERP_ERROR")
         self.assertEqual(ci.count("await emit_message_error("), 1)
         self.assertNotIn("'type': 'chat:message:error'", ci)
 
