@@ -100,7 +100,7 @@ def _portal_reachable():
         return False
 
 
-def _wait_file_listed(filename, deadline_s=60):
+def _wait_file_listed(filename, deadline_s=60, chat_id=None):
     """Poll the pane's own GET /v1/files?order=desc (the same newest-first call the
     pane makes on mount, #182) until `filename` is in the list, or the deadline
     passes. Returns the FileObject or None. Reuses test_j's pane bootstrap +
@@ -111,7 +111,7 @@ def _wait_file_listed(filename, deadline_s=60):
     import test_j_file_flow as J
 
     tmp = pathlib.Path(tempfile.mkdtemp())
-    jar, _csrf = J._pane_session(tmp)
+    jar, _csrf = J._pane_session(tmp, chat_id=chat_id)
     return J._pane_find(jar, filename, deadline_s=deadline_s)
 
 
@@ -219,7 +219,7 @@ def test_m1_agent_image_renders_in_pane_preview():
     # the user opens the panel) without a flaky fixed sleep. Polling the pane's
     # endpoint (not MinIO or filestore-north directly) gates on the exact list
     # the browser mount will fetch.
-    obj = _wait_file_listed(name, deadline_s=60)
+    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, (
         f"{name} never appeared in GET /v1/files within 60s -- the write did "
         "not propagate to the north-face list (VFS write-back or list gap)"
@@ -497,7 +497,7 @@ def test_m3_skill_fires_and_artifact_previews():
     )
 
     # The artifact must reach the pane's list (bounded write-back lag).
-    obj = _wait_file_listed(name, deadline_s=60)
+    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, (
         f"skill artifact {name} never appeared in GET /v1/files within 60s"
     )
@@ -590,7 +590,7 @@ def test_m5_str_replace_edit_reflects_in_pane_preview():
     )
 
     # 2. It must list, then preview its text (the BEFORE marker) in the pane.
-    obj = _wait_file_listed(name, deadline_s=60)
+    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, f"{name} never appeared in GET /v1/files within 60s"
     _preview_text_in_pane(name, must_contain=before)
 
@@ -689,7 +689,7 @@ def test_m6_non_previewable_artifact_downloads_bytewise():
     # 2. It must list on the pane's own endpoint (the exact list the browser mount
     # fetches) with the guest's byte size -- gate before driving the browser so the
     # mount snapshot sees the file (same bounded write-back lag as M1/M5).
-    obj = _wait_file_listed(name, deadline_s=60)
+    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, (
         f"{name} never appeared in GET /v1/files within 60s -- the write did not "
         "propagate to the north-face list"

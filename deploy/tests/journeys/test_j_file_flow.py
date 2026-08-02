@@ -72,7 +72,7 @@ def _curl_json(args, timeout=15):
     return int(text[nl + 1 :].strip()), text[:nl]
 
 
-def _pane_session(tmp_path):
+def _pane_session(tmp_path, chat_id=None):
     """Portal token -> pane bootstrap. Returns (cookie_jar_path, csrf_token).
 
     Skips loudly when the portal or the pane is down: the user leg cannot be
@@ -94,7 +94,11 @@ def _pane_session(tmp_path):
         )
     jar = str(tmp_path / "pane-cookies.txt")
     try:
-        status, body = _curl_json([PORTAL_TOKEN_URL])
+        # A chat id binds the minted token to THAT chat's storage scope.
+        # Without it the portal mints the base scope, and under per-chat
+        # isolation a base-scope pane cannot see a chat's own objects.
+        _url = PORTAL_TOKEN_URL + (f"?chat={chat_id}" if chat_id else "")
+        status, body = _curl_json([_url])
     except RuntimeError:
         pytest.skip("embed-portal (127.0.0.1:3003) unreachable - user leg cannot run. LOUD SKIP, not a pass.")
     if status != 200:
