@@ -412,7 +412,7 @@ def test_m2b_chat_upload_visible_in_pane():
             browser.close()
 
 
-def _preview_image_in_pane(name, expected_w, expected_h):
+def _preview_image_in_pane(name, expected_w, expected_h, chat_id=None):
     """Open the portal in a real browser, find the file row, click Preview, and
     assert the rendered <img> paints at exactly (expected_w, expected_h). Shared
     by the P-A (M1) and P-C (M3) legs -- both assert an image truly previews.
@@ -424,7 +424,7 @@ def _preview_image_in_pane(name, expected_w, expected_h):
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL + (f"?chat={chat_id}" if chat_id else ""), wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -488,8 +488,9 @@ def test_m3_skill_fires_and_artifact_previews():
         "plt.plot([0,1,2],[0,1,4]); "
         f"fig.savefig('/mnt/user-data/outputs/{name}')\" && echo CHARTED"
     )
+    chat_id = f"m3-{uuid.uuid4().hex[:8]}"
     status, text, is_error = _guest_exec(
-        f"m3-{uuid.uuid4().hex[:8]}", chart, timeout=150
+        chat_id, chart, timeout=150
     )
     assert status == 200 and not is_error and "CHARTED" in (text or ""), (
         f"skill toolchain (matplotlib chart) failed: status={status} "
@@ -497,13 +498,13 @@ def test_m3_skill_fires_and_artifact_previews():
     )
 
     # The artifact must reach the pane's list (bounded write-back lag).
-    obj = _wait_file_listed(name, deadline_s=60)
+    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, (
         f"skill artifact {name} never appeared in GET /v1/files within 60s"
     )
 
     # And it must PREVIEW as an image with the chart's real dimensions.
-    _preview_image_in_pane(name, W, H)
+    _preview_image_in_pane(name, W, H, chat_id=chat_id)
 
 
 def _preview_text_in_pane(name, must_contain, must_not_contain=None, chat_id=None):
