@@ -594,7 +594,33 @@ services:
       OCU_CONTROL_CLIENT_CERT: ${OCU_CONTROL_CLIENT_CERT:-/run/portal-pki/portal.pem}
       OCU_CONTROL_CLIENT_KEY: ${OCU_CONTROL_CLIENT_KEY:-/run/portal-pki/portal.key}
       OCU_CONTROL_CA_CERT: ${OCU_CONTROL_CA_CERT:-/run/portal-pki/ca.pem}
+      # The SECOND scope source, consulted only where the status verb misses.
+      # Control's status verb is caller-scoped: it answers 404 for a session the
+      # caller does not own, which is what stops a caller enumerating sessions
+      # that are not its own (NFR-SEC-43). The portal owns no session, so on this
+      # deployment every chat misses and the portal would bind the BASE scope --
+      # every chat's objects at once, under a panel titled for one chat.
+      #
+      # The gateway owns the session and answers the same question through its
+      # resolve_scope tool, so asking the owner keeps control's audience-scoping
+      # intact instead of widening it to fix a display problem.
+      OCU_GATEWAY_URL: ${OCU_GATEWAY_URL:-http://mcp-gateway:8080/}
+      # A credential of the portal's OWN, never the caller key OpenWebUI holds:
+      # two components sharing one credential cannot be told apart in an audit
+      # trail, and the portal needs a strictly smaller authority. It must sit in
+      # the same TENANT as the OpenWebUI key -- the gateway derives its session
+      # hint from the resolved principal's tenant, so a foreign-tenant credential
+      # resolves a different session and hands back a scope matching no guest.
+      # Narrow the tool set, never the tenant.
+      OCU_GATEWAY_BEARER_FILE: ${OCU_GATEWAY_BEARER_FILE:-/run/portal-gw/portal-bearer.txt}
     volumes:
+      # Read-only: the portal reads its bearer from a path rather than an
+      # environment value, because a container's environment is readable by
+      # anything that can inspect it and this credential is its whole authority.
+      - type: bind
+        source: ./secrets/gateway
+        target: /run/portal-gw
+        read_only: true
       # The portal's own client identity (CN=embed-portal-client, SPIFFE
       # .../embed-portal), signed by the same CA control checks callers against.
       # Deliberately not the gateway's cert: two components sharing one identity
@@ -846,6 +872,14 @@ services:
       # tool_call event to before acking (NFR-SEC-03 emit-before-ack). Without it a
       # valid key fails closed at 500; with it the same call reaches 201.
       - -audit-sink=/var/log/ocu-mcp-gateway/audit.ocsf.jsonl
+      # The embed portal holds a credential of its own so it can learn which
+      # storage scope a chat is bound to. Learning a scope is all it needs, so
+      # this confines that key id to resolve_scope: with the same credential and
+      # no restriction, the portal can execute bash_tool, create_file, str_replace
+      # and view — measured on this stand before the guard existed. The key stays
+      # in the caller's tenant (the session hint derives from it); only the tool
+      # set narrows.
+      - -resolve-only-key-ids=${OCU_RESOLVE_ONLY_KEY_IDS:-kid-portal-resolve}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
