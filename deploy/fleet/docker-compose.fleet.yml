@@ -879,7 +879,7 @@ services:
       # and view — measured on this stand before the guard existed. The key stays
       # in the caller's tenant (the session hint derives from it); only the tool
       # set narrows.
-      - -resolve-only-key-ids=${OCU_RESOLVE_ONLY_KEY_IDS:-kid-portal-resolve}
+      - -resolve-only-key-ids=${OCU_RESOLVE_ONLY_KEY_IDS:-kid-portal-resolve,kid-filter-resolve}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
