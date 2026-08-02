@@ -59,6 +59,60 @@ fi
 if [ -f "$MARKER_FILE" ]; then
     echo "[init] Already initialized, skipping."
     echo "[init] To re-seed Valves from env, delete $MARKER_FILE and restart the container."
+
+    # One exception, and it is narrow on purpose. The marker exists so a restart
+    # cannot overwrite valves an operator edited in the admin UI, and that stays
+    # true: this only FILLS a valve that is absent or empty, and only the two the
+    # per-chat download link needs. It never overwrites a value that is set.
+    #
+    # Without it, upgrading an existing deployment leaves RESOLVE_SCOPE_URL unset,
+    # the filter falls back to the base scope, and every chat download link
+    # renders its page and returns no bytes — a failure that reads as success.
+    # A version of this guard that required deleting the marker would leave that
+    # state one forgotten step away.
+    if [ -n "${OCU_RESOLVE_SCOPE_URL:-}" ]; then
+        for i in $(seq 1 30); do
+            curl -sf "$WEBUI_URL/health" >/dev/null 2>&1 && break
+            sleep 2
+        done
+        RTOKEN=$(curl -sf "$WEBUI_URL/api/v1/auths/signin" -H "Content-Type: application/json" \
+            -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || echo "")
+        if [ -z "$RTOKEN" ]; then
+            echo "[init] Could not sign in to reconcile the resolve-scope valves; leaving them as they are."
+            exit 0
+        fi
+        RBEARER="${OCU_RESOLVE_SCOPE_BEARER:-}"
+        if [ -n "${OCU_RESOLVE_SCOPE_BEARER_FILE:-}" ] && [ -r "${OCU_RESOLVE_SCOPE_BEARER_FILE}" ]; then
+            RBEARER="$(tr -d '\r\n' < "$OCU_RESOLVE_SCOPE_BEARER_FILE")"
+        fi
+        CURRENT=$(curl -sf "$WEBUI_URL/api/v1/functions/id/computer_use_filter/valves" \
+            -H "Authorization: Bearer $RTOKEN" 2>/dev/null || echo "")
+        MERGED=$(printf '%s' "$CURRENT" | OCU_R_URL="${OCU_RESOLVE_SCOPE_URL:-}" OCU_R_BEARER="$RBEARER" python3 -c '
+import json, os, sys
+try:
+    v = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+changed = False
+for key, val in (("RESOLVE_SCOPE_URL", os.environ["OCU_R_URL"]),
+                 ("RESOLVE_SCOPE_BEARER", os.environ["OCU_R_BEARER"])):
+    if not v.get(key) and val:
+        v[key] = val
+        changed = True
+if not changed:
+    sys.exit(2)  # already set — leave the operator every value they chose
+json.dump(v, sys.stdout)
+' 2>/dev/null) && {
+            if curl -sf -X POST "$WEBUI_URL/api/v1/functions/id/computer_use_filter/valves/update" \
+                -H "Authorization: Bearer $RTOKEN" -H "Content-Type: application/json" \
+                -d "$MERGED" >/dev/null 2>&1; then
+                echo "[init] Filled the absent resolve-scope valves (RESOLVE_SCOPE_URL=${OCU_RESOLVE_SCOPE_URL:-}); per-chat download links stay correct across this upgrade."
+            else
+                echo "[init] WARNING: could not write the resolve-scope valves; chat download links will use the base scope."
+            fi
+        }
+    fi
     exit 0
 fi
 
@@ -201,7 +255,7 @@ fi
 # silently restoring the base-scope link.
 OCU_RESOLVE_SCOPE_URL="${OCU_RESOLVE_SCOPE_URL:-}"
 OCU_RESOLVE_SCOPE_BEARER="${OCU_RESOLVE_SCOPE_BEARER:-}"
-if [ -n "$OCU_RESOLVE_SCOPE_BEARER_FILE" ] && [ -r "$OCU_RESOLVE_SCOPE_BEARER_FILE" ]; then
+if [ -n "${OCU_RESOLVE_SCOPE_BEARER_FILE:-}" ] && [ -r "${OCU_RESOLVE_SCOPE_BEARER_FILE}" ]; then
     # Prefer a path over an environment value: a container's environment is
     # readable by anything that can inspect it.
     OCU_RESOLVE_SCOPE_BEARER="$(tr -d '\r\n' < "$OCU_RESOLVE_SCOPE_BEARER_FILE")"
