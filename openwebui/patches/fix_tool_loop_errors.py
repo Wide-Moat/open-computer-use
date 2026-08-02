@@ -17,7 +17,7 @@ Problems solved:
 6. SSE parse errors logged at debug level only
 
 Applied at Docker build time. Works on ORIGINAL middleware.py (no dependencies).
-Target: Open WebUI 0.10.2 (output-based architecture, structured output, prior_output).
+Target: Open WebUI 0.11.0 (output-based architecture, structured output, prior_output).
 
 Fail-loud: ANY sub-anchor miss triggers sys.exit(1) with stderr ERROR — refuses
 to ship a partially-patched middleware.py. Idempotent: re-run prints ALREADY PATCHED.
@@ -65,7 +65,10 @@ SEARCH_TOOL_LOOP = """\
                             new_form_data['previous_response_id'] = last_response_id
                         else:
                             tool_messages = convert_output_to_messages(
-                                output, raw=True, reasoning_format=get_reasoning_format(model)
+                                output,
+                                raw=True,
+                                reasoning_format=get_reasoning_format(model),
+                                flatten_tool_images=True,
                             )
 
                             # Chat Completions providers don't support multimodal
@@ -133,7 +136,9 @@ SEARCH_TOOL_LOOP = """\
                         else:
                             break
                     except Exception as e:
-                        log.debug(e)
+                        error_content = get_message_error_content(e)
+                        log.exception('Tool-call continuation failed: %s', error_content)
+                        await emit_message_error(error_content)
                         break
 """
 
@@ -157,7 +162,10 @@ REPLACE_TOOL_LOOP = (
     "                            new_form_data['previous_response_id'] = last_response_id\n"
     "                        else:\n"
     "                            tool_messages = convert_output_to_messages(\n"
-    "                                output, raw=True, reasoning_format=get_reasoning_format(model)\n"
+    "                                output,\n"
+    "                                raw=True,\n"
+    "                                reasoning_format=get_reasoning_format(model),\n"
+    "                                flatten_tool_images=True,\n"
     "                            )\n"
     "\n"
     "                            # Chat Completions providers don't support multimodal\n"
@@ -243,13 +251,24 @@ REPLACE_TOOL_LOOP = (
     "                                _msg_items.append({'type': 'message', 'id': '', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': f'\\n\\n---\\n**" + _ERROR_LABEL + ":** {_err_detail[:1000]}'}]})\n"
     "                                output[:] = _msg_items\n"
     "                                try:\n"
-    "                                    await event_emitter({'type': 'chat:message:error', 'data': {'error': {'content': _err_detail}}})\n"
+    "                                    # Upstream emits nothing on the non-streaming\n"
+    "                                    # branch (it just breaks), so there is no double\n"
+    "                                    # banner here; use its helper anyway to get the\n"
+    "                                    # error persisted to the chat as well.\n"
+    "                                    await emit_message_error(_err_detail)\n"
     "                                    await event_emitter({'type': 'chat:completion', 'data': {'output': output}})\n"
     "                                except Exception:\n"
     "                                    pass\n"
     "                            break\n"
     "                    except Exception as e:\n"
-    "                        # TOOL_LOOP_ERRORS_UNIFIED: restore clean output + show error; FIX_TOOL_LOOP_ERRORS\n"
+    "                        # TOOL_LOOP_ERRORS_UNIFIED: restore clean output + classify; FIX_TOOL_LOOP_ERRORS\n"
+    "                        # v0.11.0 upstream already logs the exception and calls\n"
+    "                        # emit_message_error(), which persists the error to the chat\n"
+    "                        # AND emits chat:message:error. Reuse that helper instead of\n"
+    "                        # emitting the banner again — two emits show the user two\n"
+    "                        # error banners for one failure. What stays ours: restoring\n"
+    "                        # the text the user already saw, classifying transport faults,\n"
+    "                        # and rewriting the budget-exhaustion message.\n"
     "                        import traceback as _tb\n"
     "                        _msg_items = [item for item in _saved_output if item.get('type') == 'message']\n"
     "                        _err_mod = getattr(type(e), '__module__', '') or ''\n"
@@ -261,13 +280,13 @@ REPLACE_TOOL_LOOP = (
     "                        else:\n"
     "                            log.error('TOOL_LOOP_ERROR: chat=%s iter=%d error=%s\\n%s',\n"
     "                                metadata.get('chat_id', '')[:8], tool_call_iterations, e, _tb.format_exc())\n"
-    "                            _ui_err = str(e)[:1000]\n"
+    "                            _ui_err = str(get_message_error_content(e))[:1000]\n"
     "                            if 'Model not found' in _ui_err:\n"
     "                                _ui_err = '" + _BUDGET_MSG + "'\n"
     "                        try:\n"
     "                            _msg_items.append({'type': 'message', 'id': '', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': f'\\n\\n---\\n**" + _ERROR_LABEL + ":** {_ui_err}'}]})\n"
     "                            output[:] = _msg_items\n"
-    "                            await event_emitter({'type': 'chat:message:error', 'data': {'error': {'content': _ui_err}}})\n"
+    "                            await emit_message_error(_ui_err)\n"
     "                            await event_emitter({'type': 'chat:completion', 'data': {'output': output}})\n"
     "                        except Exception:\n"
     "                            pass\n"
@@ -278,10 +297,17 @@ REPLACE_TOOL_LOOP = (
 # Mod 2: Code interpreter catch -> log.error + UI error display
 # v0.9.1: `title = await Chats.get_chat_title_by_id(...)` — async-ified
 # v0.9.3+: title wrapped in multi-line parenthesized ternary (channel: guard)
+# v0.11.0: upstream handles the exception itself (get_message_error_content +
+# log.exception + emit_message_error), and the title ternary collapsed to a
+# one-liner guarded by the new save_to_chat flag instead of a channel: prefix
+# check. What stays ours is the inline error item in `output` — upstream shows
+# the banner but leaves no trace in the message body.
 # ============================================================
 SEARCH_CODE_INTERP = """\
                         except Exception as e:
-                            log.debug(e)
+                            error_content = get_message_error_content(e)
+                            log.exception('Code interpreter continuation failed: %s', error_content)
+                            await emit_message_error(error_content)
                             break
 
                 # Mark all in-progress items as completed
@@ -289,19 +315,17 @@ SEARCH_CODE_INTERP = """\
                     if item.get('status') == 'in_progress':
                         item['status'] = 'completed'
 
-                title = (
-                    await Chats.get_chat_title_by_id(metadata['chat_id'])
-                    if not metadata.get('chat_id', '').startswith('channel:')
-                    else ''
-                )"""
+                title = await Chats.get_chat_title_by_id(metadata['chat_id']) if save_to_chat else ''"""
 
 REPLACE_CODE_INTERP = (
     "                        except Exception as e:\n"
     "                            import traceback as _tb  # TOOL_LOOP_ERRORS_UNIFIED; FIX_TOOL_LOOP_ERRORS\n"
+    "                            error_content = get_message_error_content(e)\n"
     "                            log.error('CODE_INTERP_ERROR: chat=%s iter=%d error=%s\\n%s',\n"
     "                                metadata.get('chat_id', '')[:8], retries, e, _tb.format_exc())\n"
+    "                            await emit_message_error(error_content)\n"
     "                            try:\n"
-    "                                output.append({'type': 'message', 'id': '', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': f'\\n\\n---\\n**" + _ERROR_LABEL + ":** {str(e)[:1000]}'}]})\n"
+    "                                output.append({'type': 'message', 'id': '', 'status': 'completed', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': f'\\n\\n---\\n**" + _ERROR_LABEL + ":** {str(error_content)[:1000]}'}]})\n"
     "                                await event_emitter({'type': 'chat:completion', 'data': {'output': output}})\n"
     "                            except Exception:\n"
     "                                pass\n"
@@ -312,11 +336,7 @@ REPLACE_CODE_INTERP = (
     "                    if item.get('status') == 'in_progress':\n"
     "                        item['status'] = 'completed'\n"
     "\n"
-    "                title = (\n"
-    "                    await Chats.get_chat_title_by_id(metadata['chat_id'])\n"
-    "                    if not metadata.get('chat_id', '').startswith('channel:')\n"
-    "                    else ''\n"
-    "                )"
+    "                title = await Chats.get_chat_title_by_id(metadata['chat_id']) if save_to_chat else ''"
 )
 
 # ============================================================
@@ -351,6 +371,10 @@ REPLACE_SSE = """\
 # the new order; the wrap still guards both the done-emit and the post-loop block.
 # v0.10.0: `serialize_output()` was deleted — tool output is rendered client-side
 # — so assistant_message no longer carries a 'content' key.
+# v0.11.0: a 'content' key is back, built from the streamed text
+# (''.join(content_parts) or get_output_text(output)) rather than serialised HTML.
+# Upstream also emits publish_chat_finished_event just above this block; the wrap
+# deliberately starts at the done-emit so that event is not swallowed by it.
 # ============================================================
 SEARCH_DONE_BG = """\
                 await event_emitter(
@@ -361,6 +385,7 @@ SEARCH_DONE_BG = """\
                 )
 
                 ctx['assistant_message'] = {
+                    'content': ''.join(content_parts) or get_output_text(output),
                     'output': output,
                     **({'usage': usage} if usage else {}),
                 }
@@ -382,6 +407,7 @@ REPLACE_DONE_BG = """\
 
                 try:
                     ctx['assistant_message'] = {
+                        'content': ''.join(content_parts) or get_output_text(output),
                         'output': output,
                         **({'usage': usage} if usage else {}),
                     }
@@ -397,18 +423,20 @@ REPLACE_DONE_BG = """\
 # v0.9.6: upstream renamed `tool_call_retries` -> `tool_call_iterations` and
 # replaced the single-line `while len(tool_calls) > 0 and ... < ...RETRIES:`
 # with a multi-line `while tool_calls and (...ITERATIONS is None or ... < ...)`.
+# v0.11.0: the bound moved off the module constant onto a local
+# `max_tool_call_iterations`, resolved per request as
+# getattr(request.state, 'max_tool_call_iterations', CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS),
+# and the whole condition collapsed onto one line. The env var is unchanged.
 # ============================================================
 SEARCH_ITER = """\
                 while tool_calls and (
-                    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None
-                    or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS
+                    max_tool_call_iterations is None or tool_call_iterations < max_tool_call_iterations
                 ):
                     tool_call_iterations += 1"""
 
 REPLACE_ITER = """\
                 while tool_calls and (
-                    CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS is None
-                    or tool_call_iterations < CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS
+                    max_tool_call_iterations is None or tool_call_iterations < max_tool_call_iterations
                 ):
                     tool_call_iterations += 1
                     log.debug('TOOL_LOOP_ITER: chat=%s iter=%d pending_tc=%d',  # TOOL_LOOP_ERRORS_UNIFIED; FIX_TOOL_LOOP_ERRORS

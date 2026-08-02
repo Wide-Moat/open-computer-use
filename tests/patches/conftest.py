@@ -10,13 +10,13 @@ Patch anchors match exactly one upstream shape, so only that version is kept.
 from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-MIDDLEWARE_V0102 = FIXTURES_DIR / "middleware_v0.10.2.py"
-RETRIEVAL_V0102 = FIXTURES_DIR / "retrieval_v0.10.2.py"
+MIDDLEWARE_V0110 = FIXTURES_DIR / "middleware_v0.11.0.py"
+RETRIEVAL_V0110 = FIXTURES_DIR / "retrieval_v0.11.0.py"
 
 
-def load_middleware_v0102() -> str:
-    return MIDDLEWARE_V0102.read_text(encoding="utf-8")
+def load_middleware_v0110() -> str:
+    return MIDDLEWARE_V0110.read_text(encoding="utf-8")
 
 
-def load_retrieval_v0102() -> str:
-    return RETRIEVAL_V0102.read_text(encoding="utf-8")
+def load_retrieval_v0110() -> str:
+    return RETRIEVAL_V0110.read_text(encoding="utf-8")

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-"""Tests for fix_skip_embedding_chat_files.py against the v0.10.2 retrieval.py fixture."""
+"""Tests for fix_skip_embedding_chat_files.py against the v0.11.0 retrieval.py fixture."""
 import ast
 import os
 import shutil
@@ -13,7 +13,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PATCH_DIR = REPO_ROOT / "openwebui" / "patches"
 sys.path.insert(0, str(Path(__file__).parent))
-from conftest import load_retrieval_v0102  # noqa: E402
+from conftest import load_retrieval_v0110  # noqa: E402
 
 
 def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProcess:
@@ -24,8 +24,8 @@ def _run_patch(patch_name: str, target_file: Path) -> subprocess.CompletedProces
     )
 
 
-class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
-    """3-state coverage against the real v0.10.2 retrieval.py fixture."""
+class TestFixSkipEmbeddingChatFilesV0110(unittest.TestCase):
+    """3-state coverage against the real v0.11.0 retrieval.py fixture."""
 
     PATCH_NAME = "fix_skip_embedding_chat_files"
     NEW_MARKER = "FIX_SKIP_EMBEDDING_CHAT_FILES"
@@ -34,12 +34,12 @@ class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.target = Path(self.tmp) / "retrieval.py"
-        self.target.write_text(load_retrieval_v0102(), encoding="utf-8")
+        self.target.write_text(load_retrieval_v0110(), encoding="utf-8")
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_fresh_apply_v0102(self):
+    def test_fresh_apply_v0110(self):
         r = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
         self.assertIn(f"PATCHED: {self.PATCH_NAME}", r.stdout)
@@ -47,7 +47,7 @@ class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
         self.assertIn(self.NEW_MARKER, content)
         ast.parse(content)
 
-    def test_idempotent_rerun_v0102(self):
+    def test_idempotent_rerun_v0110(self):
         r1 = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r1.returncode, 0)
         after_first = self.target.read_text()
@@ -56,7 +56,7 @@ class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
         self.assertIn("ALREADY PATCHED", r2.stdout)
         self.assertEqual(after_first, self.target.read_text())
 
-    def test_broken_fixture_fails_loud_v0102(self):
+    def test_broken_fixture_fails_loud_v0110(self):
         content = self.target.read_text()
         self.assertIn(self.PRIMARY_ANCHOR, content)
         self.target.write_text(
@@ -67,7 +67,7 @@ class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
         self.assertIn("ERROR:", r.stderr)
         self.assertIn(self.PATCH_NAME, r.stderr)
 
-    def test_patched_call_uses_await_v0102(self):
+    def test_patched_call_uses_await_v0110(self):
         # Regression guard for issue #96: Files.update_file_data_by_id was
         # sync in v0.8.x, async since v0.9.x. process_file() is async, so the
         # patched call must be awaited — otherwise the coroutine is dropped,
@@ -83,7 +83,7 @@ class TestFixSkipEmbeddingChatFilesV0102(unittest.TestCase):
             "this regresses issue #96.",
         )
 
-    def test_patched_kb_fallback_does_not_block_event_loop_v0102(self):
+    def test_patched_kb_fallback_does_not_block_event_loop_v0110(self):
         # Storage.get_file and Loader.load are sync; calling them directly in
         # the async process_file handler would block the OWUI event loop for
         # the entire read/parse (minutes for large PDFs). Upstream OWUI
