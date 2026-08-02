@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -72,6 +73,32 @@ type config struct {
 	controlClientKey  string // OCU_CONTROL_CLIENT_KEY - mTLS client key (PEM)
 	controlCACert     string // OCU_CONTROL_CA_CERT - CA that signs control's gateway leaf (PEM)
 
+	// gatewayURL, when set, is the MCP gateway's ingress. It is the SECOND scope
+	// source, tried only after the status verb misses.
+	//
+	// The status verb is caller-scoped: control answers 404 for a session the
+	// caller does not own (NFR-SEC-43, so a caller cannot enumerate sessions that
+	// are not its own). The portal does not own the chat's session -- the gateway
+	// that created it does -- so on this deployment the status verb misses every
+	// time, and the portal fell back to the base scope: every chat's objects at
+	// once, under a panel titled for one chat.
+	//
+	// The gateway already answers this exact question for the owner, through its
+	// resolve_scope tool. Asking the owner keeps control's audience-scoping intact
+	// rather than widening it. The credential below is expected to be restricted,
+	// by gateway-side deployment policy, to resolve_scope alone: a portal that only
+	// needs to learn a scope must not also be able to execute tools. That
+	// restriction is enforced at the gateway and is not something the portal can
+	// assert about itself.
+	//
+	// The credential must share the OpenWebUI caller's TENANT: the gateway derives
+	// its session hint from the resolved principal's tenant, so a foreign-tenant
+	// credential would resolve a DIFFERENT session and hand back a scope that
+	// matches no guest -- the same split-brain a portal-local derivation would
+	// cause. Narrow the tool set, never the tenant.
+	gatewayURL        string // OCU_GATEWAY_URL
+	gatewayBearerFile string // OCU_GATEWAY_BEARER_FILE - path to the bearer (never the value)
+
 	// resolveOverride, when set, replaces the status-verb call. Only a test sets
 	// it: the production path is mTLS-only and must stay that way, so a test that
 	// wants a RESOLVED chat cannot reach it over plain HTTP without weakening the
@@ -95,6 +122,9 @@ func loadConfig() (config, error) {
 		controlClientCert: os.Getenv("OCU_CONTROL_CLIENT_CERT"),
 		controlClientKey:  os.Getenv("OCU_CONTROL_CLIENT_KEY"),
 		controlCACert:     os.Getenv("OCU_CONTROL_CA_CERT"),
+
+		gatewayURL:        os.Getenv("OCU_GATEWAY_URL"),
+		gatewayBearerFile: os.Getenv("OCU_GATEWAY_BEARER_FILE"),
 	}
 	// The BFF enforces exp-iat <= 120s; stay well under it.
 	ttlSecs := 60
@@ -156,8 +186,108 @@ func (c config) resolveScope(ctx context.Context, chatID string) (scope string, 
 			return s, true
 		}
 	}
+	// The status verb answers only for the session's owner. Ask the owner.
+	if c.gatewayURL != "" {
+		if s, ok := c.resolveScopeViaGateway(ctx, chatID); ok {
+			return s, true
+		}
+	}
 	// Miss: bind the BASE, flagged as pending. Never a portal-local derivation.
 	return c.filesystemID, false
+}
+
+// resolveScopeViaGateway asks the MCP gateway's resolve_scope tool for the scope
+// bound to chatID. The gateway owns the chat's session, so it is entitled to the
+// answer control refuses the portal; the value that comes back is control's
+// attested effective_scope, not a second derivation of it.
+//
+// Every refusal names itself and returns (_, false), so a gateway that is down,
+// unreachable, or refusing the credential degrades to the flagged base scope
+// rather than raising. A restricted credential that the gateway refuses for the
+// WRONG reason (say, because the restriction were misconfigured to exclude
+// resolve_scope itself) must be readable in the log as such -- an unnamed silence
+// here is what made the status-verb miss cost an evening.
+func (c config) resolveScopeViaGateway(ctx context.Context, chatID string) (string, bool) {
+	miss := func(format string, args ...any) (string, bool) {
+		log.Printf("embed-portal: gateway resolve_scope miss for chat %q: "+format,
+			append([]any{chatID}, args...)...)
+		return "", false
+	}
+
+	// The bearer arrives as a PATH, never as an environment value: the process
+	// environment of a container is readable by anything that can inspect it,
+	// and this credential is the portal's whole authority.
+	if c.gatewayBearerFile == "" {
+		return miss("no OCU_GATEWAY_BEARER_FILE configured")
+	}
+	raw, err := os.ReadFile(c.gatewayBearerFile)
+	if err != nil {
+		return miss("read bearer file: %v", err)
+	}
+	bearer := strings.TrimSpace(string(raw))
+	if bearer == "" {
+		return miss("bearer file %q is empty", c.gatewayBearerFile)
+	}
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call",` +
+		`"params":{"name":"resolve_scope","arguments":{}}}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.gatewayURL, bytes.NewReader(body))
+	if err != nil {
+		return miss("build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("MCP-Protocol-Version", "2025-06-18")
+	// The chat travels on the header the gateway reads as a session HINT. It is
+	// never identity: the gateway mixes it with the resolved principal's tenant.
+	req.Header.Set("X-Chat-Id", chatID)
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		return miss("transport: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return miss("gateway answered %d", resp.StatusCode)
+	}
+
+	// The tool result is an MCP CallToolResult whose single text block carries the
+	// scope as JSON. Decoding both layers keeps the portal honest about the shape
+	// rather than pattern-matching a substring out of the envelope.
+	var envelope struct {
+		Result struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
+		} `json:"result"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&envelope); err != nil {
+		return miss("decode envelope: %v", err)
+	}
+	if envelope.Error != nil {
+		return miss("gateway error: %s", envelope.Error.Message)
+	}
+	if envelope.Result.IsError {
+		return miss("tool reported an error result")
+	}
+	if len(envelope.Result.Content) == 0 {
+		return miss("tool result carried no content block")
+	}
+	var content struct {
+		EffectiveScope string `json:"effective_scope"`
+	}
+	if err := json.Unmarshal([]byte(envelope.Result.Content[0].Text), &content); err != nil {
+		return miss("decode scope content: %v", err)
+	}
+	if content.EffectiveScope == "" {
+		return miss("tool result carried an empty effective_scope")
+	}
+	return content.EffectiveScope, true
 }
 
 // resolveScopeViaStatusVerb POSTs the caller-scoped status verb over mTLS and
