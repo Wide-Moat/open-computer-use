@@ -497,7 +497,7 @@ def test_m3_skill_fires_and_artifact_previews():
     )
 
     # The artifact must reach the pane's list (bounded write-back lag).
-    obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
+    obj = _wait_file_listed(name, deadline_s=60)
     assert obj is not None, (
         f"skill artifact {name} never appeared in GET /v1/files within 60s"
     )
