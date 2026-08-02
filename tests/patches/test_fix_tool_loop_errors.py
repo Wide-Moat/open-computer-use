@@ -70,6 +70,39 @@ class TestFixToolLoopErrorsV0110(unittest.TestCase):
             "patched middleware calls serialize_output(), removed upstream in 0.10.0",
         )
 
+    def test_each_error_path_emits_exactly_one_banner(self):
+        # 0.11.0 added emit_message_error(), which upstream calls from the
+        # tool-loop and code-interpreter `except` blocks. The patch replaces
+        # those blocks and delegates the banner to that helper. Emitting
+        # chat:message:error directly as well would show the user two banners
+        # for one failure; emitting neither would lose the error entirely.
+        # Both are silent in production — the emits sit inside `except` blocks
+        # nothing exercises until a model call fails mid-tool-loop.
+        r = _run_patch(self.PATCH_NAME, self.target)
+        self.assertEqual(r.returncode, 0, f"stderr={r.stderr}")
+        content = self.target.read_text()
+
+        for marker, label in (
+            ("TOOL_LOOP_ERRORS_UNIFIED: restore clean output + classify", "tool-loop except"),
+            ("TOOL_LOOP_ERRORS_UNIFIED: handle non-streaming error", "non-streaming branch"),
+        ):
+            self.assertIn(marker, content, f"{label} block missing from patched output")
+            block = content[content.index(marker):][:2600]
+            self.assertEqual(
+                block.count("await emit_message_error("), 1,
+                f"{label} must emit exactly one error banner",
+            )
+            self.assertNotIn(
+                "'type': 'chat:message:error'", block,
+                f"{label} emits chat:message:error directly as well as via the "
+                "helper — the user would see two banners for one failure",
+            )
+
+        # The code-interpreter except is a separate injection site.
+        ci = content[content.index("CODE_INTERP_ERROR"):][:1400]
+        self.assertEqual(ci.count("await emit_message_error("), 1)
+        self.assertNotIn("'type': 'chat:message:error'", ci)
+
     def test_idempotent_rerun(self):
         r1 = _run_patch(self.PATCH_NAME, self.target)
         self.assertEqual(r1.returncode, 0)
