@@ -1883,3 +1883,50 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
             )
         finally:
             browser.close()
+
+
+def test_m13_one_chats_pane_cannot_see_another_chats_file():
+    """Two chats each write a file; neither pane lists the other's.
+
+    The panel hop of m12 proves this chat's file is listed and that the row
+    count matches what this chat produced, which rules out the shared tree
+    (925 rows against 1). It does NOT rule out a second chat: two chats whose
+    scopes collided would each show one row and pass. This names the property
+    directly -- A's pane lists A's file and not B's, and B's the reverse.
+
+    Red-probe: bind A's pane to B's chat id and the cross-visibility assertion
+    reds, because A's own file is then the one that is missing.
+    """
+    import tempfile
+
+    import test_j_file_flow as J
+
+    chat_a = f"m13a-{uuid.uuid4().hex[:8]}"
+    chat_b = f"m13b-{uuid.uuid4().hex[:8]}"
+    name_a = f"{chat_a}.txt"
+    name_b = f"{chat_b}.txt"
+
+    for chat, name in ((chat_a, name_a), (chat_b, name_b)):
+        status, text, is_error = _guest_exec(
+            chat, f"printf hi > /mnt/user-data/outputs/{name}", timeout=90
+        )
+        assert status == 200 and not is_error, (
+            f"guest write for {chat} failed: status={status} text={text!r}"
+        )
+
+    def listed(chat):
+        jar, _csrf = J._pane_session(pathlib.Path(tempfile.mkdtemp()), chat_id=chat)
+        deadline = time.monotonic() + 60
+        names = []
+        while time.monotonic() < deadline:
+            names = [f.get("filename") for f in J._pane_list(jar)]
+            if name_a in names or name_b in names:
+                break
+            time.sleep(3)
+        return names
+
+    in_a, in_b = listed(chat_a), listed(chat_b)
+    assert name_a in in_a, f"chat A's pane does not list its own file: {in_a}"
+    assert name_b in in_b, f"chat B's pane does not list its own file: {in_b}"
+    assert name_b not in in_a, f"chat A's pane lists chat B's file: {in_a}"
+    assert name_a not in in_b, f"chat B's pane lists chat A's file: {in_b}"
