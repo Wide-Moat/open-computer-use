@@ -506,7 +506,7 @@ def test_m3_skill_fires_and_artifact_previews():
     _preview_image_in_pane(name, W, H)
 
 
-def _preview_text_in_pane(name, must_contain, must_not_contain=None):
+def _preview_text_in_pane(name, must_contain, must_not_contain=None, chat_id=None):
     """Open the portal in a real browser, find the file row, click Preview, and
     assert the rendered <pre data-testid=file-preview-text> contains
     `must_contain` and (if given) does NOT contain `must_not_contain`. The caller
@@ -518,7 +518,7 @@ def _preview_text_in_pane(name, must_contain, must_not_contain=None):
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL + (f"?chat={chat_id}" if chat_id else ""), wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -592,7 +592,7 @@ def test_m5_str_replace_edit_reflects_in_pane_preview():
     # 2. It must list, then preview its text (the BEFORE marker) in the pane.
     obj = _wait_file_listed(name, deadline_s=60, chat_id=chat_id)
     assert obj is not None, f"{name} never appeared in GET /v1/files within 60s"
-    _preview_text_in_pane(name, must_contain=before)
+    _preview_text_in_pane(name, must_contain=before, chat_id=chat_id)
 
     # 3. str_replace the EXISTING outputs object (the r+ fix path).
     _, parsed = _call(
@@ -615,7 +615,7 @@ def test_m5_str_replace_edit_reflects_in_pane_preview():
     _wait_content_contains(obj.get("id"), after, deadline_s=45)
 
     # 5. Then the pane preview must show the AFTER marker and NOT the BEFORE one.
-    _preview_text_in_pane(name, must_contain=after, must_not_contain=before)
+    _preview_text_in_pane(name, must_contain=after, must_not_contain=before, chat_id=chat_id)
 
 
 # ---------------------------------------------------------------------------
