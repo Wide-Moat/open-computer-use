@@ -28,6 +28,7 @@ docker-run argv, not a ``.exec([`` guest exec, and is likewise not matched.
 
 from __future__ import annotations
 
+import io
 import re
 from pathlib import Path
 
@@ -145,3 +146,36 @@ def test_meta_guard_reds_on_a_planted_violation() -> None:
         f"(sh, python3) and nothing else; got {hits!r}. A guard that does not "
         "red on a planted violation is vacuous."
     )
+
+
+def test_no_undefined_names_in_the_suite() -> None:
+    """No journey module may reference a name that is never bound.
+
+    An undefined name costs nothing to detect and everything to discover the
+    other way: a broad edit that threads an argument through call sites lands
+    it in functions that never bind it, those tests raise NameError instead of
+    running, and the only thing that surfaces it is a full browser run that
+    takes half an hour. That happened twice on the same edit, the second time
+    because the first repair was verified on two tests out of fourteen.
+
+    Skips loudly rather than passing when pyflakes is absent: a guard that
+    silently does nothing is worse than no guard.
+    """
+    pyflakes = pytest.importorskip(
+        "pyflakes.api",
+        reason="pyflakes not installed -- undefined-name guard cannot run. "
+        "LOUD SKIP, not a pass.",
+    )
+    from pyflakes.reporter import Reporter
+
+    class _Collect(io.StringIO):
+        pass
+
+    out, err = _Collect(), _Collect()
+    reporter = Reporter(out, err)
+    for path in sorted(Path(__file__).parent.glob("*.py")):
+        pyflakes.checkPath(str(path), reporter)
+    undefined = [
+        line for line in out.getvalue().splitlines() if "undefined name" in line
+    ]
+    assert not undefined, "undefined names:\n" + "\n".join(undefined)
