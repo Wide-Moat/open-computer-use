@@ -1700,6 +1700,17 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
       foreign scope replaced by the caller's own
                                        -> the foreign-scope refusal, verbatim
 
+    The row-count assertion is measured, not assumed: the same panel opened on
+    the base scope offers 925 Download controls and on a fresh chat scope 0, so
+    requiring exactly 1 discriminates against the shared tree. Presence alone
+    could not: this chat's file is among those 925.
+
+    Breaking the portal's scope resolution (OCU_GATEWAY_URL pointed at a dead
+    address) empties the panel rather than widening it to the shared tree, so it
+    reds the presence assertion, not the row count. There is no configuration
+    that widens the panel without reddening an earlier hop first: -derive-chat-
+    scope=false also sends the base scope to the link, which hop 2 catches.
+
     The filter's PREVIEW_MODE valve does NOT red this test, in either of its
     broken forms (key absent, and key set to "off"): it governs the preview
     button the filter appends to a chat MESSAGE, a different surface from the
@@ -1781,6 +1792,18 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
                     break
                 time.sleep(3)
             assert listed, f"{name} never appeared in the in-chat panel"
+
+            # HOP 3b: and NO other chat's file. Presence alone stays green when
+            # the panel falls back to the shared tree, because this chat's file
+            # is among those rows too — the exact regression a stale panel patch
+            # produced, where the pane listed the whole tree and every presence
+            # check still passed. This chat produced one file, so the panel must
+            # offer one Download control.
+            rows = pane.get_by_text("Download", exact=True).count()
+            assert rows == 1, (
+                f"the panel offers {rows} Download controls for a chat that "
+                "produced exactly one file; it is listing another scope's tree"
+            )
 
             row = pane.get_by_text(name).first.locator(
                 "xpath=ancestor::*[.//*[normalize-space(text())='Download']][1]"
