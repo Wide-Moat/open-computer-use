@@ -1697,6 +1697,8 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
       build webui with NEXT_PUBLIC_PREVIEW_RENDER_ENABLED=false
                                        -> the Preview assertion, verbatim
       RESOLVE_SCOPE_URL valve emptied  -> the per-chat-scope assertion, verbatim
+      foreign scope replaced by the caller's own
+                                       -> the foreign-scope refusal, verbatim
 
     The filter's PREVIEW_MODE valve does NOT red this test, in either of its
     broken forms (key absent, and key set to "off"): it governs the preview
@@ -1817,18 +1819,35 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
                 f"the delivered bytes are not the file the model wrote: {panel_bytes[:120]!r}"
             )
 
-            # HOP 7: the refusals still hold on this build.
+            # HOP 7: the two refusals, each measured against the thing it names.
+            #
+            # The no-session leg needs a context that never bootstrapped a pane.
+            # The foreign-scope leg must NOT reuse that context: a sessionless
+            # caller is refused whatever scope it asks for, so asking it for a
+            # foreign scope re-measures the no-session refusal and stays green
+            # through a total scope leak. It runs on the session that just
+            # downloaded successfully, and is followed by a control on that
+            # session's OWN scope — if the control does not succeed, the refusal
+            # above proves nothing and the control says so instead.
             ctx = browser.new_context()  # no pane session
             try:
                 r = ctx.request.get(link)
                 assert r.status == 401, (
                     f"a browser with no pane session downloaded the file (status {r.status})"
                 )
-                r2 = ctx.request.get(link.replace(scope, "fs-fleet-deadbeefdeadbeef"))
-                assert r2.status == 401, (
-                    f"a foreign scope was served (status {r2.status})"
-                )
             finally:
                 ctx.close()
+
+            foreign = link.replace(scope, "fs-fleet-deadbeefdeadbeef")
+            r2 = page.request.get(foreign)
+            r3 = page.request.get(link)
+            assert r3.status == 200, (
+                f"the caller's own scope was refused (status {r3.status}); the "
+                "foreign-scope refusal below cannot be attributed to the scope"
+            )
+            assert r2.status == 401, (
+                f"a live session for {scope} was served the foreign scope "
+                f"{foreign!r} (status {r2.status})"
+            )
         finally:
             browser.close()
