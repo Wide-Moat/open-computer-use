@@ -1086,6 +1086,14 @@ services:
       # appends to /shared/ca.pem.
       - -upstream-url
       - https://objectstore-south:8444
+      # The store on this stand runs -verify-storage-jwt: it verifies the GUEST
+      # Storage-JWT itself (control-plane JWKS, aud filestore-edge). An exchanged
+      # credential is not a Storage-JWT, so the store refuses it and the guest
+      # sees a bare EIO on every mount op. Passthrough presents the token this
+      # edge has ALREADY validated; stage-1 validation is unchanged, so an
+      # unverifiable token still never reaches the store.
+      - -credential-mode
+      - passthrough
     depends_on:
       harness-init:
         condition: service_completed_successfully
