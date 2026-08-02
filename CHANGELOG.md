@@ -6,6 +6,12 @@
 
 - **License migration: BUSL-1.1 → FSL-1.1-Apache-2.0.** All future releases ship under the Functional Source License, Version 1.1, Apache 2.0 Future License. Use, modification, forking, internal self-hosting, and redistribution remain permitted; offering a hosted or embedded service that competes with our paid version(s) requires a separate commercial agreement. Each release automatically converts to Apache-2.0 two years after publication under the Grant of Future License clause. Past releases retain their original BUSL-1.1 terms per the LICENSE file published at that tag. Affected: `LICENSE`, `NOTICE`, `README.md` badge + License section, `CLAUDE.md` License Headers section, `CONTRIBUTING.md`, `package.json`, SPDX headers across 176 source files, `helm/computer-use-server/`, `THIRD-PARTY-LICENSES.md`, `computer-use-server/cli-defaults/*.json`.
 
+## v0.11.0.0-rc.1 — release candidate for the 0.11.0 base bump (2026-08-02)
+
+Pre-release. Contents are the `v0.11.0.0` entry below, cut so the 0.11.0 base can be exercised on real deployments while upstream settles. The final release waits for Open WebUI `0.11.1`/`0.11.2`, at which point the patch dry-run is re-run against that tag and the anchors adjusted if they moved.
+
+Images carry the `0.11.0.0-rc.1` tag: `ghcr.io/wide-moat/open-computer-use`, `-server`, `-cleanup`, `-webui`. `main` stays on `v0.10.2.0`; nothing about this pre-release changes the stable line.
+
 ## v0.11.0.0 — bump Open WebUI base to 0.11.0 (unreleased)
 
 Minor release: Open WebUI base bumped from `0.10.2` → `0.11.0`, 616 upstream commits. `middleware.py` changed by 1074 lines, but the output-based tool loop survived intact — `convert_output_to_messages` only moved its definition out of the module and is still imported there. Four of the five `fix_tool_loop_errors` anchors needed rebasing; the other four patches applied without anchor changes.
