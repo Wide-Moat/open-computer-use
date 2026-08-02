@@ -1701,6 +1701,8 @@ def test_m12_owner_scenario_chat_to_link_to_panel_to_bytes():
                                        -> the foreign-scope refusal, verbatim
       OCU_FRAME_ANCESTORS minus the chat's origin
                                        -> "the pane frame never attached"
+      the link pointed at an object that does not exist
+                                       -> the byte hop, as a download timeout
 
     That last one is why the allowlist names two origins. frame-ancestors is
     checked against the WHOLE ancestor chain: the chat (:3001) frames the portal
