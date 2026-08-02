@@ -145,7 +145,7 @@ def _ensure_scope_saturated_for_182():
     )
 
 
-def _wait_content_contains(file_id, marker, deadline_s=45):
+def _wait_content_contains(file_id, marker, deadline_s=45, chat_id=None):
     """Poll the pane's content endpoint (the exact bytes the browser preview
     fetches) until `marker` is present, or fail. An in-place edit (str_replace)
     reaches the north-face content-read with a bounded write-back lag; this gates
@@ -156,7 +156,7 @@ def _wait_content_contains(file_id, marker, deadline_s=45):
     import test_j_file_flow as J
 
     tmp = pathlib.Path(tempfile.mkdtemp())
-    jar, _csrf = J._pane_session(tmp)
+    jar, _csrf = J._pane_session(tmp, chat_id=chat_id)
     for _ in range(deadline_s):
         status, body = J._pane_content(jar, file_id)
         if status == 200 and marker in (body or ""):
@@ -612,7 +612,7 @@ def test_m5_str_replace_edit_reflects_in_pane_preview():
     # before driving the browser, so the preview asserts against propagated bytes
     # (models the real user opening the panel moments after the edit) rather than
     # racing a stale read.
-    _wait_content_contains(obj.get("id"), after, deadline_s=45)
+    _wait_content_contains(obj.get("id"), after, deadline_s=45, chat_id=chat_id)
 
     # 5. Then the pane preview must show the AFTER marker and NOT the BEFORE one.
     _preview_text_in_pane(name, must_contain=after, must_not_contain=before, chat_id=chat_id)
