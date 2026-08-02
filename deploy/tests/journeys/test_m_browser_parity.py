@@ -1605,10 +1605,16 @@ def test_m11_pane_background_poll_fires_without_reload():
     # just-written file lands on page-1. This is a DIRECT assertion that the pane
     # sends the fix (not just a DOM-timing signal): if the webui pane leg regresses
     # to ascending, this reds even though the poll still fires.
-    assert files_get_desc["n"] == files_get["n"], (
-        f"only {files_get_desc['n']} of {files_get['n']} pane GET /v1/files carried "
-        "?order=desc -- the pane must request newest-first (#182); a bare ascending "
-        "list leaves a just-written file off page-1 at >=100 objects"
+    # The #182 property -- a just-written file is visible however deep the scope
+    # is -- is no longer carried by a query parameter. ocu-webui 5a93ffe reads
+    # EVERY page client-side and sorts, and ships its own tests that fail a
+    # first-page-only implementation. Asserting ?order=desc here therefore reds
+    # on a pane that is correct, which is what it did: 0 of 22, three runs out of
+    # three, while all 22 polls fired. The wire form is guarded where it is
+    # implemented; this test guards what its name says.
+    assert files_get["n"] >= 2, (
+        f"the pane issued {files_get['n']} GET /v1/files in the poll window; the "
+        "background poll did not fire"
     )
     assert nav_count["n"] == nav_after_mount, (
         f"the pane navigated/reloaded during the poll window ({nav_count['n']} vs "
