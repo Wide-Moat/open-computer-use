@@ -293,7 +293,7 @@ def test_m2_chat_upload_reaches_guest():
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL + f"?chat={chat_id}", wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -383,7 +383,7 @@ def test_m2b_chat_upload_visible_in_pane():
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL + f"?chat={chat_id}", wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -424,7 +424,7 @@ def _preview_image_in_pane(name, expected_w, expected_h):
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL + f"?chat={chat_id}", wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -518,7 +518,7 @@ def _preview_text_in_pane(name, must_contain, must_not_contain=None):
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL + f"?chat={chat_id}", wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -1560,7 +1560,7 @@ def test_m11_pane_background_poll_fires_without_reload():
                     pane_action["n"] += 1
 
             page.on("request", _on_req)
-            page.goto(PORTAL_URL + f"?chat={chat_id}", wait_until="networkidle", timeout=30000)
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
