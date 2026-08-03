@@ -250,7 +250,14 @@ def _require_gateway():
 
 def _guest_bash(chat_id, command, timeout=60):
     status, parsed = _call(chat_id, _bash_body(command), timeout=timeout)
-    assert status == 200, f"bash_tool transport status = {status}, want 200"
+    assert status == 200, (
+        f"bash_tool transport status = {status}, want 200. A 502 that survived "
+        "the create-rate retries is NOT a storage defect: the gateway answers "
+        "every forward refusal with the same leak-free 502, and the usual cause "
+        "is control refusing the session create. Confirm which by reading the "
+        "audit stream for create_rejected in that minute -- the reason lives "
+        "there, never on the wire."
+    )
     result = parsed["result"]
     text = "".join(b.get("text", "") for b in result.get("content", []))
     return result.get("isError", False), text

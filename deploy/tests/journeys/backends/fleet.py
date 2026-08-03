@@ -342,9 +342,18 @@ class FleetBackend(Backend):
         admitted. When None, create_storage_session pins the allow-listed demo
         image.
         """
-        return self.create_storage_session(image=image)
+        # rate_retries=0 deliberately. Every caller of THIS verb is probing
+        # admission: A6 sends an off-allow-list image and requires a denial, and
+        # E's overflow seeds the concurrency counter to the tier cap and requires
+        # exactly "denied:409". Waiting out a rate window cannot help either --
+        # the seeded state is not a per-minute counter -- and the wait is long
+        # enough for the idle reaper to release the seeded row, which would turn
+        # a required denial into a live session and break the assertion.
+        return self.create_storage_session(image=image, rate_retries=0)
 
-    def create_storage_session(self, image: Optional[str] = None) -> SessionRef:
+    def create_storage_session(
+        self, image: Optional[str] = None, rate_retries: int = 2
+    ) -> SessionRef:
         """Create a storage session with the full storage-chain-demo body.
 
         Reuses the exact mount_intent + egress_policy shapes proven by
@@ -375,6 +384,20 @@ class FleetBackend(Backend):
             },
         }
         status, payload = self._curl("POST", "/v1alpha/sessions", body)
+        # Control caps creates per CALLER per minute, and this whole suite runs
+        # under one caller identity, so a fast stretch of tests exhausts the
+        # window and every create in it is refused with a bare 409. Waiting past
+        # the boundary and re-issuing is what a rate-limited client does. It
+        # cannot launder a broken stand green: a refusal with any other cause --
+        # an absent guest image, a seeded concurrency counter -- outlives the
+        # window and still comes back 409, just later.
+        for _ in range(rate_retries):
+            if status != 409:
+                break
+            time.sleep(61 - time.gmtime().tm_sec)
+            hint = f"journey-storage-{int(time.time() * 1000000)}"
+            body["session_hint"] = hint
+            status, payload = self._curl("POST", "/v1alpha/sessions", body)
         self._last_hint = hint
         if status not in (200, 201):
             self._last_key = None

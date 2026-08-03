@@ -117,7 +117,7 @@ def _file_tool_body(name, arguments):
     )
 
 
-def _call(chat_id, body, timeout=40):
+def _call_once(chat_id, body, timeout=40):
     """POST a tools/call to the gateway; return (http_status:int, parsed:dict|None).
 
     Uses curl to match the exact wire and to stay dependency-free like the demo
@@ -144,6 +144,36 @@ def _call(chat_id, body, timeout=40):
         parsed = json.loads(text[:nl])
     except (ValueError, TypeError):
         parsed = None
+    return status, parsed
+
+
+# Control caps session creates per CALLER per minute, and every session-bearing
+# call in this suite is made under one caller identity -- the gateway. A fast
+# stretch of tests exhausts that minute, control refuses the create with 409,
+# and the gateway turns every refusal into the same leak-free 502 (its body is
+# a generic "forward refused" by design), so the caller gets no wire signal to
+# back off on. Waiting past the minute boundary and re-issuing is what a real
+# rate-limited client does.
+#
+# This cannot launder a broken system into a green run: a refusal with any
+# other cause outlives the window and still surfaces, just later. What it costs
+# is time on a genuine 502 -- up to one minute per retry.
+_RATE_RETRIES = 2
+
+
+def _seconds_to_next_minute():
+    """Whole seconds until one second past the next UTC minute boundary."""
+    return 61 - time.gmtime().tm_sec
+
+
+def _call(chat_id, body, timeout=40, rate_retries=_RATE_RETRIES):
+    """_call_once, retried across the create-rate window on a 502."""
+    status, parsed = _call_once(chat_id, body, timeout=timeout)
+    for _ in range(rate_retries):
+        if status != 502:
+            break
+        time.sleep(_seconds_to_next_minute())
+        status, parsed = _call_once(chat_id, body, timeout=timeout)
     return status, parsed
 
 
