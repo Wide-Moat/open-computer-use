@@ -378,7 +378,17 @@ class FleetBackend(Backend):
         self._last_hint = hint
         if status not in (200, 201):
             self._last_key = None
-            return SessionRef(key="", status=f"denied:{status}")
+            # Name the image in the refusal. Control answers every unclassified
+            # refusal with a bare 409 and an EMPTY body on purpose -- the reason
+            # lives in the audit stream, not the response -- so a bare
+            # "denied:409" sends the reader looking for a quota that is not
+            # exhausted. A guest image the daemon does not have fails at
+            # materialize and lands here looking identical to one. The image is
+            # the single most likely difference between a stand that works and
+            # one that does not, so it goes in the message.
+            return SessionRef(
+                key="", status=f"denied:{status} (image={body['image']})"
+            )
         key = payload.get("key", "")
         self._last_key = key or None
         if key:
