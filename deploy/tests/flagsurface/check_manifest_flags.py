@@ -42,13 +42,25 @@ NON_GO_FLAG_IMAGES = {
 UNDEFINED_RE = re.compile(r"flag provided but not defined:\s*(-{1,2}[A-Za-z0-9_.-]+)")
 
 
-def run(cmd, timeout=90):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+def run(argv, timeout=90):
+    """Run argv with NO shell.
+
+    Both callers reached for shlex.quote, which is the tell that a shell was
+    in the loop at all: with shell=True the quoting is the only thing standing
+    between an image name or a path and a second command. Passing a list hands
+    the words to execve directly, so a value carrying a quote, a semicolon or a
+    newline stays one argument by construction rather than by escaping.
+
+    docker_cmd is split rather than concatenated because it is a command line,
+    not a word -- deployments set it to "sudo docker".
+    """
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
 
 
 def load_compose(docker_cmd, compose_path):
     """Resolve the compose file through docker so extends/env are applied."""
-    res = run(f"{docker_cmd} compose -f {shlex.quote(compose_path)} config --format json")
+    res = run(shlex.split(docker_cmd)
+              + ["compose", "-f", compose_path, "config", "--format", "json"])
     if res.returncode != 0:
         # Fall back to a plain read: config resolution needs env the caller may
         # not have. Report it rather than pretending the manifest is empty.
@@ -79,8 +91,9 @@ def flags_of(command):
 
 def probe(docker_cmd, image, flag):
     """True when the image DEFINES the flag."""
-    cmd = (f"{docker_cmd} run --rm --network none {shlex.quote(image)} "
-           f"-{shlex.quote(flag)}=probe")
+    cmd = shlex.split(docker_cmd) + [
+        "run", "--rm", "--network", "none", image, f"-{flag}=probe",
+    ]
     res = run(cmd)
     blob = res.stdout + res.stderr
     hit = UNDEFINED_RE.search(blob)
