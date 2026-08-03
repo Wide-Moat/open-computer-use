@@ -1989,3 +1989,182 @@ def test_m13_one_chats_pane_cannot_see_another_chats_file():
     assert name_b in in_b, f"chat B's pane does not list its own file: {in_b}"
     assert name_b not in in_a, f"chat A's pane lists chat B's file: {in_a}"
     assert name_a not in in_b, f"chat B's pane lists chat A's file: {in_b}"
+
+
+# ---------------------------------------------------------------------------
+# M14 -- switching chats rebinds the panel.
+#
+# M13 proves the isolation at the API: two chats, two pane sessions, neither
+# sees the other's file. It never opens a browser, so it says nothing about the
+# panel. M12 opens the panel but stays in one chat for its whole life.
+#
+# Switching chats is a client-side navigation: nothing reloads, the panel is
+# never rebuilt, and the iframe it already holds keeps pointing at the chat the
+# user left. The panel carries a 2-second sync that remounts the iframe when the
+# path names a different chat. Until now nothing exercised it -- a panel that
+# showed the previous chat's files under the new chat's title would have passed
+# every test in this file.
+# ---------------------------------------------------------------------------
+
+
+def test_m14_switching_chats_rebinds_the_panel():
+    """The panel follows the user from one chat to another WITHOUT a reload.
+
+    Two real OpenWebUI chats, one file each. The panel is opened in the second,
+    then the user clicks the first in the sidebar -- a client-side navigation,
+    asserted as one: a page-scoped marker set before the click must survive it,
+    so a full reload cannot pass this test by rebuilding the panel from scratch.
+
+    After the switch the panel must list the first chat's file and not the
+    second's. Red-probe: neuter the panel's sync (drop the remount call from its
+    interval) and the post-switch assertions fail while everything before the
+    click still passes.
+    """
+    if not _model_endpoint_configured():
+        pytest.skip(
+            "no model endpoint configured in OpenWebUI (0 models) -- the live "
+            "chat gate is opt-in. LOUD SKIP, not a pass."
+        )
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    def chat_id_of(page):
+        # location.href, not page.url. Open WebUI settles the chat id with
+        # replaceState, and Playwright's page.url is updated from navigation
+        # events -- measured lagging the document by more than five seconds,
+        # and in one run never catching up at all. Asking the document is the
+        # measurement; page.url is a proxy for it.
+        m = re.search(
+            r"/c/([0-9a-f-]{36})", page.evaluate("() => location.href")
+        )
+        return m.group(1) if m else None
+
+    def start_chat(page, text):
+        """Send one message and return the chat id OpenWebUI mints for it."""
+        composer = page.query_selector("[contenteditable=true]")
+        assert composer is not None, "OpenWebUI chat composer not reachable"
+        composer.click()
+        composer.type(text)
+        time.sleep(0.5)
+        page.keyboard.press("Enter")
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            cid = chat_id_of(page)
+            if cid:
+                return cid
+            time.sleep(2)
+        raise AssertionError("OpenWebUI never minted a /c/<id> for the message")
+
+    def pane_names(page, chat, want, deadline_s=90):
+        """What the PANE shows while the panel is bound to `chat`.
+
+        Two frames deep: the chat embeds the portal (:3003), which embeds the
+        pane (:3000). Only the portal's URL carries ?chat=, so matching frames
+        on that returns the PORTAL and reads its blurb instead of the file list.
+        The chat binding is therefore read off the panel's iframe src, and the
+        text off the pane frame.
+        """
+        deadline = time.monotonic() + deadline_s
+        names = ""
+        while time.monotonic() < deadline:
+            src = page.evaluate(
+                "() => { const f = document.querySelector('#ocu-file-pane-panel iframe');"
+                "        return f ? f.getAttribute('src') : null; }"
+            )
+            frame = None
+            if src and f"chat={chat}" in src:
+                frame = next(
+                    (f for f in page.frames
+                     if PANE_FRAME_URL in (f.url or "")), None
+                )
+            if frame is not None:
+                # The frame's own text. Reading the parent page would return
+                # nothing: inner_text stops at the iframe boundary. Guessing at
+                # row markup (li/tr/data-testid) returned empty against a pane
+                # that was rendering fine.
+                try:
+                    names = frame.locator("body").inner_text() or ""
+                except Exception:
+                    names = ""
+                if want in names:
+                    return names
+            time.sleep(3)
+        return names
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            _owui_login_and_open_chat(page)
+
+            # A fresh profile starts with the sidebar collapsed to an icon rail,
+            # where both the New Chat control and the chat list are present in
+            # the DOM but not visible. Everything below needs them on screen.
+            toggle = page.query_selector('button[aria-label="Open Sidebar"]')
+            if toggle is not None:
+                toggle.click()
+                page.wait_for_selector(
+                    'a[aria-label="New Chat"]', state="visible", timeout=20000
+                )
+
+            chat_a = start_chat(page, "first chat, one file")
+            name_a = f"m14a-{uuid.uuid4().hex[:8]}.txt"
+            status, text, is_error = _guest_exec(
+                chat_a, f"printf hi > /mnt/user-data/outputs/{name_a}", timeout=90
+            )
+            assert status == 200 and not is_error, (
+                f"guest write for chat A failed: status={status} text={text!r}"
+            )
+
+            # A second chat, reached the way a user reaches one: the New Chat
+            # control, not a page load.
+            page.click('a[aria-label="New Chat"]', timeout=15000)
+            page.wait_for_selector("[contenteditable=true]", timeout=20000)
+            time.sleep(2)
+            chat_b = start_chat(page, "second chat, another file")
+            assert chat_b != chat_a, "OpenWebUI reused the first chat's id"
+            name_b = f"m14b-{uuid.uuid4().hex[:8]}.txt"
+            status, text, is_error = _guest_exec(
+                chat_b, f"printf hi > /mnt/user-data/outputs/{name_b}", timeout=90
+            )
+            assert status == 200 and not is_error, (
+                f"guest write for chat B failed: status={status} text={text!r}"
+            )
+
+            # The panel, opened while the user is in chat B.
+            _chat_panel_frame(page)
+            before = pane_names(page, chat_b, name_b)
+            assert name_b in before, (
+                f"the panel in chat B does not list chat B's file {name_b!r}: "
+                f"{before!r}"
+            )
+            assert name_a not in before, (
+                f"the panel in chat B lists chat A's file {name_a!r}: {before!r}"
+            )
+
+            # A marker the page keeps only if nothing reloads. Without it a full
+            # reload would rebuild the panel at the new chat and this test would
+            # pass while proving nothing about the switch.
+            page.evaluate("() => { window.__m14 = 'alive'; }")
+
+            page.wait_for_selector(f'a[href="/c/{chat_a}"]', timeout=20000)
+            page.click(f'a[href="/c/{chat_a}"]', timeout=15000)
+
+            # The panel re-checks the path on a 2s interval; give it several.
+            after = pane_names(page, chat_a, name_a, deadline_s=90)
+
+            assert page.evaluate("() => window.__m14") == "alive", (
+                "the page reloaded during the chat switch -- this test only "
+                "means something for a client-side navigation, which is the "
+                "case the panel's sync exists for"
+            )
+            assert name_a in after, (
+                f"after switching to chat A the panel does not list A's file "
+                f"{name_a!r}: {after!r}"
+            )
+            assert name_b not in after, (
+                f"after switching to chat A the panel still lists chat B's file "
+                f"{name_b!r} -- it is showing the chat the user left: {after!r}"
+            )
+        finally:
+            browser.close()
