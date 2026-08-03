@@ -387,7 +387,9 @@ class FleetBackend(Backend):
             # the single most likely difference between a stand that works and
             # one that does not, so it goes in the message.
             return SessionRef(
-                key="", status=f"denied:{status} (image={body['image']})"
+                key="",
+                status=f"denied:{status}",
+                detail=f"image={body['image']}",
             )
         key = payload.get("key", "")
         self._last_key = key or None

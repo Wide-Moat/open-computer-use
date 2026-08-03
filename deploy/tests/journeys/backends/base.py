@@ -97,6 +97,11 @@ class SessionRef:
 
     key: str
     status: str
+    # Free-text diagnosis for a REFUSED create. Kept OUT of `status` because
+    # tests compare that field for exact equality ("denied:409"), so anything
+    # appended there silently breaks them -- which is exactly what happened
+    # when the image name was folded into the status string.
+    detail: str = ""
 
 
 @dataclass(frozen=True)
