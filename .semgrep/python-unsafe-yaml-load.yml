@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Why this rule is written by hand rather than pulled from a pack.
+#
+# The Layer 0 SAST gate loads 694 community rules and runs 205 of them
+# against this repository's Python. Measured 2026-07-31 with the image the
+# gate pins by digest (semgrep 1.163.0,
+# sha256:7cad2bc2d1e44f87f0bf4be6d1fa23aa90fb72015bebc89fb91385d813987a03):
+# changing `yaml.safe_load` to `yaml.load` in
+# skills/public/skill-creator/scripts/quick_validate.py produced 0 findings,
+# byte-identical to the unmodified file. The gate is not broken -- it loads
+# its rules and scans the target. This class is simply not in any of the six
+# configured packs.
+#
+# That distinction is the point. A gate that fires on the form printed in a
+# rule's documentation, and stays silent on the form the codebase is actually
+# written in, proves that the packs loaded, not that the code is guarded. Every
+# YAML read in this repository's in-scope Python goes through `yaml.safe_load`;
+# the regression that matters here is someone dropping the `safe_`.
+
+rules:
+  - id: python-unsafe-yaml-load
+    languages: [python]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      confidence: HIGH
+      references:
+        - https://pyyaml.org/wiki/PyYAMLDocumentation
+    message: >-
+      Unsafe YAML deserialization: this call constructs arbitrary Python objects
+      from the document instead of plain data, so a YAML file that reaches it is
+      code execution, not input. Use yaml.safe_load(...), or pass
+      Loader=yaml.SafeLoader explicitly. Every in-scope YAML read in this
+      repository uses safe_load; dropping it is the regression this rule exists
+      to catch.
+    patterns:
+      - pattern-either:
+          # Form 1: the explicitly unsafe entry point.
+          - pattern: yaml.unsafe_load(...)
+          # Form 2: yaml.load with a loader that is absent or unsafe. Written as
+          # a subtraction rather than an enumeration of unsafe loaders, so a
+          # loader nobody has thought of yet is caught rather than missed.
+          - patterns:
+              - pattern: yaml.load(...)
+              - pattern-not: yaml.load($DOC, Loader=yaml.SafeLoader, ...)
+              - pattern-not: yaml.load($DOC, Loader=yaml.CSafeLoader, ...)
+              - pattern-not: yaml.load($DOC, yaml.SafeLoader, ...)
+              - pattern-not: yaml.load($DOC, yaml.CSafeLoader, ...)

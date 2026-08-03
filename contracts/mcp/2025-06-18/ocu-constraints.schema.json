@@ -158,16 +158,31 @@
   },
 
   "x-ocu-authz": {
-    "$comment": "NFR-SEC-09 — audience-validated authz. Carried on the HTTP transport, not in the JSON-RPC body; documented here as a binding gateway rule.",
-    "model": "OAuth 2.1 Resource Server",
+    "$comment": "NFR-SEC-09 — the inbound caller MUST authenticate; no anonymous or shared path on either shelf. Carried on the HTTP transport, not in the JSON-RPC body; documented here as a binding gateway rule. ADR-0027 splits the model by shelf: the minimal shelf validates a per-caller static sk-ocu- API key in-process against a Control-minted boot-loaded hashed-key set (contracts/mcp/mcp-key-set.schema.json); the full shelf runs the OAuth 2.1 Resource Server relying-party flow against the customer IdP. The Origin-validation and no-passthrough rules are UNCONDITIONAL on both modes; the RFC 8707 audience and RFC 9728 resource-metadata rules are CONDITIONAL on the oauth2-rs mode (an opaque sk key carries no audience claim — its tenant/deployment scope is read from the resolved record). Both modes share the Authorization: Bearer credential header.",
+    "mode": {
+      "$comment": "The caller-authN mode, selected by deployment shelf (ADR-0027). A DEPLOYMENT-LEVEL selector, not a per-request wire field.",
+      "enum": ["static-key", "oauth2-rs"],
+      "default": "static-key",
+      "static-key": "Minimal shelf: a per-caller static sk-ocu- API key, Control-minted, salted-hash-at-rest, resolved in-process against the boot-loaded hashed-key set (contracts/mcp/mcp-key-set.schema.json). A key absent from this deployment's set is refused with 401; tenant and deployment scope are read from the resolved record, never from a claim in the opaque key.",
+      "oauth2-rs": "Full shelf: OAuth 2.1 Resource Server. The bearer is a customer-IdP-issued token whose audience claim names this MCP server (RFC 8707); OCU is always the relying party, never an in-house JWT issuer (NFR-FLEX-03)."
+    },
     "credential-header": "Authorization: Bearer <token>",
-    "rules": [
-      "Token MUST name this MCP server in its audience claim (RFC 8707); reject otherwise with HTTP 401.",
-      "Bearer token MUST NOT appear in the URI query.",
-      "The caller token MUST NOT be passed through to upstream or the sandbox; the trust edge injects custody credentials (NFR-SEC-23, NFR-SEC-27).",
-      "On 401, WWW-Authenticate points to the RFC 9728 resource-metadata URL.",
-      "Origin header MUST be validated (DNS-rebinding); local binds use 127.0.0.1 not 0.0.0.0 (NFR-SEC-43)."
-    ]
+    "rules": {
+      "unconditional": [
+        "Bearer token MUST NOT appear in the URI query.",
+        "The caller credential MUST NOT be passed through to upstream or the sandbox; the trust edge injects custody credentials (NFR-SEC-23, NFR-SEC-27). The caller key is never forwarded onto F5 or into the sandbox.",
+        "Origin header MUST be validated (DNS-rebinding); local binds use 127.0.0.1 not 0.0.0.0 (NFR-SEC-43).",
+        "A 401 carries a `WWW-Authenticate: Bearer` challenge in BOTH modes (the shipped gateway sets `Bearer realm=\"ocu-mcp-gateway\"`); the oauth2-rs mode additionally points it at the RFC 9728 resource-metadata URL."
+      ],
+      "static-key": [
+        "The presented sk-ocu- bearer MUST resolve to a non-expired, non-revoked record in this gateway's boot-loaded hashed-key set; the gateway hashes the presented key and constant-time-compares. A key not in this deployment's set is refused with HTTP 401 (ADR-0027, NFR-SEC-87).",
+        "Tenant and deployment scope come from the resolved record, never from the request body or a claim in the key."
+      ],
+      "oauth2-rs": [
+        "Token MUST name this MCP server in its audience claim (RFC 8707); reject otherwise with HTTP 401.",
+        "On 401, the WWW-Authenticate Bearer challenge additionally points to the RFC 9728 resource-metadata URL."
+      ]
+    }
   },
 
   "x-ocu-error-model": {

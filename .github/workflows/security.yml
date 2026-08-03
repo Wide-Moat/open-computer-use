@@ -172,6 +172,9 @@ jobs:
 
   sast-semgrep:
     name: SAST — semgrep
+    # Temporarily non-blocking by owner direction 2026-08-01. Remove this flag and
+    # the line below to restore the gate; the job still runs and still reports.
+    continue-on-error: true
     runs-on: ubuntu-latest
     container:
       # Org renamed from `returntocorp/semgrep` to `semgrep/semgrep`. Same
@@ -183,6 +186,13 @@ jobs:
           # Diff-aware semgrep needs history back to the merge-base.
           fetch-depth: 0
           persist-credentials: false
+      - name: Self-test the hand-written rules before trusting their verdict
+        # `semgrep test` checks each `ruleid:`/`ok:` annotation in the fixture
+        # against the rule that actually fired, so a finding raised for the
+        # wrong reason fails here rather than passing as coverage. A rule whose
+        # own fixture does not hold should not be allowed to gate anything.
+        run: semgrep --metrics=off --test --config .semgrep/ .semgrep/
+
       - name: Semgrep CI (community rules)
         env:
           # Required for diff-aware scanning + PR commenting. Without it,
@@ -200,7 +210,20 @@ jobs:
           # without first probing /c/p/<name>. Bash-in-YAML coverage
           # comes from p/security-audit + p/github-actions; Docker
           # socket misuse from p/dockerfile.
+          #
+          # `--config .semgrep/` adds the hand-written rules. They exist
+          # because the six packs below load 694 rules, run 205 of them
+          # against this repository's Python, and cover none of the one
+          # idiomatic regression its own code can produce. Measured, not
+          # assumed: see the header of the rule file.
+          #
+          # `--exclude` keeps the rule fixtures out of the scan. They contain
+          # the real vulnerable forms by construction, so without this the
+          # gate reddens on its own test data -- verified: 4 findings with the
+          # fixture in scope, 0 with it excluded.
           semgrep ci \
+            --exclude '*.fixture.py' \
+            --config ".semgrep/" \
             --config "p/security-audit" \
             --config "p/owasp-top-ten" \
             --config "p/python" \
@@ -210,6 +233,9 @@ jobs:
 
   sca-trivy-fs:
     name: SCA — trivy (filesystem)
+    # Temporarily non-blocking by owner direction 2026-08-01. Remove this flag and
+    # the line below to restore the gate; the job still runs and still reports.
+    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -218,6 +244,14 @@ jobs:
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
+          # Pinning the action pins the wrapper, not the scanner. Without
+          # this input the action fetches whatever release its own default
+          # names, so two runs over an unchanged tree can reach different
+          # verdicts and neither is reproducible from the repository. Held
+          # at the value that default resolves to today, so this commit
+          # changes determinism and nothing else; moving the scanner is a
+          # separate decision that can change findings.
+          version: v0.70.0
           scan-type: fs
           scan-ref: .
           # Block merge on CRITICAL. HIGH gets a 14-day grace via the
@@ -257,6 +291,10 @@ jobs:
       - name: Trivy filesystem scan (HIGH, blocking on fixable)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8  # v0.36.0
         with:
+          # Same scanner build as the CRITICAL pass above. If the two passes
+          # drift apart, the exception ledger starts describing findings the
+          # blocking pass never produced.
+          version: v0.70.0
           scan-type: fs
           scan-ref: .
           severity: HIGH
@@ -281,7 +319,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
       - name: Install checkov
@@ -335,3 +373,60 @@ jobs:
             style
             revert
           requireScope: false
+
+  release-signing-order:
+    name: release — pipeline integrity (signing order, cross-job wiring)
+    runs-on: ubuntu-latest
+    # This gate reads workflow files, so unlike the release pipeline itself it
+    # can run on a pull request and can therefore be a required check. The
+    # signing pipeline is tag-triggered and produces no PR status at all; a
+    # job whose `if:` excludes pull_request would be skipped, and a skipped
+    # required check counts as passed, so requiring it would be worse than
+    # leaving it out. This one has no `if:` and no trigger exclusion.
+    #
+    # It currently FAILS on this branch, correctly: build.yml publishes four
+    # images on a tag, supply-chain.yml signs them on the same tag, and
+    # nothing orders the two. The failure is the finding, and switching the
+    # gate off because it reports a true thing is the defect this whole set of
+    # gates exists to prevent.
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        # Version-pinned, not hash-pinned. A hash pin belongs here by the
+        # dependency policy, and inventing one unverified would be worse than
+        # stating its absence -- the pin lands when the digest is fetched
+        # rather than guessed.
+        run: pip install pyyaml==6.0.2
+      - name: Self-test the checker before trusting its verdict
+        run: python3 tests/security/check_signing_precedes_publish.py --self-test
+      - name: Check that no image is published before it is signed
+        run: python3 tests/security/check_signing_precedes_publish.py
+
+      - name: Self-test the cross-job wiring checker
+        run: python3 tests/security/check_cross_job_outputs.py --self-test
+
+      - name: Check that every cross-job output reference resolves
+        # `${{ needs.<job>.outputs.<key> }}` evaluates to the empty string when
+        # the producer is missing, misspelled, or declares something else. The
+        # release pipeline carries the image digest across three jobs on
+        # exactly this mechanism, and the gate3 rehearsal cannot reach it --
+        # the rehearsal is one job, because its registry is a service
+        # container that does not outlive the job.
+        run: python3 tests/security/check_cross_job_outputs.py
+
+      - name: Self-test the exception-ledger checker
+        run: python3 tests/security/check_security_exceptions.py --self-test
+
+      - name: Enforce the HIGH-exception ledger
+        # The ledger carried a schema with `since`, `expires`, an owner and a
+        # remediation, and a note saying CI enforced none of it. An exception
+        # file nothing reads is not a control: entries outlive their reasons
+        # because nothing asks whether they are still needed. This is the same
+        # standard being asked of sibling repositories, applied here.
+        run: python3 tests/security/check_security_exceptions.py

@@ -1,0 +1,601 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# North Files-API surface (data-plane client -> Web UI BFF -> object-store service,
+# over the F9 host leg). The five Files-API verbs ADR-0023 pins plus the additive
+# GET /v1/files/archive OCU-extension route. This is the wire the component-08 BFF
+# speaks to component-04's dedicated north listener (ADR-0025) to resolve a durable
+# file_id, and the same wire the public SPA sees projected through the BFF.
+#
+# SCOPE IS HOST-ATTESTED, never a body field. Scope rides in the X-OCU-Filesystem-Id
+# request header on EVERY verb; the BFF has already run embed-token verify, first-party
+# session, and three-axis authorization (component-08, NFR-SEC-82) before the F9 call,
+# so the header value is attested upstream and the object-store service reads it as an
+# intra-deployment peer (ADR-0025). No credential crosses F9: this leg does not cross
+# the egress trust-edge and carries no backend credential (NFR-SEC-25). The params
+# filesystem_id (on create) is a cross-check HINT, never the authority; a disagreement
+# with the header is scope_mismatch.
+#
+# KEYSTONE: file_id is never a capability. The handle-store resolves only a
+# byte-equal-scope record; a cross-scope or unknown file_id returns not_found (HTTP 404),
+# never forbidden — the anti-enumeration keystone of ADR-0023:38, enforced in the
+# handle-store (its one home) and surfaced as 404 here (ADR-0025). Every id-addressed
+# verb (metadata, content, delete) carries only 404, never 403, for absent-or-cross-scope.
+#
+# AUDIT-GATED: every upload/list/download/delete emits an OCSF File System Activity
+# event, durable-committed before acknowledgement; a durable-commit failure denies the
+# action fail-closed with 503 (NFR-SEC-79). A 2xx here means the action took effect AND
+# was recorded.
+#
+# DENY responses carry the shared BoundedReason envelope (NFR-SEC-51): a stable
+# reason_code and a length-capped message with no stack trace or internal topology.
+#
+# STATUS: draft (#304, freeze-bodies). ADR-0025 pinned the F9 route, resolver, and auth
+# shape and left the per-operation bodies TBD (its Open Questions); ADR-0028 freezes them
+# to this file. The freeze lands in canon contracts/openapi/ via the gatekeeper canon-PR.
+# The south /v1/filestore/fs/<op> mount RPC is a SEPARATE surface (contracts/storage/
+# file-ops.schema.json) on a different listener, credential, and client — untouched here.
+
+openapi: 3.1.0
+
+info:
+  title: OCU Files-API — North data plane
+  version: 0.1.0-draft
+  summary: The five Files-API verbs plus the additive archive route on the F9 north leg.
+  description: >-
+    The north Files-API of the object-store service: `POST /v1/files` (create/upload),
+    `GET /v1/files` (list), `GET /v1/files/{file_id}` (metadata), `GET
+    /v1/files/{file_id}/content` (bytes), `DELETE /v1/files/{file_id}` (delete), and the
+    additive `GET /v1/files/archive` OCU-extension. Scope is host-attested from the
+    `X-OCU-Filesystem-Id` header on every verb (ADR-0025); no credential crosses this leg
+    (NFR-SEC-25). A `file_id` is never a capability — a cross-scope or unknown id resolves
+    to 404, never 403 (ADR-0023 keystone). Every mutating action is audit-gated before
+    acknowledgement (NFR-SEC-79). The bodies here are the #304 freeze of the ADR-0025 F9
+    Open Questions; the public SPA sees them projected through the component-08 BFF.
+  license:
+    name: FSL-1.1-Apache-2.0
+    url: https://fsl.software/
+
+# No `servers` block. The north Files-API leg is an intra-deployment host-owned listener
+# on the object-store service's own bind (its `--north-listen`, ADR-0025), reached by the
+# component-08 BFF over the trusted intra-deployment channel — not a public network origin
+# a client resolves. The concrete bind is a deployment/IaC concern; declaring a URL here
+# would wrongly imply a routable public endpoint. (x-ocu-design: the absence is
+# deliberate, not an omission — mirrors the operator-rest surface, ADR-0004/ADR-0025.)
+
+# Host-attested scope. There is no bearer token or body-borne identity on this leg: the
+# scope is the X-OCU-Filesystem-Id header, attested by the BFF upstream and trusted by the
+# object-store service as an intra-deployment peer (ADR-0025, NFR-SEC-82). The scheme
+# below documents that host-attested gate; it does not introduce a wire credential.
+security:
+  - f9AttestedScope: []
+
+paths:
+  /v1/files:
+    post:
+      operationId: createFile
+      summary: Create a file from an uploaded body (Files-API Create).
+      description: >-
+        Stream an uploaded body into a new scope-bound file and mint its `file_id`. The
+        request is `multipart/form-data` with two ordered parts: `params` (a JSON form
+        field, strict-decoded, unknown fields rejected) then `file` (the raw bytes, part
+        filename `upload`). Scope is the `X-OCU-Filesystem-Id` header; `params.filesystem_id`
+        is a cross-check hint and a disagreement is `scope_mismatch`. `declared_size_bytes`
+        is required and greater than zero, and the body must yield exactly that many bytes;
+        an over- or under-length body is refused before any object is staged, so no
+        zero-or-partial-length file or handle is ever observable. The ALLOW audit event is
+        written before any byte reaches the engine; an audit-write failure denies with 503
+        and stages nothing. On success the minted FileObject is returned — the same object
+        the metadata verb returns, built from the minted handle record.
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateFileForm'
+            encoding:
+              params:
+                contentType: application/json
+              file:
+                contentType: application/octet-stream
+      responses:
+        '201':
+          description: >-
+            File created. Returns the minted FileObject, built from the durable handle
+            record; the `file_id` exists iff the streamed body equalled
+            `declared_size_bytes`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '403':
+          $ref: '#/components/responses/Denied'
+        '409':
+          $ref: '#/components/responses/Denied'
+        '400':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+    get:
+      operationId: listFiles
+      summary: List files in the attested scope (Files-API Read).
+      description: >-
+        List the scope's files as a `{data, has_more, first_id, last_id, next_cursor}`
+        envelope. Scope is the `X-OCU-Filesystem-Id` header. The forward cursor is
+        `?after=<next_cursor>`: pass the previous page's opaque `next_cursor` token to fetch
+        the next page. `first_id`/`last_id` are informational boundary ids, not resume keys —
+        a bare id cannot resume the created-at-primary order. `limit` bounds the page size.
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+        - $ref: '#/components/parameters/AfterQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: One page of FileObjects for the attested scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListEnvelope'
+        '403':
+          $ref: '#/components/responses/Denied'
+        '400':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+  /v1/files/archive:
+    get:
+      operationId: getArchive
+      summary: Stream a zip archive of the named files (additive OCU extension).
+      description: >-
+        Bundle the named accessible files into a single zip and stream it back. An additive
+        OCU-extension route, a sibling off `/v1/files` and not one of the five frozen verbs
+        (ADR-0023, ADR-0025 Open Question). Scope is the `X-OCU-Filesystem-Id` header; the
+        `file_id` set is the repeated `file_id` query parameter. Each id resolves under the
+        keystone — a cross-scope or unknown id is not included and cannot be probed. When no
+        named id resolves in scope, the response is 404, never 403.
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+        - $ref: '#/components/parameters/FileIdArchiveQuery'
+      responses:
+        '200':
+          description: >-
+            A zip stream of the accessible named files, served as an attachment.
+          headers:
+            Content-Disposition:
+              description: >-
+                `attachment` with a `filename` for the zip, so the body is downloaded, not
+                rendered inline.
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Denied'
+        '404':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+  /v1/files/{file_id}:
+    get:
+      operationId: getFile
+      summary: Read a file's metadata (Files-API Read).
+      description: >-
+        Resolve a `file_id` to its FileObject metadata. Scope is the `X-OCU-Filesystem-Id`
+        header; the handle-store resolves only a byte-equal-scope record. A cross-scope or
+        unknown id resolves to 404, never 403 — the id is durable but resolves only under
+        its own attested scope (ADR-0023 keystone).
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+        - $ref: '#/components/parameters/FileIdPath'
+      responses:
+        '200':
+          description: The FileObject for the resolved id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '404':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+    delete:
+      operationId: deleteFile
+      summary: Unlink a file handle so its id stops resolving (Files-API Delete).
+      description: >-
+        Unlink the `file_id` handle; the id stops resolving. No request body — scope is the
+        `X-OCU-Filesystem-Id` header and the id is the path. Success is 204 with no body. A
+        cross-scope or unknown id returns 404 under the keystone, indistinguishable from an
+        already-unlinked id, so a repeat delete is idempotent and offers no existence
+        oracle; a client maps both 204 and 404 to deleted. The service owns no bytes, so a
+        delete unlinks the handle and makes no byte-erasure guarantee (ADR-0023). An
+        audit-write failure denies with 503.
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+        - $ref: '#/components/parameters/FileIdPath'
+      responses:
+        '204':
+          description: Handle unlinked (or already gone — idempotent). No body.
+        '404':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+  /v1/files/{file_id}/content:
+    get:
+      operationId: getFileContent
+      summary: Stream a file's bytes (Files-API Read).
+      description: >-
+        Resolve a `file_id` and stream its bytes. Scope is the `X-OCU-Filesystem-Id`
+        header. `downloadable` is re-derived at read from the host-attested session
+        (NFR-SEC-73); a non-downloadable object yields no egress-eligible artifact. A
+        cross-scope or unknown id resolves to 404, never 403. A resolving handle asserts the
+        handle persists, not that the customer-store bytes still exist — a resolved handle
+        may then fail re-fetch if the customer store dropped the bytes (ADR-0010).
+      parameters:
+        - $ref: '#/components/parameters/FilesystemIdHeader'
+        - $ref: '#/components/parameters/FileIdPath'
+      responses:
+        '200':
+          description: The file bytes, streamed.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/Denied'
+        '404':
+          $ref: '#/components/responses/Denied'
+        '503':
+          $ref: '#/components/responses/Denied'
+
+components:
+  securitySchemes:
+    f9AttestedScope:
+      type: apiKey
+      in: header
+      name: X-OCU-Filesystem-Id
+      description: >-
+        Host-attested scope. The `X-OCU-Filesystem-Id` header carries the `filesystem_id`
+        the BFF attested upstream (embed-token verify + first-party session + three-axis
+        authorization, NFR-SEC-82); the object-store service reads it and trusts it as an
+        intra-deployment peer (ADR-0025). This is the scope authority on every verb — it is
+        not a caller secret and not a capability. The `apiKey`/header type is the nearest
+        OpenAPI primitive for "the attested scope rides a fixed request header"; no bearer
+        token or backend credential crosses this leg (NFR-SEC-25).
+
+  parameters:
+    FilesystemIdHeader:
+      name: X-OCU-Filesystem-Id
+      in: header
+      required: true
+      description: >-
+        The host-attested `filesystem_id` scope. Authoritative on every verb; on create,
+        `params.filesystem_id` is a cross-check hint and a disagreement is `scope_mismatch`
+        (ADR-0025).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+
+    FileIdPath:
+      name: file_id
+      in: path
+      required: true
+      description: >-
+        The opaque, server-minted `file_id`. Durable, but never a capability: it resolves
+        only under its own attested scope, and a cross-scope or unknown id degrades to 404
+        (ADR-0023 keystone).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
+
+    AfterQuery:
+      name: after
+      in: query
+      required: false
+      description: >-
+        Forward list cursor: the previous page's opaque `next_cursor` token (treat as
+        opaque; it carries the created-at/file-id boundary tuple). Its absence lists from
+        the first page. A bare `last_id` is not a valid cursor.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      description: Page-size ceiling for a list page.
+      schema:
+        type: integer
+        minimum: 1
+
+    FileIdArchiveQuery:
+      name: file_id
+      in: query
+      required: true
+      description: >-
+        The `file_id` set to bundle, one value per id (a repeated query parameter). Each id
+        resolves under the keystone; a cross-scope or unknown id is silently excluded and
+        cannot be probed.
+      schema:
+        type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
+          maxLength: 256
+
+  responses:
+    Denied:
+      description: >-
+        The action was refused or could not be performed. Carries the shared BoundedReason
+        envelope (NFR-SEC-51): a stable reason_code and a length-capped message with no
+        stack trace or internal topology. For an id-addressed verb, a cross-scope or unknown
+        id is reported as 404 the same as an absent one, so a probe cannot distinguish
+        another scope's record from absence (ADR-0023 keystone).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BoundedReason'
+
+  schemas:
+    # The shared deny envelope (NFR-SEC-51), one logical shape canon-wide. Mirrors the
+    # operator-rest and control-rpc BoundedReason VERBATIM: reason_code is a stable code,
+    # message is a length-capped human string carrying no stack trace or internal topology.
+    BoundedReason:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{1,63}$'
+          description: >-
+            Stable machine-readable deny code (e.g. `scope_mismatch`, `not_found`). The
+            caller branches on it; it carries no internal detail.
+        message:
+          type: string
+          maxLength: 256
+          description: >-
+            Optional human-readable detail, no stack trace or internal topology.
+          x-ocu-default: >-
+            maxLength 256 is the NFR-SEC-51 default pending sign-off, not a source-pinned
+            value; retunable per workload tier. Matches the operator-rest, control-rpc, and
+            exec-channel BoundedReason.
+
+    # CreateFileForm is the two-ordered-part multipart body. Part 1 `params` is JSON
+    # (strict-decoded, unknown fields rejected); part 2 `file` is the raw bytes with part
+    # filename `upload`. The MIME field name on the REQUEST is strictly `media_type` (the
+    # south uploadParamsFrame name); the response minted FileObject uses `mime_type` (the
+    # Files-API dialect). Both fields are ordered: `params` first, `file` second.
+    CreateFileForm:
+      type: object
+      additionalProperties: false
+      description: >-
+        The `multipart/form-data` create body. Two ordered parts: `params` then `file`.
+      required: [params, file]
+      properties:
+        params:
+          $ref: '#/components/schemas/CreateFileParams'
+        file:
+          type: string
+          format: binary
+          description: >-
+            The raw bytes, streamed, with part filename `upload`. The body must yield
+            exactly `params.declared_size_bytes`; an over- or under-length body is refused
+            before any object is staged.
+
+    # CreateFileParams mirrors the south uploadParamsFrame field-set. declared_size_bytes
+    # is REQUIRED and > 0 — there is no length-unspecified form. filesystem_id here is a
+    # cross-check hint; the header is the scope authority. media_type is the south MIME
+    # name; the create request does NOT dual-accept `mime_type`.
+    CreateFileParams:
+      type: object
+      additionalProperties: false
+      description: >-
+        The create params (part 1). A strict-decoded JSON form field; an unknown field is
+        rejected. Scope is the header, not this body — `filesystem_id` is a cross-check
+        hint (ADR-0025).
+      required: [declared_size_bytes]
+      properties:
+        filesystem_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            Cross-check hint for the header scope; a disagreement with `X-OCU-Filesystem-Id`
+            is `scope_mismatch` (404-family on the north leg). Never the authority.
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: >-
+            Target path, canonicalized server-side; a traversal, absolute-outside-scope, or
+            URL form is rejected before the engine. Its leaf is the default `filename`.
+        declared_size_bytes:
+          type: integer
+          exclusiveMinimum: 0
+          description: >-
+            REQUIRED byte count, greater than zero. The body must yield exactly this many
+            bytes; over- or under-length is refused pre-stage. There is no
+            length-unspecified form, so no zero-or-partial-length file or handle is
+            observable. A zero-byte upload is out of v1 (`> 0`).
+        authorization_metadata:
+          $ref: '#/components/schemas/AuthorizationMetadata'
+        media_type:
+          type: string
+          maxLength: 256
+          description: >-
+            Declared MIME type of the body (the south `media_type` name). The minted
+            FileObject surfaces it as `mime_type`. The request field is strictly
+            `media_type`; `mime_type` is not accepted on the request.
+        overwrite_existing:
+          type: boolean
+          description: >-
+            Whether an existing object at `path` is overwritten. Absent means create-new.
+        filename:
+          type: string
+          maxLength: 4096
+          description: >-
+            Optional display name for the minted FileObject. Defaults to the `path` leaf.
+        metadata:
+          type: object
+          additionalProperties: true
+          description: >-
+            Optional caller metadata carried onto the create. Accepted so a richer sender is
+            not rejected by the strict decoder.
+        tags:
+          type: array
+          items:
+            type: string
+            maxLength: 256
+          description: Optional caller tags carried onto the create.
+        ttl_seconds:
+          type: integer
+          minimum: 0
+          description: Optional retention hint in whole seconds.
+
+    # AuthorizationMetadata is the shared three-axis hint carried on the create params:
+    # scope is the header, intent and downloadable are the caller's create-time request.
+    # `downloadable` here is a create-time request; the read-time value is re-derived at
+    # read from the host-attested session (NFR-SEC-73), never trusted from this body.
+    AuthorizationMetadata:
+      type: object
+      additionalProperties: false
+      description: >-
+        The intent/downloadable create-time request carried on the create params. Scope
+        rides the header, not this object.
+      properties:
+        intent:
+          type: string
+          enum: [read, write, preview]
+          description: >-
+            The create-time intent; a create carries `write`. `preview` stays read-only and
+            non-downloadable regardless of any tag (NFR-SEC-49).
+        downloadable:
+          type: boolean
+          description: >-
+            The create-time downloadable request. The read-time value is re-derived from the
+            host-attested session (NFR-SEC-73); this field does not fix it.
+
+    # FileObject is the frozen read dialect: EXACTLY these six fields. `downloadable` and
+    # `scope` are NOT on the wire — downloadable is a read-time authz output (NFR-SEC-73),
+    # scope is attestation-only (the keystone forbids trusting a body scope). `checksum_md5`
+    # is deferred for v1. The create response reuses this exact object, built from the
+    # minted handle record.
+    FileObject:
+      type: object
+      additionalProperties: false
+      description: >-
+        The Files-API file object. The same shape on create, metadata, and each list item.
+        Server-built from the durable handle record; no field is caller-supplied.
+      required: [id, type, filename, mime_type, size_bytes, created_at]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The opaque, server-minted `file_id`. Never a capability (ADR-0023 keystone).
+        type:
+          type: string
+          const: file
+          description: The object discriminator; always `file`.
+        filename:
+          type: string
+          maxLength: 4096
+          description: Display name — the create `filename`, or the `path` leaf when none was given.
+        mime_type:
+          type: string
+          maxLength: 256
+          description: The resolved MIME type (the Files-API dialect name for the create `media_type`).
+        size_bytes:
+          type: integer
+          minimum: 0
+          description: The stored byte count — equal to the create `declared_size_bytes`.
+        created_at:
+          type: string
+          format: date-time
+          description: RFC-3339 UTC store-clock creation time from the handle record.
+
+    # FileListEnvelope is the frozen list shape: {data, has_more, first_id, last_id,
+    # next_cursor}. The forward cursor is the OPAQUE next_cursor token — the durable
+    # store's list order is created-at-primary, so the resume key must carry the
+    # (created_at, file_id) boundary tuple; a bare file_id would repeat or strand a
+    # record when the boundary record is deleted between pages.
+    FileListEnvelope:
+      type: object
+      additionalProperties: false
+      description: >-
+        One list page. The forward cursor is `?after=<next_cursor>` (opaque token);
+        `first_id`/`last_id` are informational boundary ids, not resume keys.
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileObject'
+          description: The FileObjects on this page, in list order.
+        has_more:
+          type: boolean
+          description: Whether a further page exists past `last_id`.
+        first_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The `id` of the first item on this page. Absent on an empty page.
+        last_id:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            The `id` of the last item on this page — an informational boundary marker, NOT
+            the resume key. Absent on an empty page.
+        next_cursor:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: >-
+            The opaque forward resume token for `?after=` (base64url, carries the
+            created-at/file-id boundary tuple; treat as opaque). Present while `has_more`
+            is true; absent on the final page. It survives a deleted boundary record,
+            which a bare `last_id` cannot.
+
+# Freeze-time resolutions recorded for the #304 body freeze (ADR-0028).
+x-ocu-notes:
+  - >-
+    The create request MIME field is strictly `media_type` (the south uploadParamsFrame
+    name); the request does not dual-accept `mime_type`. The minted FileObject surfaces it
+    as `mime_type` (the Files-API dialect). One direction of rename, not two accepted names.
+  - >-
+    The read FileObject is exactly six fields: id, type, filename, mime_type, size_bytes,
+    created_at. `downloadable` (read-time authz output, NFR-SEC-73) and `scope`
+    (attestation-only) are off the wire; `checksum_md5` is deferred for v1 (ADR-0023 Open
+    Question 5). ADR-0028 amends the ADR-0023:36 dialect line to match.
+  - >-
+    List pagination: `{data, has_more, first_id, last_id, next_cursor}` and a forward
+    `?after=<next_cursor>` (opaque keyset token). Corrected in ADR-0028: the durable
+    store's created-at-primary keyset walk cannot resume from a bare `last_id` (a deleted
+    boundary record would repeat or strand a record), so the opaque token is the resume
+    key and `first_id`/`last_id` stay informational.
+  - >-
+    `GET /v1/files/archive` is an additive OCU-extension route, a sibling off `/v1/files`
+    and not one of the five frozen verbs; adding it is an additive change, not a break to
+    the five-verb freeze (ADR-0023, ADR-0025 Open Question resolved by ADR-0028).
+  - >-
+    A zero-byte upload is out of v1: `declared_size_bytes` is `> 0`. The create response
+    and its minted `file_id` exist iff the streamed body equalled `declared_size_bytes`;
+    there is no length-unspecified form and no observable zero-or-partial-length window
+    (ADR-0028).

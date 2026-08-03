@@ -3,12 +3,13 @@
 
 ---
 status: accepted
-last-reviewed: 2026-06-22
+last-reviewed: 2026-07-01
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: ['contracts/storage/file-artifact-api.schema.json (PoC north op-shape: OperationName enum + {filesystem_id,path}-only handle model)']
 superseded-by: null
 amends: []
+amended-by: [0028]
 compliance-impact: [SOC2-CC6.1, SOC2-CC7.2, ISO27001-A.8.15]
 license-impact: none
 threat-mitigation-link: ../06-threat-model.md

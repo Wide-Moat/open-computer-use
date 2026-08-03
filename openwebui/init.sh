@@ -38,11 +38,13 @@ MCP_API_KEY="${MCP_API_KEY:-}"
 # Seeded into the Tool Valve so the base is not a dead code-default (D5).
 OCU_FILESYSTEM_ID="${OCU_FILESYSTEM_ID:-fs-fleet}"
 # OCU_DOWNLOAD_BASE_URL: browser-facing base of the File Pane origin that serves
-# GET /download/{filename} (#191, ADR-0034). The filter's outlet rewrites the
-# model's [[ocu-download:NAME]] markers into a link under this base; the download
-# authorizes on the same attested pane session (SSO). On the stand the pane is on
-# :3000; a real deploy sets the customer pane origin. Empty -> markers degrade to
-# the bare filename (broken links are worse than no links).
+# /download/{scope}/{filename} (#191, ADR-0034, shape per ADR-0035). The filter's
+# outlet rewrites the model's [[ocu-download:NAME]] markers into a link under this
+# base; the download authorizes on the same attested pane session (SSO), so this
+# must be the SAME origin the pane is embedded under - a different spelling of the
+# same address (127.0.0.1 vs localhost) is a different cookie jar and answers 401.
+# On the stand the pane is on :3000; a real deploy sets the customer pane origin.
+# Empty -> markers degrade to the bare filename (broken links are worse than none).
 OCU_DOWNLOAD_BASE_URL="${OCU_DOWNLOAD_BASE_URL:-http://localhost:3000}"
 MARKER_FILE="/app/backend/data/.computer-use-initialized"
 

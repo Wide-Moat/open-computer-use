@@ -20,12 +20,16 @@ jobs:
       contents: read
       packages: write
     outputs:
-      # The pushed image digest (sha256:...), consumed by sign-images below.
-      # Empty on pull_request, where nothing was pushed.
-      digest: ${{ steps.build.outputs.digest }}
+      # The pushed image digest (sha256:...), consumed by `sign` and `promote`
+      # below. Empty on pull_request, where the push step does not run.
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      # Local only. Never reaches a registry, so it cannot be pulled by
+      # anyone and is not a consumer-reachable reference.
+      LOCAL_SMOKE_TAG: open-computer-use:smoke
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Free disk space for 8GB+ image + local load
         run: |
@@ -36,16 +40,16 @@ jobs:
                       /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: meta
         with:
           images: ${{ env.SANDBOX_IMAGE }}
@@ -59,35 +63,22 @@ jobs:
             type=match,pattern=v(.*),group=1
             type=sha
 
-      - uses: docker/build-push-action@v7
-        id: build
+      - name: Build into the local daemon for the smoke tests
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           load: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.LOCAL_SMOKE_TAG }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Pick image tag for smoke tests
-        id: img
-        run: |
-          # docker/metadata-action emits newline-separated tags; grab the first
-          # non-blank line. Fail loudly if nothing came through so downstream
-          # `docker run` doesn't hit an empty image name with a cryptic error.
-          tag=$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | sed '/^[[:space:]]*$/d' | head -n1)
-          if [ -z "$tag" ]; then
-            echo "No image tag produced by docker/metadata-action" >&2
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
       - name: Smoke test — image packages and CLI tools
         run: |
           chmod +x tests/test-docker-image.sh
-          ./tests/test-docker-image.sh "${{ steps.img.outputs.tag }}"
+          ./tests/test-docker-image.sh "${{ env.LOCAL_SMOKE_TAG }}"
 
       - name: Smoke test — Chromium launches in container
         run: |
@@ -95,7 +86,7 @@ jobs:
           # over the network: this test should only validate that chromium
           # binary + wire protocol work, not internet reachability.
           docker run --rm --platform linux/amd64 \
-            --entrypoint=python3 "${{ steps.img.outputs.tag }}" \
+            --entrypoint=python3 "${{ env.LOCAL_SMOKE_TAG }}" \
             -c "
           from playwright.sync_api import sync_playwright
           with sync_playwright() as p:
@@ -108,6 +99,32 @@ jobs:
               print(f'OK: title={title}')
           "
 
+      - name: Lowercase the image name
+        id: img
+        # Registries reject uppercase in a repository name, and
+        # `github.repository` carries the organisation's capitalisation.
+        # metadata-action lowercased it while the name came from `tags:`;
+        # push-by-digest takes the name verbatim, so do it here.
+        run: |
+          printf 'ref=%s\n' \
+            "$(printf '%s' "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Push by digest, with no tag
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          # No `tags:`. push-by-digest uploads the manifest and returns its
+          # digest without attaching any name a consumer could pull. The
+          # release tag is attached by the promote job, after the signature
+          # exists. Until then the image is in the registry but unreachable
+          # by name -- which is the whole point of the split.
+          outputs: type=image,name=${{ steps.img.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
   build-server:
     name: Build Server Image
     runs-on: ubuntu-latest
@@ -115,23 +132,23 @@ jobs:
       contents: read
       packages: write
     outputs:
-      # The pushed image digest (sha256:...), consumed by sign-images below.
-      # Empty on pull_request, where nothing was pushed.
-      digest: ${{ steps.build.outputs.digest }}
+      # The pushed image digest (sha256:...), consumed by `sign` and `promote`
+      # below. Empty on pull_request, where the push step does not run.
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: meta
         with:
           images: ${{ env.SERVER_IMAGE }}
@@ -145,15 +162,34 @@ jobs:
             type=match,pattern=v(.*),group=1
             type=sha
 
-      - uses: docker/build-push-action@v7
-        id: build
+      - name: Build, without publishing anything
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: ./computer-use-server
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          push: false
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Lowercase the image name
+        id: img
+        # Registries reject uppercase in a repository name, and
+        # `github.repository` carries the organisation's capitalisation.
+        # metadata-action lowercased it while the name came from `tags:`;
+        # push-by-digest takes the name verbatim, so do it here.
+        run: |
+          printf 'ref=%s\n' \
+            "$(printf '%s' "ghcr.io/${{ github.repository }}-server" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Push by digest, with no tag
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: ./computer-use-server
+          outputs: type=image,name=${{ steps.img.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
 
   build-cleanup:
     name: Build Cleanup Image
@@ -162,22 +198,23 @@ jobs:
       contents: read
       packages: write
     outputs:
-      # The pushed image digest (sha256:...), consumed by sign-images below.
-      digest: ${{ steps.build.outputs.digest }}
+      # The pushed image digest (sha256:...), consumed by `sign` and `promote`
+      # below. Empty on pull_request, where the push step does not run.
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}-cleanup
@@ -191,15 +228,34 @@ jobs:
             type=match,pattern=v(.*),group=1
             type=sha
 
-      - uses: docker/build-push-action@v7
-        id: build
+      - name: Build, without publishing anything
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: ./cron
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          push: false
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Lowercase the image name
+        id: img
+        # Registries reject uppercase in a repository name, and
+        # `github.repository` carries the organisation's capitalisation.
+        # metadata-action lowercased it while the name came from `tags:`;
+        # push-by-digest takes the name verbatim, so do it here.
+        run: |
+          printf 'ref=%s\n' \
+            "$(printf '%s' "ghcr.io/${{ github.repository }}-cleanup" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Push by digest, with no tag
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: ./cron
+          outputs: type=image,name=${{ steps.img.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
 
   build-webui:
     name: Build Patched Open WebUI Image
@@ -208,22 +264,23 @@ jobs:
       contents: read
       packages: write
     outputs:
-      # The pushed image digest (sha256:...), consumed by sign-images below.
-      digest: ${{ steps.build.outputs.digest }}
+      # The pushed image digest (sha256:...), consumed by `sign` and `promote`
+      # below. Empty on pull_request, where the push step does not run.
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}-webui
@@ -237,119 +294,205 @@ jobs:
             type=match,pattern=v(.*),group=1
             type=sha
 
-      - uses: docker/build-push-action@v7
-        id: build
+      - name: Build, without publishing anything
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: ./openwebui
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          push: false
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  sign-images:
-    name: Sign + SBOM-attest pushed images
-    # Publish-coupled signing AND provenance: needs:-gated on the four image
-    # builds and running on every trigger that pushes (main and tags alike),
-    # it signs each image by the exact digest its build step pushed - never
-    # by a mutable tag, never in a separate workflow that can drift from what
-    # was actually published - and attests build provenance for the same
-    # digests (SLSA provenance in the GitHub attestation store + pushed to
-    # the registry; the Build-L3 isolation upgrade is the org reusable
-    # workflow tracked in the licensing-posture BoM row for Sigstore/SLSA).
-    # The tag-only supply-chain workflow remains the manual re-attestation
-    # path; the publish path is signed here.
+      - name: Lowercase the image name
+        id: img
+        # Registries reject uppercase in a repository name, and
+        # `github.repository` carries the organisation's capitalisation.
+        # metadata-action lowercased it while the name came from `tags:`;
+        # push-by-digest takes the name verbatim, so do it here.
+        run: |
+          printf 'ref=%s\n' \
+            "$(printf '%s' "ghcr.io/${{ github.repository }}-webui" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Push by digest, with no tag
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: ./openwebui
+          outputs: type=image,name=${{ steps.img.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+  sign:
+    name: Sign each digest, while no tag points at it
     needs: [build-sandbox, build-server, build-cleanup, build-webui]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # The approval sits here rather than after publication. A reviewer holding
+    # this job holds the release, and nothing is pullable by name until
+    # `promote` runs -- so the wait exposes nothing. Held after a tagged push,
+    # the same wait would be a window in which the image is public and
+    # unsigned.
+    environment: production
     permissions:
       contents: read
-      # packages:write lets cosign push signatures and SBOM attestations next
-      # to the images; id-token:write mints the OIDC token keyless signing
-      # exchanges for a short-lived Fulcio certificate - no long-lived key;
-      # attestations:write lets attest-build-provenance record provenance in
-      # the GitHub attestation store.
-      packages: write
-      id-token: write
-      attestations: write
+      id-token: write     # Cosign keyless via Sigstore OIDC.
+      packages: write     # Signatures and attestations are pushed to GHCR.
+      attestations: write # Build provenance in the GitHub attestation store.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suffix: ""
+            digest: ${{ needs.build-sandbox.outputs.digest }}
+          - suffix: "-server"
+            digest: ${{ needs.build-server.outputs.digest }}
+          - suffix: "-cleanup"
+            digest: ${{ needs.build-cleanup.outputs.digest }}
+          - suffix: "-webui"
+            digest: ${{ needs.build-webui.outputs.digest }}
     env:
-      DIGEST_SANDBOX: ${{ needs.build-sandbox.outputs.digest }}
-      DIGEST_SERVER: ${{ needs.build-server.outputs.digest }}
-      DIGEST_CLEANUP: ${{ needs.build-cleanup.outputs.digest }}
-      DIGEST_WEBUI: ${{ needs.build-webui.outputs.digest }}
+      SUFFIX: ${{ matrix.suffix }}
+      DIGEST: ${{ matrix.digest }}
+      REPO: ${{ github.repository }}
+
     steps:
-      - name: install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
-      - name: install syft
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: cosign keyless sign + SPDX attest - every pushed image by digest
+
+      - name: Resolve the reference, refusing an absent digest
+        id: ref
+        # Shared with gate3-rehearsal.yml, which exercises this exact file
+        # against a throwaway registry. An inline copy here would mean the
+        # rehearsal proves the copy.
+        run: bash tests/security/resolve_ref_guard.sh
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@1aa8e0f2454b781fbf0fbf306a4c9533a0c57409  # v3.7.0
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@fc46e51fd3cb168ffb36c6d1915723c47db58abb  # v0.17.7
+        with:
+          # Pinning `uses:` pins the action, not the scanner it fetches.
+          # Held at the build the pipeline already resolved to, so this
+          # changes determinism and not the SBOM's contents.
+          syft-version: v1.16.0
+
+      - name: Generate SBOM (SPDX JSON)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: syft "$IMAGE_REF" -o spdx-json=sbom.spdx.json
+
+      - name: Refuse to attest an SBOM that describes nothing
+        # Shared with gate3-rehearsal.yml, which drives this script through
+        # three fixtures that each violate one of its conditions.
+        run: bash tests/security/sbom_guard.sh sbom.spdx.json
+
+      - name: Sign the digest (keyless via Sigstore)
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: cosign sign --yes "$IMAGE_REF"
+
+      - name: Attest the SBOM against the digest
+        env:
+          IMAGE_REF: ${{ steps.ref.outputs.ref }}
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "$IMAGE_REF"
+
+      - name: Derive the lowercase provenance subject name
+        # `subject-name` is the image name alone, while resolve_ref_guard.sh
+        # emits name@digest. Registries reject uppercase in a repository name
+        # and `github.repository` carries the organisation's capitalisation,
+        # so the same fold applied there is applied here.
         run: |
-          set -euo pipefail
-          # OCI references must be lowercase; github.repository preserves the
-          # org's original case.
-          repo="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          for ref in \
-            "${repo}@${DIGEST_SANDBOX}" \
-            "${repo}-server@${DIGEST_SERVER}" \
-            "${repo}-cleanup@${DIGEST_CLEANUP}" \
-            "${repo}-webui@${DIGEST_WEBUI}"; do
-            case "$ref" in
-              *@sha256:*) ;;
-              *)
-                # Fail loudly: a build job that pushed without exporting a
-                # digest must never leave its image unsigned on the registry.
-                echo "a build job exported no digest (got: ${ref}) - refusing to leave a pushed image unsigned" >&2
-                exit 1
-                ;;
-            esac
-            echo "--- signing ${ref}"
-            cosign sign --yes "$ref"
-            syft "$ref" -o spdx-json > sbom.spdx.json
-            cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$ref"
+          printf 'SUBJECT_NAME=ghcr.io/%s%s\n' \
+            "$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')" "$SUFFIX" >> "$GITHUB_ENV"
+
+      - name: Attest build provenance against the same digest
+        # SLSA provenance recorded in the GitHub attestation store (`gh
+        # attestation verify`) and pushed to the registry beside the image.
+        # The cosign signature says who signed the bytes; the provenance says
+        # which workflow, at which commit, produced them. It runs inside
+        # `sign` so that, like the signature, it exists before `promote`
+        # attaches the first reference a consumer can pull.
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-name: ${{ env.SUBJECT_NAME }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+
+  promote:
+    name: Attach release tags to digests that are already signed
+    # `sign` is in `needs`, so this job cannot start until every signature
+    # exists. That edge is the whole gate: it is what makes the tag -- the
+    # first reference a consumer can pull -- appear after the signature
+    # rather than beside it.
+    needs: [build-sandbox, build-server, build-cleanup, build-webui, sign]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suffix: ""
+            digest: ${{ needs.build-sandbox.outputs.digest }}
+          - suffix: "-server"
+            digest: ${{ needs.build-server.outputs.digest }}
+          - suffix: "-cleanup"
+            digest: ${{ needs.build-cleanup.outputs.digest }}
+          - suffix: "-webui"
+            digest: ${{ needs.build-webui.outputs.digest }}
+    env:
+      SUFFIX: ${{ matrix.suffix }}
+      DIGEST: ${{ matrix.digest }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9  # v6.1.0
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
+          tags: |
+            type=ref,event=branch
+            type=match,pattern=v(.*),group=1
+            type=sha
+
+      - name: Point every release tag at the signed digest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          if [ -z "$DIGEST" ]; then
+            echo "::error::no digest to promote" >&2
+            exit 1
+          fi
+          repo_lower="$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')"
+          src="ghcr.io/${repo_lower}${SUFFIX}@${DIGEST}"
+          printf '%s\n' "$TAGS" | sed '/^[[:space:]]*$/d' | while read -r tag; do
+            echo "promoting ${tag} -> ${src}"
+            docker buildx imagetools create --tag "$tag" "$src"
           done
-      # Build provenance per pushed digest (actions/attest-build-provenance
-      # records it in the GitHub attestation store - `gh attestation verify` -
-      # and pushes it to the registry next to the image). Same mechanism as
-      # the ocu-filestore release pipeline. The subject name must be
-      # lowercase; github.repository preserves the org's original case.
-      - name: derive the lowercase image-name base
-        run: echo "REPO_LC=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: attest build provenance - sandbox image
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: ${{ env.REPO_LC }}
-          subject-digest: ${{ needs.build-sandbox.outputs.digest }}
-          push-to-registry: true
-      - name: attest build provenance - server image
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: ${{ env.REPO_LC }}-server
-          subject-digest: ${{ needs.build-server.outputs.digest }}
-          push-to-registry: true
-      - name: attest build provenance - cleanup image
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: ${{ env.REPO_LC }}-cleanup
-          subject-digest: ${{ needs.build-cleanup.outputs.digest }}
-          push-to-registry: true
-      - name: attest build provenance - webui image
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: ${{ env.REPO_LC }}-webui
-          subject-digest: ${{ needs.build-webui.outputs.digest }}
-          push-to-registry: true
 
   test:
     name: Test
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Run structure and English-only tests
         run: |
@@ -363,9 +506,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.13'
 
@@ -387,12 +530,12 @@ jobs:
     # 2026-04-19 regression in one CI run.
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
       - name: Build computer-use-server image locally
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: ./computer-use-server
           load: true
@@ -446,7 +589,7 @@ jobs:
     # the publish step.
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
 
       - name: Free disk space for the workspace image
         run: |
@@ -454,10 +597,10 @@ jobs:
                       /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
       - name: Build workspace image (linux/amd64, local tag)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
           platforms: linux/amd64
@@ -468,7 +611,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=sandbox-integration
 
       - name: Build server image (local tag)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: ./computer-use-server
           push: false
@@ -477,7 +620,7 @@ jobs:
           cache-from: type=gha,scope=server-smoke
           cache-to: type=gha,mode=max,scope=server-integration
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.13'
 

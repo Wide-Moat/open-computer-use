@@ -3,7 +3,7 @@
 
 ---
 status: accepted
-last-reviewed: 2026-06-28
+last-reviewed: 2026-07-01
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -60,5 +60,5 @@ The south mount RPC and its weak-session-JWT-to-egress credential exchange are l
 
 ## Open questions
 
-- The per-operation request/response bodies on the north leg stay TBD (CONSTITUTION VII); this ADR pins the route, resolver, and auth shape, not the field-level bodies. `DELETE` is wired but stays gated on the BFF until its body is frozen. Tracked in [#304](https://github.com/Wide-Moat/open-computer-use/issues/304).
-- `downloadArchive` stays a sibling OCU-extension route off `/v1/files` ([ADR-0023](0023-files-api-north-contract.md)); its place on the north leg is out of this five-verb freeze. Tracked in [#304](https://github.com/Wide-Moat/open-computer-use/issues/304).
+- The per-operation request/response bodies on the north leg: resolved by [ADR-0028](0028-files-api-body-freeze.md) ([#304](https://github.com/Wide-Moat/open-computer-use/issues/304)) — bodies frozen in `contracts/openapi/files-api.openapi.yaml`, the `DELETE` gate opens against the frozen shape.
+- `downloadArchive` placement: resolved by [ADR-0028](0028-files-api-body-freeze.md) ([#304](https://github.com/Wide-Moat/open-computer-use/issues/304)) — `GET /v1/files/archive` is an additive OCU-extension north route beside the five frozen verbs.
