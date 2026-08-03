@@ -84,6 +84,10 @@ demo-recordings/
 demo-frames/
 docs/demo-prompts/
 tools/
+# ...but openwebui/tools/ is shipped source: the pattern above matches a
+# directory of that name at any depth, so a new file there would be dropped
+# silently while its already-tracked siblings kept working.
+!openwebui/tools/
 POST.md
 
 # GSD planning artefacts — private mirror only (see GitLab remote `private`).
