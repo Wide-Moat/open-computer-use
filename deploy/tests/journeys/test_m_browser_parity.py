@@ -812,8 +812,21 @@ def _owui_login_and_open_chat(page):
     """Sign in to the real OpenWebUI browser UI and reach the chat input,
     dismissing the first-run 'What's New' release-notes modal that otherwise
     intercepts every click on the composer."""
-    page.goto(OPENWEBUI_URL + "/", wait_until="networkidle", timeout=30000)
-    time.sleep(2)
+    # Creating a guest session churns the container network, and a browser that
+    # navigates inside that window loses its lazy chunks mid-load: the server
+    # still serves the full 17 KB of HTML, but SvelteKit never mounts and the
+    # body comes back empty. Measured: body is empty at 0s after a guest exec
+    # and normal at 20s and 40s, with the browser reporting ERR_NETWORK_CHANGED
+    # and "Failed to fetch dynamically imported module". Reload until the app
+    # actually mounts rather than filling a form that is not on the page.
+    for _ in range(6):
+        page.goto(OPENWEBUI_URL + "/", wait_until="networkidle", timeout=30000)
+        time.sleep(2)
+        if page.query_selector("input[type=email]") or page.query_selector(
+            "[contenteditable=true]"
+        ):
+            break
+        time.sleep(5)
     page.fill("input[type=email]", _OWUI_EMAIL)
     page.fill("input[type=password]", _OWUI_PASSWORD)
     page.click('button:has-text("Sign in")')
