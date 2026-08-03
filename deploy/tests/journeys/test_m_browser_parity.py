@@ -2168,3 +2168,80 @@ def test_m14_switching_chats_rebinds_the_panel():
             )
         finally:
             browser.close()
+
+
+# ---------------------------------------------------------------------------
+# M15 -- with no chat open, the panel shows nothing rather than everything.
+#
+# The pane is bound to a chat by the ?chat= the panel puts on the portal URL.
+# With no chat there is no id to put there, and a portal opened without one
+# binds the BASE scope -- the whole tree, every chat's files. Rendering that
+# under a control labelled "Files produced in this chat" is worse than an empty
+# panel: it is a cross-chat disclosure with a label asserting the opposite.
+#
+# The panel handles this by not mounting the pane at all and showing a hint.
+# M12 and M14 both arrive with a chat already open, so neither can see it.
+# ---------------------------------------------------------------------------
+
+
+def test_m15_panel_with_no_chat_mounts_nothing():
+    """On a page that is not a chat, the panel embeds no pane.
+
+    Red-probe: let the panel mount the portal for an empty chat id and this
+    fails on the iframe count, with the pane listing the base scope's tree.
+    """
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            _owui_login_and_open_chat(page)
+
+            # Nothing is sent, so the path stays off /c/<id>. Asserted, not
+            # assumed: a stray chat id here would make the whole test vacuous.
+            href = page.evaluate("() => location.href")
+            assert "/c/" not in href, (
+                f"expected a page that is not a chat, got {href!r}"
+            )
+
+            deadline = time.monotonic() + 40
+            while time.monotonic() < deadline:
+                opened = page.evaluate(
+                    "() => { const p = document.getElementById('ocu-file-pane-panel');"
+                    "        return p ? p.getBoundingClientRect().x < window.innerWidth"
+                    "                  : null; }"
+                )
+                if opened is True:
+                    break
+                toggle = page.query_selector("#ocu-file-pane-panel-toggle")
+                assert toggle is not None, (
+                    "the chat carries no Files toggle -- the panel patch is not "
+                    "in the running OpenWebUI image"
+                )
+                toggle.click()
+                time.sleep(3)
+            assert opened is True, "the Files panel never came on screen"
+
+            # Give the panel's interval several turns to mount something if it
+            # were going to. Asserting immediately would pass before it tried.
+            time.sleep(8)
+
+            frames = page.evaluate(
+                "() => document.querySelectorAll('#ocu-file-pane-panel iframe').length"
+            )
+            assert frames == 0, (
+                f"the panel embedded {frames} pane iframe(s) with no chat open; "
+                "with no ?chat= the portal binds the base scope, so the panel "
+                "lists every chat's files under a 'this chat' label"
+            )
+            text = page.evaluate(
+                "() => { const p = document.getElementById('ocu-file-pane-panel');"
+                "        return p ? p.innerText : ''; }"
+            )
+            assert "Open a chat" in text, (
+                f"the panel shows no hint explaining the empty state: {text!r}"
+            )
+        finally:
+            browser.close()
