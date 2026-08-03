@@ -1210,10 +1210,16 @@ def test_m8_live_model_invokes_pptx_skill_and_ooxml_valid():
             f"body=(zipfile.ZipFile(p).read('ppt/slides/slide1.xml').decode('utf-8','replace') if has_slide else ''); "
             f"print('OOXML', z, has_slide, ('{marker}' in body))\""
         )
+        # Read it back in the CHAT'S OWN scope: per-chat isolation retired the
+        # "a fresh chat id sees the same outputs tree" assumption these tests were
+        # written against, so a fresh id opens an empty tree and the artifact is
+        # invisible however well the turn went.
+        _c = re.search(r"/c/([0-9a-f-]{36})", page.url)
+        read_as = _c.group(1) if _c else f"m8v-{uuid.uuid4().hex[:8]}"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             status, text, is_error = _guest_exec(
-                f"m8v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+                read_as, probe, timeout=60
             )
             out = (text or "").strip()
             if status == 200 and not is_error and out.startswith("OOXML"):
@@ -1345,10 +1351,16 @@ def test_m9_live_model_invokes_pdf_skill_and_pdf_valid():
             f"mk=b'{marker}' in d; "
             "print('PDF', head, mk)\""
         )
+        # Read it back in the CHAT'S OWN scope: per-chat isolation retired the
+        # "a fresh chat id sees the same outputs tree" assumption these tests were
+        # written against, so a fresh id opens an empty tree and the artifact is
+        # invisible however well the turn went.
+        _c = re.search(r"/c/([0-9a-f-]{36})", page.url)
+        read_as = _c.group(1) if _c else f"m9v-{uuid.uuid4().hex[:8]}"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             status, text, is_error = _guest_exec(
-                f"m9v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+                read_as, probe, timeout=60
             )
             out = (text or "").strip()
             if status == 200 and not is_error and out.startswith("PDF"):
@@ -1473,10 +1485,16 @@ def test_m10_live_model_invokes_docx_skill_and_ooxml_valid():
             f"body=(zipfile.ZipFile(p).read('word/document.xml').decode('utf-8','replace') if has_doc else ''); "
             f"print('DOCX', z, has_doc, ('{marker}' in body))\""
         )
+        # Read it back in the CHAT'S OWN scope: per-chat isolation retired the
+        # "a fresh chat id sees the same outputs tree" assumption these tests were
+        # written against, so a fresh id opens an empty tree and the artifact is
+        # invisible however well the turn went.
+        _c = re.search(r"/c/([0-9a-f-]{36})", page.url)
+        read_as = _c.group(1) if _c else f"m10v-{uuid.uuid4().hex[:8]}"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             status, text, is_error = _guest_exec(
-                f"m10v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+                read_as, probe, timeout=60
             )
             out = (text or "").strip()
             if status == 200 and not is_error and out.startswith("DOCX"):
