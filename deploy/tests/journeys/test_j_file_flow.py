@@ -438,14 +438,22 @@ def test_j2_pane_upload_readable_by_guest(tmp_path):
     stat-visible but empty read (the retired #143 failure mode, once pinned
     here as a strict xfail) must FAIL, never pass."""
     _require_gateway()
-    jar, csrf = _pane_session(tmp_path)
+
+    # ONE chat id for BOTH halves. Under per-chat isolation the storage scope
+    # is derived from the chat, so a pane opened with no chat uploads into the
+    # BASE tree while a guest named for its own chat mounts fs-fleet-<hash> and
+    # reads a different subtree. The bytes are stored correctly; they are just
+    # not where this guest looks, and the read surfaces as "No such file or
+    # directory" -- indistinguishable from an upload that never landed.
+    chat = f"j2-{uuid.uuid4().hex[:8]}"
+    jar, csrf = _pane_session(tmp_path, chat_id=chat)
 
     name = f"j2-{uuid.uuid4().hex[:10]}.txt"
     payload = f"J2-UPLOAD-{uuid.uuid4().hex}"
     _pane_upload(jar, csrf, name, payload)
 
     is_err, text = _guest_bash(
-        f"j2-{uuid.uuid4().hex[:8]}",
+        chat,
         f"cat /mnt/user-data/uploads/{name}",
     )
     assert not is_err, f"guest read errored: {text[:200]}"
@@ -585,14 +593,20 @@ def test_j5b_guest_cannot_tamper_existing_upload(tmp_path):
     the SECURITY invariant (original bytes intact) rather than a non-zero exit.
     """
     _require_gateway()
-    jar, csrf = _pane_session(tmp_path)
+
+    # ONE chat for BOTH halves: the scope is derived from the chat, so a pane
+    # opened with no chat uploads into the BASE tree while this guest mounts
+    # its own. The tamper keystone would then run against a file the guest
+    # cannot see, and the test fails on its own precondition instead of on
+    # the security property it exists to guard.
+    chat = f"j5b-{uuid.uuid4().hex[:8]}"
+    jar, csrf = _pane_session(tmp_path, chat_id=chat)
 
     name = f"j5b-{uuid.uuid4().hex[:10]}.txt"
     original = b"ORIGINAL_USER_BYTES_" + uuid.uuid4().hex[:8].encode()
     _pane_upload(jar, csrf, name, original, mime="text/plain")
 
     gpath = f"/mnt/user-data/uploads/{name}"
-    chat = f"j5b-{uuid.uuid4().hex[:8]}"
 
     # The guest must first SEE the user's real upload (bounded write-back).
     end = time.monotonic() + 30
