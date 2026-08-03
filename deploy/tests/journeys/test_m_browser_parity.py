@@ -2276,3 +2276,74 @@ def test_m15_panel_with_no_chat_mounts_nothing():
             )
         finally:
             browser.close()
+
+
+def test_m17_pane_shows_a_file_the_first_api_page_omits(tmp_path):
+    """The #182 keystone that cannot go vacuous: the pane must display a file
+    the server's FIRST page does not contain.
+
+    Every other pane-list guard here asserts a fresh upload is visible, which an
+    empty or small scope satisfies trivially -- and one of them cites an
+    `order=desc` parameter that measurably does not exist (GET /v1/files?order=desc
+    returns a byte-identical first page to the same call without it). This test
+    removes both loopholes by ARMING the condition inside itself and refusing to
+    pass when it is not armed:
+
+      1. upload into the saturated base scope;
+      2. read page 1 of the API directly and REQUIRE the new file to be absent
+         while has_more is true -- if it is present, the scope is too small to
+         prove anything and the test skips loudly rather than passing;
+      3. only then open the pane in a real browser and require the file to appear.
+
+    Step 2 is what makes step 3 evidence: nothing but following next_cursor past
+    page 1 can put that filename in the pane, because page 1 provably lacks it.
+    """
+    import json as _json
+
+    import test_j_file_flow as J
+    from playwright.sync_api import sync_playwright
+
+    jar, csrf = J._pane_session(tmp_path)  # no chat id -> the shared base scope
+    name = f"m17-{uuid.uuid4().hex[:10]}.txt"
+    J._pane_upload(jar, csrf, name, "M17-BEYOND-PAGE-ONE")
+
+    raw = subprocess.run(
+        ["curl", "-sS", "-b", str(jar), *J._pane_scope_headers(),
+         f"{J.PANE_URL}/api/v1/files"],
+        capture_output=True, text=True, timeout=30,
+    )
+    body = _json.loads(raw.stdout)
+    page1 = [f.get("filename") for f in body.get("data", [])]
+
+    if name in page1 or not body.get("has_more"):
+        pytest.skip(
+            f"condition NOT armed: the fresh file is on page 1 "
+            f"(size={len(page1)}, has_more={body.get('has_more')!r}). A scope this "
+            "small proves nothing about paging, so this is a LOUD SKIP -- never "
+            "read it as green."
+        )
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = next(
+                (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
+            )
+            assert frame is not None, (
+                f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
+                "portal via localhost, not 127.0.0.1)"
+            )
+            try:
+                frame.wait_for_selector(f"text={name}", timeout=45000)
+            except Exception as exc:
+                raise AssertionError(
+                    f"the pane never showed {name}, which page 1 of the API does "
+                    f"not contain (page-1 size {len(page1)}, has_more=True). The "
+                    "pane is not following next_cursor: a file the user just "
+                    "uploaded is stored correctly and invisible to them. "
+                    f"({str(exc)[:120]})"
+                ) from exc
+        finally:
+            browser.close()
