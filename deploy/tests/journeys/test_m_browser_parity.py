@@ -1959,6 +1959,37 @@ def test_m13_one_chats_pane_cannot_see_another_chats_file():
     import tempfile
 
     import test_j_file_flow as J
+    import test_i_mcp_surface as I
+
+    # Every other M test is gated on the browser or on a configured model and
+    # skips where neither exists. This one talks to the gateway directly, so
+    # without its own gate it runs anywhere -- and on a runner with no fleet
+    # _guest_exec raises "curl transport failure rc=7" instead of skipping,
+    # which reads as a product failure when the truth is that nothing was
+    # deployed to test.
+    #
+    # The I-suite's equivalent is an autouse fixture, which pytest refuses to
+    # let another module call, so its three conditions are mirrored here. The
+    # asymmetry is deliberate and matches it: an ABSENT gateway is a skip, a
+    # gateway that answers 401 is a FAILURE -- that means the bearer and the
+    # running boot-set came from different trees, and skipping there once let a
+    # stale bearer pass as a clean capability skip.
+    if not I._BOOT_SET.exists():
+        pytest.skip(f"gateway boot-set not rendered at {I._BOOT_SET} -- SKIP, not a pass.")
+    if I._bearer() is None:
+        pytest.skip(f"gateway bearer not rendered at {I._BEARER_FILE} -- SKIP, not a pass.")
+    if not I._gateway_live():
+        pytest.skip(f"MCP gateway not reachable at {I.GATEWAY_URL} -- SKIP, not a pass.")
+    _probe_status, _probe = I._call("m13-auth-probe", I._bash_body("true"), timeout=8)
+    if _probe_status == 401 or (
+        isinstance(_probe, dict)
+        and (_probe.get("error") or {}).get("message") == "unauthenticated"
+    ):
+        pytest.fail(
+            f"gateway at {I.GATEWAY_URL} returned 401 for the bearer at "
+            f"{I._BEARER_FILE}: bearer and running boot-set are from different "
+            "trees. A reachable-but-401 gateway is a harness desync, not a skip."
+        )
 
     chat_a = f"m13a-{uuid.uuid4().hex[:8]}"
     chat_b = f"m13b-{uuid.uuid4().hex[:8]}"
