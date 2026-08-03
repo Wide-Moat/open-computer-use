@@ -1059,10 +1059,17 @@ def test_m7_live_model_invokes_skill_and_artifact_dims_match():
             f"im=Image.open('{path}'); "
             "print(im.format, im.size[0], im.size[1], im.info.get('Software',''))\""
         )
+        # Read it back in the CHAT'S OWN scope. A fresh _guest_exec chat id used
+        # to see the same outputs tree, and the test still says so a few lines up;
+        # per-chat isolation retired that, so a fresh id now opens an empty tree and
+        # the artifact is invisible however well the turn went. The chat id is the
+        # one OpenWebUI settled in the URL.
+        owui_chat = re.search(r"/c/([0-9a-f-]{36})", page.url)
+        read_as = owui_chat.group(1) if owui_chat else f"m7v-{uuid.uuid4().hex[:8]}"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             status, text, is_error = _guest_exec(
-                f"m7v-{uuid.uuid4().hex[:8]}", probe, timeout=60
+                read_as, probe, timeout=60
             )
             out = (text or "").strip()
             if status == 200 and not is_error and out.startswith("PNG"):
