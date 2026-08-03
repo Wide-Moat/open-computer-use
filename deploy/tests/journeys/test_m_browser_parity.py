@@ -289,11 +289,24 @@ def test_m2_chat_upload_reaches_guest():
     with open(local, "w") as fh:
         fh.write(payload)
 
+    # ONE chat id for BOTH halves. Under ADR-0030 the storage scope is derived
+    # from the chat, so the browser that uploads and the guest that reads must
+    # name the SAME chat or they address different subtrees. A portal opened
+    # with no ?chat= mints a session on the BASE scope (fs-fleet) while the
+    # guest exec below carries X-Chat-Id and mounts fs-fleet-<hash> -- the
+    # upload then lands in a tree the guest never sees, and the read fails as
+    # "No such file or directory" with the object sitting safely in the store.
+    chat_id = f"m2-{uuid.uuid4().hex[:8]}"
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         try:
             page = browser.new_page()
-            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            page.goto(
+                PORTAL_URL + f"?chat={chat_id}",
+                wait_until="networkidle",
+                timeout=30000,
+            )
             frame = next(
                 (f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None
             )
@@ -301,7 +314,22 @@ def test_m2_chat_upload_reaches_guest():
                 f"pane iframe ({PANE_FRAME_URL}) not found in portal (reach the "
                 "portal via localhost, not 127.0.0.1 -- CSP frame-ancestors)"
             )
-            frame.wait_for_selector("text=Download", timeout=45000)
+            # Barrier on the pane's EMPTY state, not on a Download row. This
+            # chat is brand new, so its scope holds nothing and no row can ever
+            # appear -- a "wait for Download" barrier here only ever passed by
+            # reading the shared base scope's rows, which is the very leak this
+            # test must not depend on. The empty-state line proves the pane
+            # bootstrapped its session AND resolved the list FOR THIS CHAT: if
+            # the scope binding regressed to the base tree the pane would show
+            # its rows instead and this wait would fail.
+            frame.wait_for_selector(
+                "text=No files in this session yet.", timeout=45000
+            )
+            rows = frame.get_by_text("Download", exact=True).count()
+            assert rows == 0, (
+                f"a brand-new chat's pane already offers {rows} Download "
+                "controls; it is listing another scope's tree"
+            )
             file_input = frame.locator("input[type=file]")
             assert file_input.count() > 0, (
                 "no <input type=file> in the pane -- the UploadZone affordance is "
@@ -331,7 +359,6 @@ def test_m2_chat_upload_reaches_guest():
     # The guest's read-only uploads view must serve the EXACT uploaded bytes.
     # Poll for the FUSE/dir-cache propagation lag (the pane-DOM wait used to
     # double as this barrier); assert byte-equality, never a proxy.
-    chat_id = f"m2g-{uuid.uuid4().hex[:8]}"
     got_bytes = False
     last = ""
     for _ in range(6):
