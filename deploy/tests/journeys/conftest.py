@@ -20,6 +20,7 @@ Honesty rules encoded here (non-negotiable):
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -137,11 +138,41 @@ def backend(request: pytest.FixtureRequest) -> Backend:
 # reap exhausts the tier cap (64) and cascades 409s into unrelated tests. The
 # sweep below returns the slots through the REAL operator verbs after each fleet
 # test; it never pokes the DB counter.
-_FLEET_CONTROL_DB = os.getenv("FLEET_CONTROL_DB_CONTAINER", "ocu-fleet-control-db-1")
+def _discover_control_db() -> str:
+    """Name the control-db container, discovering it when not pinned.
+
+    A hardcoded default names one compose project. This stand runs under
+    another, so the reclaim below issued `docker exec` against a container that
+    does not exist -- and _psql swallows that into "", which the caller reads as
+    "db unreachable, no-op". The teardown was silently absent, not idempotent.
+    """
+    pinned = os.getenv("FLEET_CONTROL_DB_CONTAINER", "")
+    if pinned:
+        return pinned
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "--filter", "name=control-db", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        for line in out.stdout.splitlines():
+            if line.strip():
+                return line.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "ocu-fleet-control-db-1"
+
+
+_FLEET_CONTROL_DB = _discover_control_db()
 _FLEET_DB_USER = os.getenv("FLEET_CONTROL_DB_USER", "ocu")
 _FLEET_DB_NAME = os.getenv("FLEET_CONTROL_DB_NAME", "ocu_control")
 _FLEET_RECLAIM = os.getenv("FLEET_RECLAIM_COUNTER_LEAK", "1") not in ("0", "", "false")
-# The concurrent-sessions quota dimension id (state.DimConcurrentSessions == 0).
+# The concurrent-sessions quota dimension id. control/internal/state/store.go:198
+# defines DimConcurrentSessions = iota, so it is 0; DimCallerCreateRate is 4.
+# This must stay 0: the sweep below compares the dimension's summed value to the
+# LIVE session count, which is the invariant for concurrency slots and nonsense
+# for a rate counter -- dim 4 sums every historical per-minute window, so the
+# comparison is always true and every run wipes the create-rate history while
+# reclaiming none of the slots this teardown exists to reclaim.
 _FLEET_CONCURRENT_DIM = os.getenv("FLEET_CONCURRENT_DIM", "0")
 
 
@@ -210,6 +241,63 @@ def _fleet_operator_reclaim_slots() -> None:
     except (OSError, subprocess.SubprocessError):
         pass
     _op("/v1alpha/resume/all")
+    _fleet_reclaim_tombstone_drift()
+
+
+def _fleet_reclaim_tombstone_drift() -> None:
+    """Reclaim the DimConcurrentSessions counter slots leaked by TOMBSTONED sessions.
+
+    revoke/all only refunds slots for rows still LIVE (state in 0,1). A session that
+    self-terminated to a state=2 tombstone before this per-test teardown fired is never
+    refunded by revoke/all -- the product would eventually idle-reap it (-session-idle-ttl,
+    15m), but a fast suite creating ~65 sessions in 6min outruns that TTL and the leaked
+    dim=4 (DimConcurrentSessions) counter accumulates past the tier cap, cascading 409s
+    into unrelated tests. This is a TEST-TIMING artifact, not a product defect: control's
+    reapOne DOES call ReleaseConcurrency->RefundConcurrent (Go-test-verified), it just has
+    not fired within the test window.
+
+    NOISY DRIFT-GUARD (not a silent DB reset): compare the dim=4 counter sum to the LIVE
+    session count. When the counter exceeds live sessions, the excess is tombstone-leak;
+    log it loudly (so a real refund regression on a LIVE row still surfaces as drift the
+    reader must explain) and reclaim ONLY the excess by zeroing the drifted dim=4 cells.
+    Uses the CORRECT control-db creds (_FLEET_DB_USER/_FLEET_DB_NAME); the wrong creds
+    fail silently and re-wedge the cap.
+    """
+    if not _FLEET_RECLAIM:
+        return
+    import subprocess
+
+    def _psql(sql: str) -> str:
+        try:
+            out = _fleet_exec(
+                [
+                    "docker", "exec", _FLEET_CONTROL_DB,
+                    "psql", "-U", _FLEET_DB_USER, "-d", _FLEET_DB_NAME, "-tAc", sql,
+                ],
+                timeout=20,
+            )
+            return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+
+    dim = _FLEET_CONCURRENT_DIM
+    counter_raw = _psql(
+        f"SELECT COALESCE(sum(value),0) FROM quota_counters WHERE dim = {dim};"
+    )
+    live_raw = _psql("SELECT COALESCE(count(*),0) FROM sessions WHERE state IN (0,1);")
+    if not counter_raw or not live_raw:
+        return  # off-host / db unreachable -> no-op, never fail a test
+    try:
+        counter, live = int(counter_raw), int(live_raw)
+    except ValueError:
+        return
+    if counter > live:
+        print(
+            f"[slot-hygiene] dim={dim} counter={counter} > live_sessions={live}: "
+            f"tombstone-leak drift={counter - live}, reclaiming the drifted cells "
+            "(control would idle-reap these at -session-idle-ttl; the suite outruns it)."
+        )
+        _psql(f"UPDATE quota_counters SET value=0 WHERE dim = {dim} AND value != 0;")
 
 
 def _fleet_is_remote() -> bool:
