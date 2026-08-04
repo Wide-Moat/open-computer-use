@@ -197,6 +197,12 @@ def _ensure_scope_saturated_for_182(jar, csrf):
     )
 
 
+# How long a guest-mount read waits for the FUSE directory cache to age out.
+# Matches _pane_find's north-leg deadline; the two directions lag for different
+# reasons (write-back there, cache expiry here) but on the same order.
+_GUEST_READ_DEADLINE_S = 45
+
+
 def _pane_find(jar, filename, deadline_s=45):
     """Poll the pane list until filename appears (guest writes are async
     VFS write-back) or the deadline passes; returns the FileObject or None."""
@@ -459,14 +465,34 @@ def test_j2_pane_upload_readable_by_guest(tmp_path):
     payload = f"J2-UPLOAD-{uuid.uuid4().hex}"
     _pane_upload(jar, csrf, name, payload)
 
-    is_err, text = _guest_bash(
-        chat,
-        f"cat /mnt/user-data/uploads/{name}",
+    # The upload itself is synchronous (a north HTTP POST that ends in
+    # filestore's blocking PutObject), so nothing is waiting to be written.
+    # What lags is the READ side: the guest reaches uploads/ through a FUSE
+    # mount whose directory cache (rclone DirCacheTime, plus the kernel entry
+    # timeout) still holds a listing taken before this name existed, so a cat
+    # of a just-created file can miss until that cache ages out. Reading once
+    # therefore races the cache, not a write: green alone and in its own
+    # module, red in the full suite where the stand is loaded.
+    # Bounded, not a retry-until-green: the loop still ends in the same two
+    # asserts, and a file that never arrives fails with the deadline named.
+    deadline = time.monotonic() + _GUEST_READ_DEADLINE_S
+    while True:
+        is_err, text = _guest_bash(
+            chat,
+            f"cat /mnt/user-data/uploads/{name}",
+        )
+        if not is_err and text.strip() == payload:
+            break
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(3)
+    assert not is_err, (
+        f"guest read errored after {_GUEST_READ_DEADLINE_S}s: {text[:200]}"
     )
-    assert not is_err, f"guest read errored: {text[:200]}"
     assert text.strip() == payload, (
-        f"guest read {len(text.strip())} bytes, want {len(payload)} - "
-        "stat-visible-but-empty is the #143 failure mode"
+        f"guest read {len(text.strip())} bytes, want {len(payload)} after "
+        f"{_GUEST_READ_DEADLINE_S}s - stat-visible-but-empty is the #143 "
+        "failure mode"
     )
 
 
