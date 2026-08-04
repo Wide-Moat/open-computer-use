@@ -270,17 +270,37 @@ class FleetBackend(Backend):
             denied=False,
         )
 
-    def exec_sh(self, script: str) -> ExecResult:
-        """Run ``script`` via ``/bin/busybox sh -c`` in the gVisor guest.
+    _guest_busybox: bool | None = None
 
-        The demo guest image (ocu-guest:assembled-demo) is a static busybox with
-        NO /bin/sh and no coreutils on PATH, so every applet must be invoked
-        through /bin/busybox exactly as deploy/fleet/storage-chain-demo.sh and
-        exec-demo.sh do. A bare ["sh", "-c", ...] there is ENOENT / exit 127,
-        which would make a negative assertion pass for the wrong reason. Routes
-        through the same exec() wire (POST /v1alpha/sessions/exec).
+    def _has_busybox(self) -> bool:
+        """Whether THIS guest image carries /bin/busybox, probed once.
+
+        Two guest images are in play and they disagree on their userland:
+        ocu-guest:assembled-demo is a static busybox with no /bin/sh and no
+        coreutils, while ocu-guest:poc-fat is a full userland with /bin/sh,
+        stat, cat, base64, env, grep and ls -- and NO busybox. Committing to
+        either one turns "this image lacks that file" into a refusal, and a
+        refusal is indistinguishable from a policy denial on this wire: the
+        reply is a bare 409, the audit records Success, the daemon log says
+        nothing. A negative assertion then passes for the wrong reason.
         """
-        return self.exec(["/bin/busybox", "sh", "-c", script])
+        if self._guest_busybox is None:
+            self._guest_busybox = not self.exec(["/bin/busybox", "true"]).denied
+        return self._guest_busybox
+
+    def exec_sh(self, script: str) -> ExecResult:
+        """Run ``script`` through whichever shell THIS guest image carries.
+
+        On the busybox guest every applet must go through /bin/busybox, as
+        deploy/fleet/storage-chain-demo.sh and exec-demo.sh do. On the fat
+        guest that path does not exist, so the same prefix is what breaks the
+        exec -- there the script runs under /bin/sh and the per-applet
+        /bin/busybox prefixes are dropped so each applet resolves on PATH.
+        Routes through the same exec() wire (POST /v1alpha/sessions/exec).
+        """
+        if self._has_busybox():
+            return self.exec(["/bin/busybox", "sh", "-c", script])
+        return self.exec(["/bin/sh", "-c", script.replace("/bin/busybox ", "")])
 
     def list_files(self, scope: str) -> list[FileRef]:
         """List via the F9 /v1/files read plane, scoped to ``scope``.
