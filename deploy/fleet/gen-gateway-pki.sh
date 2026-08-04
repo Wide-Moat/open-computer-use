@@ -32,9 +32,38 @@ if [[ "$FORCE" == "--force" ]]; then
   rm -rf "$PKI_DIR"
 fi
 
-if [[ -f "$PKI_DIR/server.pem" && -f "$PKI_DIR/client.pem" && -f "$PKI_DIR/ca.pem" ]]; then
-  echo "gateway-pki: certs already present in $PKI_DIR (pass --force to re-mint)"
+# Presence is not validity. The CA below is minted for 30 days, so a guard that
+# only asks "does the file exist" pins the stand to an expired chain: control
+# rejects the gateway's handshake, every session create fails, and the suite
+# retries into a dead mTLS for as long as it is allowed to. Measured 2026-08-04:
+# the chain expired at 13:53:20, the first refusal landed 44s later, and this
+# script answered "already present" to every attempt to recover.
+#
+# Ask the certificates instead. -checkend takes seconds and is true when the
+# cert is STILL valid that far ahead, so re-mint whenever any leaf falls inside
+# the renewal window.
+RENEW_WITHIN_S="${RENEW_WITHIN_S:-172800}"   # 48h
+
+pki_is_fresh() {
+  local f
+  for f in "$PKI_DIR/ca.pem" "$PKI_DIR/server.pem" "$PKI_DIR/client.pem"; do
+    [[ -f "$f" ]] || return 1
+    openssl x509 -in "$f" -noout -checkend "$RENEW_WITHIN_S" >/dev/null 2>&1 || return 1
+  done
+  return 0
+}
+
+if pki_is_fresh; then
+  echo "gateway-pki: certs present and valid beyond ${RENEW_WITHIN_S}s (pass --force to re-mint)"
   exit 0
+fi
+
+if [[ -f "$PKI_DIR/ca.pem" ]]; then
+  echo "gateway-pki: existing chain is expired or expires within ${RENEW_WITHIN_S}s -- re-minting"
+  # A re-mint replaces the CA, so every leaf signed by the old one must go too,
+  # including any this script does not itself produce (portal). Preserve their
+  # key + csr + cnf so they can be re-signed against the new CA below.
+  rm -f "$PKI_DIR"/*.pem "$PKI_DIR"/*.srl
 fi
 
 mkdir -p "$PKI_DIR"
@@ -82,6 +111,26 @@ openssl genpkey -algorithm ed25519 -out client.key
 openssl req -new -key client.key -out client.csr -config client.cnf
 openssl x509 -req -in client.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
   -days 30 -extfile client.cnf -extensions v3 -out client.pem
+
+# Leaves this script does not mint itself (portal, and anything added later)
+# still carry a key + csr + cnf here and were signed by the CA we just
+# replaced. Re-sign them, or a re-mint silently drops a client that other
+# services depend on: the embed-portal is what the File Pane bootstraps
+# through, and losing it is not visible until a browser tries.
+for csr in *.csr; do
+  base="${csr%.csr}"
+  [[ "$base" == "client" || "$base" == "server" ]] && continue
+  [[ -f "$base.cnf" ]] || continue
+  openssl x509 -req -in "$csr" -CA ca.pem -CAkey ca.key -CAcreateserial \
+    -days 30 -extfile "$base.cnf" -extensions v3 -out "$base.pem" >/dev/null 2>&1
+  echo "gateway-pki: re-signed $base.pem against the new CA"
+done
+
+# openssl writes keys 0600. The services that read this directory run as other
+# UIDs and mount it read-only, so 0600 boots control into
+# "gateway tls key pair: permission denied" -- measured 2026-08-04. This is a
+# dev CA on a local stand; match the permissions the stack was built against.
+chmod 644 *.key *.pem 2>/dev/null || true
 
 # Lock down the private keys.
 chmod 600 ca.key server.key client.key
