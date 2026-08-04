@@ -360,13 +360,34 @@ def await_fleet_exec_ready(backend: Backend) -> None:
     if getattr(backend, "name", "") != "fleet":
         return
     marker = b"__ocu_exec_ready__"
-    argv = ["/bin/busybox", "echo", marker.decode("ascii")]
+    # The echo binary is NOT the same across guest images: the demo guest is a
+    # static busybox with no /bin/echo, the poc-fat guest has /bin/echo and no
+    # /bin/busybox. Hardcoding either one turns "this image lacks that file"
+    # into twenty seconds of denials that read as a refused exec plane -- the
+    # wire says 409 with an empty body, the audit records Success, and the
+    # daemon log says nothing, so the miss is invisible on every surface.
+    # Measured: on poc-fat, /bin/busybox answers 409 while /bin/echo, /bin/sh
+    # and /usr/bin/python3 all answer 200 on the same session in the same
+    # second. So probe the candidates and let the image pick.
+    candidates = [
+        ["/bin/echo", marker.decode("ascii")],
+        ["/bin/busybox", "echo", marker.decode("ascii")],
+        ["/bin/sh", "-c", "echo " + marker.decode("ascii")],
+    ]
+    argv = candidates[0]
     deadline = time.monotonic() + _FLEET_EXEC_READY_TIMEOUT_S
     consecutive = 0
     last = ""
     while time.monotonic() < deadline:
         try:
             res = backend.exec(argv)
+            if res.denied and consecutive == 0:
+                # This image may not carry that binary. Rotate BEFORE concluding
+                # the exec plane is refused: a missing file and a policy refusal
+                # are indistinguishable on this wire.
+                idx = candidates.index(argv)
+                if idx + 1 < len(candidates):
+                    argv = candidates[idx + 1]
         except BackendUnavailable as exc:
             last = str(exc)
             consecutive = 0
