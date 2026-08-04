@@ -43,6 +43,7 @@ from backends.base import (
     ExecResult,
     PocHoleNotEnforced,
 )
+from guest_probe import tcp_connect_script
 from conftest import await_fleet_exec_ready, real_finding
 
 # HTTP status classes the fleet contract pins for the authz hops (BoundedReason
@@ -401,8 +402,7 @@ def test_d4_guest_network_isolation(backend: Backend, expect):
         ("minio", 9000, "MinIO"),
     ):
         result = backend.exec_sh(
-            f"/bin/busybox nc -w4 {target_host} {target_port} </dev/null; "
-            f"echo __rc=$?"
+            tcp_connect_script(backend, target_host, target_port)
         )
         assert isinstance(result, ExecResult)
         combined = (
@@ -420,7 +420,7 @@ def test_d4_guest_network_isolation(backend: Backend, expect):
         # vacuous. Guard it explicitly so a missing applet can never masquerade
         # as isolation.
         assert "not found" not in combined and "__rc=127" not in combined, (
-            f"fleet: /bin/busybox nc did not run for {label} — the probe is "
+            f"fleet: the TCP-connect probe did not run for {label} — the probe is "
             f"vacuous, not an isolation result (out={combined!r})"
         )
         # The connect must have FAILED with a no-route signature (name does not
@@ -439,7 +439,7 @@ def test_d4_guest_network_isolation(backend: Backend, expect):
     # uses edge:8450 as the allowed upstream; a `/bin/busybox nc` connect there
     # must SUCCEED (rc 0).
     edge = backend.exec_sh(
-        "/bin/busybox nc -w4 edge 8450 </dev/null; echo __rc=$?"
+        tcp_connect_script(backend, "edge", 8450)
     )
     assert isinstance(edge, ExecResult)
     edge_out = (
@@ -448,7 +448,7 @@ def test_d4_guest_network_isolation(backend: Backend, expect):
     )
     assert not edge.denied
     assert "not found" not in edge_out, (
-        "fleet keystone: /bin/busybox nc did not run against the edge — the "
+        "fleet keystone: the TCP-connect probe did not run against the edge — the "
         f"reachability keystone would be vacuous (out={edge_out!r})"
     )
     assert "__rc=0" in edge_out, (
@@ -558,7 +558,7 @@ def test_d5_guest_never_holds_upstream_credential(backend: Backend, expect):
     # busybox nc reports "bad address" when the peer's name does not resolve on
     # the mount-facing net (the no-route signature), which is the real failure.
     direct = backend.exec_sh(
-        "/bin/busybox nc -w4 minio 9000 </dev/null; echo __rc=$?"
+        tcp_connect_script(backend, "minio", 9000)
     )
     direct_out = (
         direct.stdout.decode("utf-8", "replace")
@@ -572,7 +572,7 @@ def test_d5_guest_never_holds_upstream_credential(backend: Backend, expect):
         "no-route assertion below would pass vacuously"
     )
     assert "not found" not in direct_out and "__rc=127" not in direct_out, (
-        f"fleet: /bin/busybox nc did not run for the MinIO hop — vacuous probe "
+        f"fleet: the TCP-connect probe did not run for the MinIO hop — vacuous probe "
         f"(out={direct_out!r})"
     )
     assert "__rc=0" not in direct_out, (

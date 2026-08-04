@@ -36,6 +36,7 @@ from backends.base import (
     DownloadResult,
     PocHoleNotEnforced,
 )
+from guest_probe import tcp_connect_script
 from conftest import await_fleet_exec_ready, inactive_mechanism, real_finding
 
 
@@ -467,7 +468,7 @@ def test_g4_egress_allowlisted_not_open(backend, expect):
     # static busybox: the applet MUST be /bin/busybox nc (a bare nc is 127 and
     # never runs). edge:8450 is the storage-chain allowed upstream.
     edge = backend.exec_sh(
-        "/bin/busybox nc -w4 edge 8450 </dev/null; echo __rc=$?"
+        tcp_connect_script(backend, "edge", 8450)
     )
     edge_out = (
         edge.stdout.decode("utf-8", "replace")
@@ -475,7 +476,7 @@ def test_g4_egress_allowlisted_not_open(backend, expect):
     )
     assert not edge.denied
     assert "not found" not in edge_out and "__rc=127" not in edge_out, (
-        f"fleet keystone: /bin/busybox nc did not run against the edge — the "
+        f"fleet keystone: the TCP-connect probe did not run against the edge — the "
         f"reachability keystone is vacuous (out={edge_out!r})"
     )
     assert "__rc=0" in edge_out, (
@@ -489,7 +490,7 @@ def test_g4_egress_allowlisted_not_open(backend, expect):
     # bare nc is "not found" (127) and would pass this negative vacuously (the
     # exact empty-output trap that hid this finding before).
     ext = backend.exec_sh(
-        "/bin/busybox nc -w5 1.1.1.1 443 </dev/null; echo __rc=$?"
+        tcp_connect_script(backend, "1.1.1.1", 443, timeout=5)
     )
     ext_out = (
         ext.stdout.decode("utf-8", "replace")
@@ -497,7 +498,7 @@ def test_g4_egress_allowlisted_not_open(backend, expect):
     )
     assert not ext.denied
     assert "not found" not in ext_out and "__rc=127" not in ext_out, (
-        f"fleet: /bin/busybox nc did not run for the external-reach probe — "
+        f"fleet: the TCP-connect probe did not run for the external-reach probe — "
         f"the negative half is vacuous (out={ext_out!r})"
     )
     if "__rc=0" not in ext_out:
