@@ -156,25 +156,25 @@ def _unlock_secure_cookies_for_loopback(jar):
 
 
 def _pane_list(jar):
+    # Send order=desc, exactly as the real pane now does (#182, ADR-0031): the
+    # pane fetches page-1 newest-first so a just-written file is visible without
+    # paging. A helper still requesting ascending would model a client that no
+    # longer exists -- the same stale-simulation bug the M11 matcher had. The
+    # pane-sends-desc guarantee itself is proven by the browser leg (M1's
+    # wait_for_selector in the real iframe), which this API helper cannot stand in for.
     status, body = _curl_json(
-        ["-b", jar, *_pane_scope_headers(), f"{PANE_URL}/api/v1/files"]
+        ["-b", jar, *_pane_scope_headers(), f"{PANE_URL}/api/v1/files?order=desc"]
     )
     assert status == 200, f"pane list status = {status}, want 200"
     return json.loads(body)["data"]
 
 
-# Shared xfail reason for the J-group pane-list-reader tests blocked by defect #182
-# (F9 list sorts ascending CreatedAt + the pane fetches page-1 only, so a
-# just-written file is off page-1 once the scope holds >=100 objects). Mirrors the
-# M-group's marker; j8 is the canonical J-group #182 keystone. When the order=desc
-# fix ships (ADR-0031 amends 0028), these XPASS and strict=True forces removal.
-_J182_XFAIL_REASON = (
-    "task #182: the F9 list sorts ASCENDING CreatedAt and the pane fetches only "
-    "page-1, so a just-written file (the newest) is off page-1 once the scope holds "
-    ">=100 objects -- a positive pane-find of a new file never resolves. Fix: "
-    "additive order=asc|desc param, pane sends desc (ADR-0031). XPASSes when that "
-    "ships; strict=True then forces this marker's removal."
-)
+# The J-group pane-list-reader tests (j8 + the two positive pane-find flows) were
+# strict-xfail under defect #182. The order=desc fix shipped (ADR-0031 amends 0028):
+# _pane_list sends order=desc, so a just-written file is on the pane's first page.
+# The markers are removed; j8 stays the canonical J-group #182 regression guard, its
+# >=100 saturation kept so it is non-vacuous (an under-100 scope would pass even with
+# the order fix reverted).
 
 
 def _ensure_scope_saturated_for_182(jar, csrf):
@@ -197,9 +197,8 @@ def _ensure_scope_saturated_for_182(jar, csrf):
     )
 
 
-# How long a guest-mount read waits for the FUSE directory cache to age out.
-# Matches _pane_find's north-leg deadline; the two directions lag for different
-# reasons (write-back there, cache expiry here) but on the same order.
+# How long the guest-mount read waits for the VFS write-back to land. Matches
+# _pane_find's north-leg deadline: the same flush governs both directions.
 _GUEST_READ_DEADLINE_S = 45
 
 
@@ -403,10 +402,6 @@ def _derivation_expected_on():
 # --- J1: agent deliverable reaches the user ---------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_J182_XFAIL_REASON,
-)
 def test_j1_agent_write_reaches_pane_download(tmp_path):
     """Agent writes /mnt/user-data/outputs/<unique> -> pane lists it ->
     download 200 serves the exact bytes. Keystone: a never-written sibling
@@ -419,7 +414,11 @@ def test_j1_agent_write_reaches_pane_download(tmp_path):
     Clears (XPASS -> remove marker) when order=desc ships (ADR-0031). The guest-FUSE
     read legs (j4) are #182-immune; only the pane-list positive-find is blocked."""
     _require_gateway()
-    jar, csrf = _pane_session(tmp_path)
+    # ONE chat id for the pane AND the guest: the storage scope derives from
+    # the chat, so a mismatch files the bytes in a sibling subtree the pane
+    # never lists (the j9 pattern).
+    chat = f"j1-{uuid.uuid4().hex[:8]}"
+    jar, csrf = _pane_session(tmp_path, chat_id=chat)
     _ensure_scope_saturated_for_182(jar, csrf)
 
     name = f"j1-{uuid.uuid4().hex[:10]}.txt"
@@ -427,7 +426,7 @@ def test_j1_agent_write_reaches_pane_download(tmp_path):
     payload = f"J1-DELIVERABLE-{uuid.uuid4().hex}"
 
     is_err, text = _guest_bash(
-        f"j1-{uuid.uuid4().hex[:8]}",
+        chat,
         f"printf %s '{payload}' > /mnt/user-data/outputs/{name} && echo WROTE",
     )
     assert not is_err and "WROTE" in text, f"guest write failed: {text[:200]}"
@@ -518,10 +517,6 @@ def test_j3_download_gate_asymmetry(tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=_J182_XFAIL_REASON,
-)
 def test_j3b_outputs_side_deliverable_downloads(tmp_path):
     """The #182-fragile half split out of j3 (per the M2 precedent): the agent's
     outputs-side deliverable serves 200 byte-exact via the pane. This needs a
@@ -531,12 +526,16 @@ def test_j3b_outputs_side_deliverable_downloads(tmp_path):
     403 security keystone live; only this 200 leg is blocked. Clears when order=
     desc ships (ADR-0031)."""
     _require_gateway()
-    jar, csrf = _pane_session(tmp_path)
+    # ONE chat id for the pane AND the guest: the storage scope derives from
+    # the chat, so a mismatch files the bytes in a sibling subtree the pane
+    # never lists (the j9 pattern).
+    chat = f"j3b-{uuid.uuid4().hex[:8]}"
+    jar, csrf = _pane_session(tmp_path, chat_id=chat)
     _ensure_scope_saturated_for_182(jar, csrf)
 
     out_name = f"j3b-out-{uuid.uuid4().hex[:10]}.txt"
     is_err, text = _guest_bash(
-        f"j3b-{uuid.uuid4().hex[:8]}",
+        chat,
         f"printf %s J3-OUTPUT-SIDE > /mnt/user-data/outputs/{out_name} && echo WROTE",
     )
     assert not is_err and "WROTE" in text
@@ -895,22 +894,12 @@ def test_j7_single_scope_degrades_to_two_way_flow():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="task #182: the F9 list sorts ASCENDING CreatedAt (oldest-first) and "
-    "the pane fetches only page-1 (no cursor-follow), so a just-created file is "
-    "the NEWEST -> sorts LAST -> is off page-1 once the scope holds >=100 objects. "
-    "The pane never shows it, breaking the owner's 'created file appears in the "
-    "preview' bar. Fable-ruled fix (owner-gated): additive order=asc|desc param, "
-    "default asc, the pane sends order=desc (ADR-0031 amends 0028). When that "
-    "lands this XPASSes and strict=True forces this marker's removal.",
-)
 def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
     """K2 acceptance keystone for task #182: in a scope holding >=100 objects, a
     file the guest writes LAST must appear in the pane's FIRST-page list (the exact
-    GET /v1/files the pane issues on mount: no ?after, no ?limit). The owner's bar
-    is that the just-created file is visible in the pane; a user does not page a
-    file panel.
+    GET /v1/files?order=desc the pane issues on mount: no ?after, no ?limit, but
+    order=desc so the newest file is first). The owner's bar is that the just-created
+    file is visible in the pane; a user does not page a file panel.
 
     Non-vacuous: this asserts the NEWEST file, and only after the scope is padded
     past the 100-object page boundary -- the exact condition M1/M5/M6 miss by
@@ -921,7 +910,11 @@ def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
     marker off (a self-clearing acceptance gate).
     """
     _require_gateway()
-    jar, csrf = _pane_session(tmp_path)
+    # ONE chat id for the pane AND the guest: the storage scope derives from
+    # the chat, so a mismatch files the bytes in a sibling subtree the pane
+    # never lists (the j9 pattern).
+    chat = f"j8-{uuid.uuid4().hex[:8]}"
+    jar, csrf = _pane_session(tmp_path, chat_id=chat)
 
     # 1. Ensure the scope is saturated past the 100-object first-page boundary, so
     # a fresh file cannot trivially land on page-1. Pad only as many as needed
@@ -939,7 +932,6 @@ def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
     )
 
     # 2. The guest writes the NEWEST file (latest CreatedAt) via the real P-A path.
-    chat = f"j8-{uuid.uuid4().hex[:8]}"
     newest = f"j8-newest-{uuid.uuid4().hex[:10]}.txt"
     payload = f"J8-NEWEST-{uuid.uuid4().hex}"
     is_err, text = _guest_bash(
@@ -955,7 +947,7 @@ def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
     deadline = _time.monotonic() + 45
     seen = False
     while _time.monotonic() < deadline:
-        page1 = _pane_list(jar)  # GET /v1/files, no after/limit -- the pane's call
+        page1 = _pane_list(jar)  # GET /v1/files?order=desc, no after/limit -- the pane call
         if any(f.get("filename") == newest for f in page1):
             seen = True
             break
@@ -966,4 +958,86 @@ def test_j8_newest_file_visible_in_pane_first_page(tmp_path):
         "sorts LAST under ascending CreatedAt, so the page-1-only pane never shows "
         "it -- the owner's 'created file appears in the preview' bar is broken. "
         "This is task #182; it clears when order=desc ships."
+    )
+
+
+# --- J9: a write survives an immediate release --------------------------------
+
+
+def test_j9_agent_write_survives_immediate_release(tmp_path):
+    """Agent writes, the operator kill-switch fires with NO wait, and the bytes
+    must still be in storage afterwards.
+
+    The gap this closes: the lifecycle group proves a release DENIES things --
+    exec denied, new create denied, resume clears the latch -- and never asks
+    whether the data the session had already written survived. A release can
+    discard every recent write with the whole suite green.
+
+    No sleep between the write and the revoke, deliberately. The guest mount
+    holds a written file for a delay before writing it back, and teardown grants
+    it only a short window to drain. Sleeping first would let the queue flush on
+    its own and the probe would pass while proving nothing: the write has to be
+    younger than the queue for the question to be asked at all.
+
+    Two files, and the ANCHOR is what keeps this honest. It is written and
+    confirmed listed BEFORE the switch fires, so if the post-revoke listing comes
+    back without it, the read plane is what broke rather than the storage -- an
+    assertion on the marker alone would read a refused listing as lost data. The
+    anchor also proves the write path, the scope binding and the pane all work,
+    so a red on the marker can only mean the marker did not survive.
+    """
+    _require_gateway()
+    from test_e_lifecycle import _operator_post
+
+    # ONE chat id for the pane AND the guest: the storage scope derives from the
+    # chat, so a mismatch files the bytes in a sibling subtree and the miss is
+    # indistinguishable from the loss this test looks for (the J2 trap).
+    chat = f"j9-{uuid.uuid4().hex[:8]}"
+    jar, _csrf = _pane_session(tmp_path, chat_id=chat)
+
+    anchor = f"j9-anchor-{uuid.uuid4().hex[:10]}.txt"
+    marker = f"j9-marker-{uuid.uuid4().hex[:10]}.txt"
+    payload = f"J9-SURVIVES-{uuid.uuid4().hex}"
+
+    is_err, text = _guest_bash(
+        chat, f"printf %s ANCHOR > /mnt/user-data/outputs/{anchor} && echo WROTE"
+    )
+    assert not is_err and "WROTE" in text, f"anchor write failed: {text[:200]}"
+    assert _pane_find(jar, anchor) is not None, (
+        f"the anchor {anchor} never reached the pane BEFORE any revoke: the write path, the "
+        "scope binding or the read plane is broken, so this run can say nothing about whether "
+        "a release loses data"
+    )
+
+    is_err, text = _guest_bash(
+        chat, f"printf %s '{payload}' > /mnt/user-data/outputs/{marker} && echo WROTE"
+    )
+    assert not is_err and "WROTE" in text, f"marker write failed: {text[:200]}"
+
+    revoke_status = _operator_post("/v1alpha/revoke/all")
+    assert revoke_status in (200, 204), f"revoke/all should accept, got {revoke_status}"
+
+    # Restore the plane before reading. The data question was settled the moment
+    # the switch fired; leaving the latch closed would only confuse a refused
+    # read with a lost object, and would leave the stand latched for the next test.
+    resume_status = _operator_post("/v1alpha/resume/all")
+    assert resume_status in (200, 204), f"resume/all should accept, got {resume_status}"
+
+    assert _pane_find(jar, anchor) is not None, (
+        f"the anchor {anchor} is gone from the listing after revoke+resume: the read plane did "
+        "not survive the toggle, so the marker's absence below would prove nothing"
+    )
+
+    obj = _pane_find(jar, marker)
+    assert obj is not None, (
+        f"{marker} was written and the session released with no wait, and the bytes never "
+        "reached storage -- the mount's write-back queue still held them and teardown discarded "
+        "it. The anchor from the same scope is still listed, so this is the data being lost, "
+        "not the read plane being down"
+    )
+
+    status, body = _pane_content(jar, obj["id"])
+    assert status == 200, f"download of the survived file = {status}, want 200"
+    assert body == payload, (
+        "the file survived the release but its bytes differ from what the agent wrote"
     )

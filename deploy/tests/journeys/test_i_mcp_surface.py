@@ -883,3 +883,287 @@ def test_i12_pdf_skill_produces_a_valid_pdf_with_text_in_guest():
         f"the produced pdf does not carry the drawn text ({marker!r} absent from "
         "the PDF bytes) -- the skill did not write the real content"
     )
+
+
+def _guest_has_node(chat_id):
+    """True iff the live guest has a runnable node (gates the JS-toolchain skill test).
+
+    Mirrors _guest_has_python3: the probe echoes yes/no so a non-empty reply is
+    authoritative; an EMPTY reply is a transient exec miss (late-suite session-create
+    hiccup returns 200 with no content block), retried once with a fresh chat id. A
+    genuine "no" returns immediately.
+    """
+    probe = _bash_body("command -v node >/dev/null 2>&1 && echo yes || echo no")
+    for _ in range(2):
+        _, parsed = _call(chat_id, probe)
+        text, _err = _result(parsed)
+        if text and text.strip():
+            return "yes" in text
+        chat_id = f"{chat_id}-r"
+    return False
+
+
+def test_i13_docx_skill_javascript_toolchain_produces_a_valid_docx_in_guest():
+    """Parity: the docx SKILL.md prescribes **docx-js** (JavaScript/TypeScript) as
+    the creation path for a new Word document ("When creating a new Word document
+    from scratch, use docx-js"). i8 exercises the pandoc path -- which the SKILL.md
+    prescribes only for READING/extraction, not creation. This test runs the skill's
+    ACTUAL prescribed CREATION toolchain (node + the `docx` npm package) so the
+    "skills produce their artifact" leg covers the path the model is instructed to
+    take, not just a python alternative. Reads the artifact back with zipfile + raw
+    XML only (no docx-js on the test side).
+
+    Non-vacuous: assert the produced file is a real OOXML docx (word/document.xml
+    part) AND the unique marker text is in that part (not an empty doc or a garbage
+    zip). A guest without node or the docx package, or a doc missing the marker,
+    reds. Needs a full guest with the JS skill toolchain.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i13")
+    if not _guest_has_node(cid):
+        pytest.skip("docx-js skill needs a node-bearing guest (#122) -- SKIP, not a pass.")
+
+    marker = "DOCXJSMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i13_doc.docx"
+    script = "/tmp/i13_gen.js"
+    # The SKILL.md-prescribed creation path: docx-js builds the OOXML in JS, then
+    # Packer.toBuffer streams the .docx bytes. A here-doc writes the script, node
+    # runs it, base64 streams the artifact out.
+    js = (
+        "const { Document, Packer, Paragraph, TextRun } = require('docx');\n"
+        "const fs = require('fs');\n"
+        "const doc = new Document({ sections: [{ children: ["
+        f"new Paragraph({{ children: [ new TextRun({marker!r}) ] }})"
+        "] }] });\n"
+        f"Packer.toBuffer(doc).then(b => fs.writeFileSync({out!r}, b));\n"
+    )
+    gcmd = (
+        "cat > " + script + " <<'JS'\n"
+        + js
+        + "JS\n"
+        "node " + script + " && base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "docx" in text and (
+        "Cannot find module" in text or "MODULE_NOT_FOUND" in text
+    ):
+        pytest.skip("guest has no docx-js package (JS skill toolchain absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"docx-js skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    assert any("word/document.xml" in n for n in names), (
+        f"the skill artifact is not a valid docx (no document part); parts={names}"
+    )
+    doc_xml = z.read("word/document.xml").decode(errors="ignore")
+    assert marker in doc_xml, (
+        f"the produced docx does not carry the paragraph text ({marker!r} absent "
+        "from the document part) -- the docx-js skill did not write the real content"
+    )
+
+
+def test_i14_str_replace_error_paths_are_tier2_errors_with_poc_messages():
+    """Coverage regression (#190.3): the str_replace tool's three PoC-parity guard
+    paths each return a Tier-2 tool error (isError:true) with the EXACT PoC message,
+    and leave the file UNCHANGED. i10 covers only the happy path; these guards are
+    what keep an ambiguous or no-op edit from silently corrupting a file.
+
+    The three guards, verbatim from the deployed projection StrReplaceScript:
+      1. identical old_str/new_str -> "old_str and new_str are identical..."
+      2. old_str absent           -> "old_str not found in <path>"
+      3. old_str appears > 1 time  -> "Found N occurrences of old_str... Add more
+         surrounding context to make it unique."
+
+    Non-vacuous: each assert requires BOTH is_error true AND the specific message
+    substring (a tool that silently succeeded, or errored with a different cause,
+    reds). The final leg re-reads the file and asserts the original content is
+    intact (a guard that errored but still mutated the file would red here).
+    """
+    editor = _cid("i14")
+    if not _guest_has_python3(editor):
+        pytest.skip("str_replace error paths need a full guest (#122) -- SKIP, not a pass.")
+
+    original = "ALPHA line one\nALPHA line two\nBETA unique line\n"
+    name = "i14_" + uuid.uuid4().hex[:8] + ".txt"
+    path = "/mnt/user-data/outputs/" + name
+
+    _, parsed = _call(
+        editor, _file_tool_body("create_file", {"path": path, "file_text": original})
+    )
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "Successfully created" in text, (
+        f"create_file onto outputs failed: {text!r}"
+    )
+
+    # Guard 1: identical old_str/new_str -> refused before any file open.
+    _, parsed = _call(
+        editor,
+        _file_tool_body("str_replace", {"path": path, "old_str": "BETA", "new_str": "BETA"}),
+    )
+    text, is_error = _result(parsed)
+    assert is_error is True and text and "identical" in text, (
+        f"identical old_str/new_str must be a Tier-2 error naming 'identical'; got {text!r}"
+    )
+
+    # Guard 2: old_str not present -> refused, names the path.
+    _, parsed = _call(
+        editor,
+        _file_tool_body("str_replace", {"path": path, "old_str": "GAMMA_absent", "new_str": "X"}),
+    )
+    text, is_error = _result(parsed)
+    assert is_error is True and text and "not found" in text, (
+        f"absent old_str must be a Tier-2 'not found' error; got {text!r}"
+    )
+
+    # Guard 3: old_str appears more than once -> refused, asks for more context.
+    # "ALPHA" occurs twice in the original, so this is genuinely ambiguous.
+    _, parsed = _call(
+        editor,
+        _file_tool_body("str_replace", {"path": path, "old_str": "ALPHA", "new_str": "OMEGA"}),
+    )
+    text, is_error = _result(parsed)
+    assert is_error is True and text and "occurrences" in text and "unique" in text, (
+        f"a >1-occurrence old_str must be a Tier-2 'occurrences ... unique' error; got {text!r}"
+    )
+
+    # Final: none of the three refused edits mutated the file -- the original
+    # content is intact (a guard that errored but still wrote would red here).
+    _, parsed = _call(editor, _bash_body("cat " + path))
+    text, is_error = _result(parsed)
+    assert is_error is False and text and "ALPHA line one" in text and "OMEGA" not in text and "BETA unique line" in text, (
+        f"a refused str_replace must leave the file UNCHANGED; got {text!r}"
+    )
+
+
+def test_i15_pptx_skill_javascript_toolchain_produces_a_valid_pptx_in_guest():
+    """Parity: the pptx SKILL.md prescribes a JavaScript CREATION path -- html2pptx,
+    which builds on **pptxgenjs** (SKILL.md: "pptxgenjs ... for creating presentations
+    via html2pptx"). i11 exercises the python-pptx path, which is only an alternative;
+    the skill's prescribed runtime is JS. This runs the pptxgenjs primitive the JS
+    creation path builds on, so "skills produce their artifact" covers the pptx skill's
+    JS runtime, distinct from i11's python. (html2pptx itself also drives a Playwright
+    HTML render, which crashes under gVisor -- so this targets the underlying pptxgenjs
+    deck builder, the deterministic JS artifact primitive, not the HTML-render layer.)
+    Reads the deck back with zipfile + raw XML only (no pptxgenjs on the test side).
+
+    Non-vacuous: assert a real slide part (ppt/slides/slide1.xml) AND the unique
+    marker in that slide's XML (not an empty deck or a garbage zip). A guest without
+    node or pptxgenjs, or a deck missing the marker, reds. Needs a full guest with
+    the JS skill toolchain.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i15")
+    if not _guest_has_node(cid):
+        pytest.skip("pptxgenjs skill needs a node-bearing guest (#122) -- SKIP, not a pass.")
+
+    marker = "PPTXGENMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i15_deck.pptx"
+    script = "/tmp/i15_gen.js"
+    # The JS creation primitive the pptx SKILL.md's html2pptx builds on: pptxgenjs
+    # builds the OOXML deck and writeFile streams the .pptx.
+    js = (
+        "const P = require('pptxgenjs');\n"
+        "const p = new P();\n"
+        "const s = p.addSlide();\n"
+        f"s.addText({marker!r}, {{ x: 1, y: 1, w: 8, h: 1 }});\n"
+        f"p.writeFile({{ fileName: {out!r} }}).then(() => console.log('done'));\n"
+    )
+    gcmd = (
+        "cat > " + script + " <<'JS'\n"
+        + js
+        + "JS\n"
+        "node " + script + " >/dev/null && base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and (
+        "Cannot find module" in text or "MODULE_NOT_FOUND" in text
+    ) and "pptxgenjs" in text:
+        pytest.skip("guest has no pptxgenjs (JS pptx toolchain absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"pptxgenjs skill run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    assert any("ppt/slides/slide1.xml" in n for n in names), (
+        f"the skill artifact is not a valid pptx (no slide part); parts={names}"
+    )
+    slide_xml = z.read("ppt/slides/slide1.xml").decode(errors="ignore")
+    assert marker in slide_xml, (
+        f"the produced pptx does not carry the slide text ({marker!r} absent from "
+        "the slide) -- the pptxgenjs skill did not write the real content"
+    )
+
+
+def test_i16_xlsx_skill_pandas_data_workflow_produces_a_valid_xlsx_in_guest():
+    """Parity: the xlsx SKILL.md prescribes a pandas DATA workflow for spreadsheets
+    ("pandas for data, openpyxl for formulas/formatting"; `df.to_excel('output.xlsx')`).
+    i9 covers the openpyxl formulas/formatting path; this covers the pandas DataFrame
+    -> xlsx workflow the skill prescribes for data-bearing spreadsheets -- a distinct
+    user-facing skill path (pandas' high-level to_excel over a DataFrame, which is how
+    the model is told to emit analyzed data). Reads the workbook back with zipfile +
+    raw XML only (no pandas/openpyxl on the test side).
+
+    Non-vacuous: assert a real sheet part AND the unique marker present in the workbook
+    XML (pandas/openpyxl store strings in the shared-strings table, so check both the
+    sheet and sharedStrings). An empty frame, a wrong engine, or a garbage zip reds.
+    A guest without pandas skips honestly. Needs a full guest.
+    """
+    import base64
+    import io
+    import zipfile
+
+    cid = _cid("i16")
+    if not _guest_has_python3(cid):
+        pytest.skip("pandas data workflow needs a full guest (#122) -- SKIP, not a pass.")
+
+    marker = "PANDASMARK" + uuid.uuid4().hex[:8]
+    out = "/tmp/i16_data.xlsx"
+    gcmd = (
+        "python3 - <<PY\n"
+        "import pandas as pd\n"
+        f"df = pd.DataFrame({{'label': [{marker!r}], 'value': [42]}})\n"
+        f"df.to_excel({out!r}, index=False)\n"
+        "PY\n"
+        "base64 -w0 " + out
+    )
+    _, parsed = _call(cid, _bash_body(gcmd), timeout=150)
+    text, is_error = _result(parsed)
+    if is_error and text and "pandas" in text and "No module" in text:
+        pytest.skip("guest has no pandas (data skill absent) -- SKIP, not a pass.")
+    assert is_error is False and text, f"pandas data workflow run failed: {text!r}"
+
+    b64 = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    assert len(b64) > 100, f"no base64 artifact streamed from the guest: {text!r}"
+    data = base64.b64decode(b64)
+
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = z.namelist()
+    assert any("xl/worksheets/sheet1.xml" in n for n in names), (
+        f"the skill artifact is not a valid xlsx (no sheet part); parts={names}"
+    )
+    # pandas/openpyxl put cell strings in the shared-strings table; check both so the
+    # assertion does not depend on inline-vs-shared string storage.
+    blob = "".join(
+        z.read(n).decode(errors="ignore")
+        for n in names
+        if n.endswith(".xml") and ("sheet1" in n or "sharedStrings" in n)
+    )
+    assert marker in blob, (
+        f"the produced xlsx does not carry the DataFrame value ({marker!r} absent "
+        "from the sheet/sharedStrings) -- the pandas workflow did not write the data"
+    )
