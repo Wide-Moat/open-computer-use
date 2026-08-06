@@ -132,6 +132,7 @@ paths:
         - $ref: '#/components/parameters/FilesystemIdHeader'
         - $ref: '#/components/parameters/AfterQuery'
         - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/OrderQuery'
       responses:
         '200':
           description: One page of FileObjects for the attested scope.
@@ -312,6 +313,20 @@ components:
         type: string
         minLength: 1
         maxLength: 512
+
+    OrderQuery:
+      name: order
+      in: query
+      required: false
+      description: >-
+        Page direction. `desc` walks newest-first (created-at, file-id descending) so a
+        just-created object lands on the first page; absence, or any other value, is the
+        ascending default. Tolerant by design: an unrecognised value renders ascending
+        rather than refusing the list, because the direction is a rendering preference,
+        not an authorization input. The cursor binds its direction, so a paged request
+        repeats the order it started with (ADR-0037).
+      schema:
+        type: string
 
     LimitQuery:
       name: limit

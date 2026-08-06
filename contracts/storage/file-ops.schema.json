@@ -199,6 +199,31 @@
       }
     },
 
+    "ListFilesRequest": {
+      "description": "The scope-wide object enumeration (ADR-0036). Scope is the credential-bound authority, never a body field; filesystem_id is the cross-check hint. The cursor is the opaque next_cursor from a prior page, and it binds its direction \u2014 a token minted under one order does not resume under the other (ADR-0037).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" },
+        "after": {
+          "description": "Forward list cursor: the previous page's opaque next_cursor. Absence lists from the first page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "limit": {
+          "description": "Page-size ceiling for this page; absence uses the store default.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "order": {
+          "description": "Page direction, mirroring the north ?order= query parameter (ADR-0037). `desc` walks newest-first; absence, or any other value, is the ascending default. Tolerant by design: an unrecognised value renders ascending rather than refusing the list.",
+          "type": "string"
+        }
+      }
+    },
+
     "GetFileMetadataRequest": {
       "description": "The by-handle metadata read (ADR-0036), addressed by the DURABLE file_id rather than the session-scoped transfer uuid. An absent or cross-scope id degrades to not_found, so a valid id minted in another session cannot probe scope membership.",
       "type": "object",
