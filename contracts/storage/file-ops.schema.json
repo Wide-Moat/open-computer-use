@@ -164,7 +164,7 @@
     },
 
     "ListFilesResponse": {
-      "description": "One listFiles page, mirroring the frozen north list envelope (ADR-0028, ADR-0036). The forward cursor is the opaque `next_cursor`: it carries the (created_at, file_id) boundary tuple, so a bare id cannot resume the walk. No order parameter exists on either face \u2014 the order is the store's created-at-primary total order, and newest-first would be an ADR-0028 dialect amendment, never a plane-local knob.",
+      "description": "One listFiles page, mirroring the frozen north list envelope (ADR-0028, ADR-0036). The forward cursor is the opaque `next_cursor`: it carries the (created_at, file_id) boundary tuple, so a bare id cannot resume the walk. The page direction follows the request's optional `order` selector (ADR-0037): `desc` walks newest-first, absence or any other value the created-at-primary ascending default. The cursor binds its direction, so a token minted under one order does not resume under the other.",
       "type": "object",
       "additionalProperties": false,
       "required": ["data", "has_more"],
