@@ -66,7 +66,7 @@ Each row traces to one P1 STRIDE row in [`06-threat-model.md`](../06-threat-mode
 | P1-D1 | A2 | Flood of the MCP surface exhausts gateway connections/CPU and pressures the lifecycle plane via the forward | Per-caller connection/fd ceiling refuses excess; the separate runnable unit means saturation cannot reach operator ingress or the kill-switch | NFR-COST-06, NFR-SEC-01, NFR-SEC-53 |
 | P1-E2 | A2 | Caller invokes a tool or action beyond its authorization; the gateway authenticates but does not yet decide per-action authz | Audience-validated authN bounds who reaches the surface; host-attested identity blocks cross-session addressing downstream; per-action authz is the residual | NFR-SEC-49 |
 
-Residual: per-action authorization (P1-E2) is specified by NFR-SEC-49 but not yet enforced at the gateway — the gateway authenticates the caller without deciding per-action authz. P2-E1 is specified in the Control/operator API spec; this spec carries only the gateway-side property (no MCP-surface route to a lifecycle/kill-switch op).
+Residual: per-action authorization (P1-E2) is specified by NFR-SEC-49 and not yet enforced at the gateway — the gateway authenticates the caller without deciding per-action authz. [ADR-0041](../adr/0041-gateway-per-action-authz-policy.md) fixes the mechanism that closes it: a boot-loaded deployment policy evaluated between the tool-name allowlist and the resolve step. The residual records the present state; it does not waive the NFR. P2-E1 is specified in the Control/operator API spec; this spec carries only the gateway-side property (no MCP-surface route to a lifecycle/kill-switch op).
 
 ## Operational concerns
 
