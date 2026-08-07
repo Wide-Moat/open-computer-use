@@ -83,7 +83,7 @@ The honest read: the platform is a strong, well-tested PoC for the minimal shelf
 ### Theme G — Frozen contracts + ratification
 | Gap | Component / ADR | What is missing | Effort |
 |---|---|---|---|
-| G1. Control frozen OpenAPI/gRPC + buf/oasdiff CI | 02, #205, NFR-IC-04 | Wire is HTTP/newline-JSON-over-UDS handlers, not the frozen operator-REST/SOAR OpenAPI 3.1 + session_setup.proto; no buf breaking / oasdiff gate. | M |
+| G1. **PARTIAL 2026-08-07 — the gate enforces; the wire is still hand-written.** | 02, #205, NFR-IC-04 | The buf/oasdiff half is done and is a required context: `rpc-version` runs `buf breaking` over `contracts/proto` and `oasdiff` over every `contracts/openapi/*.openapi.yaml`, with a red-probe riding the same job. It had been reporting a green that measured nothing — it probed `buf.yaml` at the repo root and `contracts/operator/openapi.yaml`, neither of which is where the contracts landed, so NFR-IC-04 went unenforced from the moment they were committed. The wire half stands: no generated `.pb.go` exists, and the operator transport is hand-written JSON whose structs are now bound to the frozen `session_setup.proto` by a field-parity test rather than by a doc comment. Remaining work: generate from the contract, or keep the hand-written wire and accept the parity test as the binding — an open call, not unbuilt code. | S (decision) then M (code) |
 | G2. ADR ratification (proposed→accepted) | all ADRs | Egress cluster (0005/6/7/8/11/16/19/21) + storage (0010/0013/0015/0029/0030) + sandbox (0003/0017/0018) + 0002/0009/0012 all `proposed`. Owner batch sign-off + write-down reconciliations. | S–M (per cluster) |
 
 ### Theme H — Image provisioning (ADR-0020, the one genuine open decision)
