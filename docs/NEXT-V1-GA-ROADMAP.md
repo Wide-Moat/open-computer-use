@@ -72,7 +72,7 @@ The honest read: the platform is a strong, well-tested PoC for the minimal shelf
 | E4. Erase-before-reuse / per-session DEK | 05, INV14, NFR-SEC-54 | Page-cache-drop + region-zeroize / per-session-DEK-destroy on recycled mount is a stub; session-1→session-2 no-read property test absent (cross-repo with filestore). | L |
 | E5. Runtime-monitor host-authored audit half | 05, INV5, #181 | Not-guest-disableable runtime-monitor authoring in-sandbox tool-call events out-of-band unbuilt (spec residual). | M |
 | E6. Guest mount-config ingestion (F7) | 05, ADR-0013/0019 | In-guest mount-config consumption + scrub-after-load (NFR-SEC-25 guest half) not in ocu-sandbox. | M |
-| E7. Cross-tier egress e2e (runc AND runsc) not a GA gate | 05, INV16 | Docker-gated, skips on darwin; not a required CI gate. Canon demands zero-relay proven under positive control on both tiers. | M |
+| E7. **CLOSED 2026-08-07 — both tiers are required contexts.** | 05, INV16 | `e2e` (runc) and `e2e-gvisor` (runsc) are both required on `ocu-sandbox` main, and the egress e2e runs under each: it iterates `t.Run(tier, …)` over {Runc, Runsc}, so the gvisor job's `-run '(Integration|E2E).*/Runsc'` selector matches it. Each job counts the tests it actually ran (`grep -c '"Action":"run"'`) and fails on zero, so a slice that skipped everything reds instead of reporting the green a docker-gated skip would otherwise produce — which is the specific failure this row feared. The gvisor job additionally verifies the runsc runtime registered before running, so a failed install red-gates rather than silently falling back to runc. Remaining work: none. | closed |
 
 ### Theme F — WebUI preview substrate & audit actor (08)
 | Gap | Component / ADR | What is missing | Effort |
@@ -133,8 +133,8 @@ Depends on Phase 1 (engine must verify the injected credential) and Phase 0 (001
 ### Phase 3 — Sandbox hardening core (E1, E3, E6, E7)
 Independent of egress; the security-critical invariants with no code. Sequenced before snapshot (E2) because userns/clock are simpler and higher-severity.
 - ADRs: 0018/0024 already accepted; no new decision.
-- Build: daemon userns-remap at deployment + a per-create fail-closed admission gate that refuses when the daemon reports no remap, keystone observed as the in-container `uid_map`, RED-on-removal test; NOT a per-container `UsernsMode` field, which DD-7 forbids as a no-op that falsely implies isolation. Landlock ruleset in guest supervisor, plus the correction of a shipped doc that already claims Landlock as delivered (E1). Route guest TTL through monotonic source + resume-time wall-clock correction + rollback red-team (E3). Guest mount-config ingestion + scrub-after-load (E6). Promote cross-tier egress e2e (runc AND runsc) to a required Linux CI gate (E7).
-- Keystones: admission rejects a container with host UID0==guest UID0; clock-rollback cannot extend a TTL; zero-relay proven on both tiers as a required gate.
+- Build: daemon userns-remap at deployment + a per-create fail-closed admission gate that refuses when the daemon reports no remap, keystone observed as the in-container `uid_map`, RED-on-removal test; NOT a per-container `UsernsMode` field, which DD-7 forbids as a no-op that falsely implies isolation. Landlock ruleset in guest supervisor, plus the correction of a shipped doc that already claims Landlock as delivered (E1). Route guest TTL through monotonic source + resume-time wall-clock correction + rollback red-team (E3). Guest mount-config ingestion + scrub-after-load (E6). E7 (cross-tier egress e2e required on both tiers) is already gated.
+- Keystones: admission rejects a container with host UID0==guest UID0; clock-rollback cannot extend a TTL; zero-relay stays proven on both tiers (E7, already gated).
 
 ### Phase 4 — Audit pipeline as a component (C1, C2, C3, C4, C5)
 The heaviest single component. Depends on Phase 0 (ADR-0009 ratification) and reuses the filestore fan-in seam (C6) from Phase 1.
