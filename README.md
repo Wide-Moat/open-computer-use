@@ -13,7 +13,7 @@ MCP server that gives any LLM its own computer — managed Docker workspaces wit
 
 > **Online demo:** **[chat.yambr.com](https://chat.yambr.com)** — Open WebUI with Computer Use already set up, sign in with GitHub or Google. ([More ways to try it](#ways-to-try-it) below.)
 >
-> **See it in action:** **[Demo course on docs.yambr.com](https://docs.yambr.com/demo-course)** — eight live scenarios captured from the chat above (pitch deck, Word doc, Excel, PDF invoice, data chart, live-rendered landing page, web scrape, building a custom skill). Real prompts, real screenshots, copy-pasteable.
+> **Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the cloud docs are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
 >
 > If any of this looks useful, a ⭐ on the repo really helps — thanks!
 
@@ -77,7 +77,7 @@ Works with **any MCP-compatible client**: Open WebUI, Claude Desktop, LiteLLM, n
 
 ![Sub-Agent Dashboard](docs/screenshots/06-sub-agent-dashboard.png)
 
-For all eight live scenarios with prompts you can copy-paste, see the **[Demo course](https://docs.yambr.com/demo-course)**. See [docs/FEATURES.md](docs/FEATURES.md) for architecture details and [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for all screenshots.
+See [docs/FEATURES.md](docs/FEATURES.md) for architecture details and [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for all screenshots.
 
 > **Pro tip**: Create skills with Claude Code in the terminal, then use them with any model in the chat. Skills are model-agnostic — write once, use everywhere.
 
@@ -94,10 +94,9 @@ For all eight live scenarios with prompts you can copy-paste, see the **[Demo co
 | Path | URL | What you need | Best for |
 |------|-----|---------------|----------|
 | **Free online demo** — Open WebUI + Computer Use, models included | **[chat.yambr.com](https://chat.yambr.com)** | GitHub or Google sign-in | Trying it end-to-end in 30 seconds |
-| **Hosted MCP endpoint** — tools only, bring your own LLM | Key at [app.yambr.com](https://app.yambr.com) → connect to `https://api.yambr.com/mcp/computer_use` | GitHub/Google sign-in; your own OpenAI / Anthropic / OpenRouter key | Plugging Computer Use into Claude Desktop, n8n, OpenAI Agents SDK |
 | **Self-host** | [Quick Start](#quick-start) below | Docker, ~15 min first build | Full control, air-gapped, heavy use |
 
-OAuth only — no email/password, no SMS. On `chat.yambr.com` models are bundled as a free convenience; the hosted API is tools-only. Canonical cloud docs: [docs.yambr.com](https://docs.yambr.com). Repo-side orientation: [docs/CLOUD.md](docs/CLOUD.md).
+OAuth only — no email/password, no SMS. On `chat.yambr.com` models are bundled as a free convenience. The hosted MCP endpoint is offline during the transformation; see [docs/CLOUD.md](docs/CLOUD.md).
 
 ## Quick Start
 
@@ -172,9 +171,8 @@ See [docs/SKILLS.md](docs/SKILLS.md) for details.
 
 ## MCP Integration
 
-The server speaks standard MCP over Streamable HTTP. Point any MCP client at it — hosted or self-hosted.
+The server speaks standard MCP over Streamable HTTP. Point any MCP client at your own deployment.
 
-- **Hosted**: `https://api.yambr.com/mcp/computer_use` with `Authorization: Bearer <key from app.yambr.com>`. Client configs and full reference live on [docs.yambr.com](https://docs.yambr.com).
 - **Self-hosted**: `http://localhost:8081/mcp`. Quick sanity check:
   ```bash
   curl -X POST http://localhost:8081/mcp \
@@ -215,13 +213,13 @@ By default, all 13 built-in skills are available to everyone. For per-user skill
 
 The Computer Use Server speaks standard **MCP over Streamable HTTP** — any MCP-compatible client can connect. Open WebUI is the primary tested frontend, but not the only option.
 
-| Client | Self-hosted URL | Hosted URL | Status |
-|--------|-----------------|------------|--------|
-| [**Open WebUI**](https://github.com/open-webui/open-webui) | Docker Compose stack included, auto-configured | n/a — use [chat.yambr.com](https://chat.yambr.com) directly (pointing your own Open WebUI at the hosted API isn't a documented path) | Tested in production |
-| [**Claude Desktop**](https://claude.ai/download) | `http://localhost:8081/mcp` — see [docs/MCP.md](docs/MCP.md) | `https://api.yambr.com/mcp/computer_use` — see [docs/CLOUD.md](docs/CLOUD.md) | Works |
-| [**n8n**](https://n8n.io) | MCP Tool node → `http://computer-use-server:8081/mcp` | MCP Tool node → `https://api.yambr.com/mcp/computer_use` | Works |
-| [**LiteLLM**](https://github.com/BerriAI/litellm) | MCP proxy config — see [docs/MCP.md](docs/MCP.md) | MCP proxy → `https://api.yambr.com/mcp/computer_use` | Works |
-| **Custom client** | Any HTTP client with MCP JSON-RPC — see curl examples in [docs/MCP.md](docs/MCP.md) | Same, with `Authorization: Bearer sk-...` (key from [app.yambr.com](https://app.yambr.com)) | Works |
+| Client | Self-hosted URL | Status |
+|--------|-----------------|--------|
+| [**Open WebUI**](https://github.com/open-webui/open-webui) | Docker Compose stack included, auto-configured | Tested in production |
+| [**Claude Desktop**](https://claude.ai/download) | `http://localhost:8081/mcp` — see [docs/MCP.md](docs/MCP.md) | Works |
+| [**n8n**](https://n8n.io) | MCP Tool node → `http://computer-use-server:8081/mcp` | Works |
+| [**LiteLLM**](https://github.com/BerriAI/litellm) | MCP proxy config — see [docs/MCP.md](docs/MCP.md) | Works |
+| **Custom client** | Any HTTP client with MCP JSON-RPC — see curl examples in [docs/MCP.md](docs/MCP.md) | Works |
 
 ## Open WebUI Integration
 
@@ -476,7 +474,7 @@ We plan to address these in future releases:
 - [ ] **Secret management** — move credentials from headers to encrypted server-side storage
 - [ ] **gVisor (runsc) runtime** — optional container sandboxing for stronger isolation (like Claude.ai)
 
-Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or reach out on Telegram [@yambrcom](https://t.me/yambrcom).
+Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or email developer@widemoat.ai.
 
 ## Development
 
@@ -499,15 +497,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 ## Community
 
-- **Managed hosting**: [yambr.com](https://yambr.com) — cloud version by the maintainers ([chat.yambr.com](https://chat.yambr.com) for the free demo, [app.yambr.com](https://app.yambr.com) for API keys, [docs.yambr.com](https://docs.yambr.com) for the cloud docs)
+- **Free online demo**: [chat.yambr.com](https://chat.yambr.com) — hosted by the maintainers
 - **Issues & Ideas**: [GitHub Issues](https://github.com/Wide-Moat/open-computer-use/issues)
-- **Telegram**: [@yambrcom](https://t.me/yambrcom)
+- **Contact**: developer@widemoat.ai
 
 ## License
 
 This project uses a multi-license model:
 
-- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0). Free to use, modify, fork, redistribute, and self-host internally. Each release automatically converts to [Apache 2.0](LICENSE-APACHE) two years after publication. Offering a hosted or embedded service that competes with our paid version(s) requires a [commercial agreement](https://t.me/yambrcom).
+- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0). Free to use, modify, fork, redistribute, and self-host internally. Each release automatically converts to [Apache 2.0](LICENSE-APACHE) two years after publication. Offering a hosted or embedded service that competes with our paid version(s) requires a [commercial agreement](mailto:developer@widemoat.ai).
 - **Our skills** (`skills/public/describe-image`, `skills/public/sub-agent`): [MIT](LICENSE-MIT)
 - **Third-party skills**: see individual LICENSE.txt files or original sources.
 
