@@ -52,7 +52,7 @@ The honest read: the platform is a strong, well-tested PoC for the minimal shelf
 | C3. Merkle head + transparency-log + envelope signer unbuilt | 07, ADR-0009, NFR-SEC-03 | Code itself admits "not yet wired". No Merkle batching, no daily head, no tx-log publish, no submission-envelope signer. Tamper-evidence is detective-only. | L |
 | C4. Per-source fairness / saturation self-emit absent | 07, NFR-SEC-56/PERF-10 | No rate-shaping keyed to host-attested source, no saturation OCSF event, no flood chaos test. | M |
 | C5. WORM cold-tier + retention floor (7y/10y) | 07, NFR-COMP-01 | No retention-policy code, no hot→cold rotation (WORM substrate stays a customer seam). | M |
-| C6. Filestore audit fan-out is local-only | 04, INV-7 | Local fsync'd chain exists; no fan-in publisher seam + dropped-fan-out reconcile counter. | M |
+| C6. **CLOSED 2026-08-07 — the seam and the counter ship.** | 04, INV-7 | `internal/auditgate` carries the fan-in publisher seam beside the local fsync'd chain, and `droppedFanOut` counts every committed event the publisher refused, incremented on each of the three refusal paths and readable through `DroppedFanOut()`. The local commit does not wait on the fan-out (NFR-SEC-79 durable-first, NFR-REL-12 spill-not-block): a refused publish is a counted drop, never a denied or stalled file operation. Verified non-vacuous by mutation — removing the increment reds the suite. Remaining work: none; the fan-in COUNTERPARTY is C1, a separate row. | closed |
 
 ### Theme D — Full-shelf enterprise identity (01 / 02 / 08 / ADR-0004)
 | Gap | Component / ADR | What is missing | Effort |
@@ -121,7 +121,7 @@ Unblocks everything downstream; no code depends on a later decision.
 ### Phase 1 — Storage credential custody made real (B1, B2, B3, C6)
 The custody model is the spine the whole egress+storage story hangs on; it precedes egress live-serving because the engine must verify the injected credential before the edge injects it live.
 - ADRs: ratify 0013/0015/0029 after Phase 0 reconciliation; 0019 stays proposed until Phase 2 lands its counterparty.
-- Build: real credential extractor binding {fsid, intent} from the injected credential, JWKS-verified (iss/aud/alg); move scope enforcement to engine-verifies-injected-credential (B1). Source the six unpinned south-verb bodies in canon, then implement them against the engine adapter with the same authz/audit/ceiling spine (B3 — the GA read/write set already serves). Add filestore audit fan-in publisher seam + drop counter (C6).
+- Build: real credential extractor binding {fsid, intent} from the injected credential, JWKS-verified (iss/aud/alg); move scope enforcement to engine-verifies-injected-credential (B1). Source the six unpinned south-verb bodies in canon, then implement them against the engine adapter with the same authz/audit/ceiling spine (B3 — the GA read/write set already serves). C6 (filestore fan-in publisher seam + drop counter) is already built.
 - Keystones: foreign-fsid 403 originates AT the engine on the injected credential (not the route layer); the frozen-enum partition holds with the served set covering every verb whose body canon pins.
 
 ### Phase 2 — Egress trust-edge live (A1, A2, A6, A7)
@@ -239,7 +239,7 @@ Each is a Workflow-sized unit (one coherent PR-cluster with keystone verificatio
 - **Canon-change-first:** write the ADR-0029 reconciliation (path a vs b) and the ADR-0019 counterparty ruling in Phase 0; ratify 0013/0015/0029.
 - **ADRs:** 0013, 0015, 0029 (0019 stays proposed pending Wave-3 counterparty).
 - **Components:** 04 (ocu-filestore), 02 (ocu-control, intent mint already built).
-- **Build:** real credential extractor binding {fsid, intent} from the injected credential with JWKS/iss/aud/alg verification (gap B1); move scope enforcement to engine-verifies-injected-credential; source the four filesystem-lifecycle and ingest bodies in canon before building them (gap B3 — `listFiles`, `createFile`, `getFileMetadata` and `fileDelete` already serve; `removeFilesystem` is contract-blocked, not code-blocked); filestore audit fan-in publisher seam + drop counter (C6).
+- **Build:** real credential extractor binding {fsid, intent} from the injected credential with JWKS/iss/aud/alg verification (gap B1); move scope enforcement to engine-verifies-injected-credential; source the four filesystem-lifecycle and ingest bodies in canon before building them (gap B3 — `listFiles`, `createFile`, `getFileMetadata` and `fileDelete` already serve; `removeFilesystem` is contract-blocked, not code-blocked); C6 (filestore fan-in publisher seam + drop counter) is already built.
 - **Keystones:** foreign filesystem_id → 403 originating **at the engine** on the injected credential (not the route layer — this is the inv-4 that option-c currently violates); missing/expired credential → 401; the frozen-enum partition holds, with each newly sourced body moving from contract-blocked to served in the commit that builds it.
 
 ### Wave 3 — Egress trust-edge live on stock Envoy (Phase 2 core)
@@ -286,7 +286,7 @@ the custody CORE (JWKS-verified extractor + engine-enforced scope) is effort L.
   verification; scope enforcement moved to engine-verifies-injected-credential.
   B3 - listFiles, createFile, getFileMetadata and fileDelete SERVE (ADR-0036);
   removeFilesystem and the other five need a sourced body before any handler.
-  C6 - audit fan-in publisher seam + drop counter.
+  C6 - audit fan-in publisher seam + drop counter: ALREADY BUILT.
 - KEYSTONE (non-vacuous, red-probe FIRST): today's shipped binary must ACCEPT a
   forged unsigned bearer (proving the hole is live), then the fix reds it -
   forged/unsigned -> denied; foreign fsid -> 403 ORIGINATING AT THE ENGINE;
