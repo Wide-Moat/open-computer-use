@@ -13,7 +13,7 @@ MCP server that gives any LLM its own computer — managed Docker workspaces wit
 
 > **Online demo:** **[chat.yambr.com](https://chat.yambr.com)** — Open WebUI with Computer Use already set up, sign in with GitHub or Google. ([More ways to try it](#ways-to-try-it) below.)
 >
-> **Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the cloud docs are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
+> **Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the hosted docs site are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
 >
 > If any of this looks useful, a ⭐ on the repo really helps — thanks!
 

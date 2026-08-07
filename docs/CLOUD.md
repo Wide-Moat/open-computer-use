@@ -2,7 +2,7 @@
 
 This page exists so GitHub visitors know a managed version exists. If you self-host, see [INSTALL.md](INSTALL.md) instead.
 
-**Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the cloud docs are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
+**Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the hosted docs site are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
 
 ## What is still up
 
