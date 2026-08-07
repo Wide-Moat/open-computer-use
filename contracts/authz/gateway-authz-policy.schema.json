@@ -1,0 +1,84 @@
+{
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0 | Copyright (c) 2025 Open Computer Use Contributors | STATUS frozen (ADR-0041, the deployment-supplied gateway per-action authorization policy). The document the MCP gateway boot-loads to decide, per call, whether a resolved caller may invoke a named tool with the arguments it names (NFR-SEC-49). Delivered over the same config plane that carries the boot key set (ADR-0027), NEVER a per-request Control lookup: the gateway->Control read edge stays forbidden. Evaluation is deny-by-default -- a tool absent from the bound profile is refused, and a path outside every listed prefix is refused. Deny-by-default is a property of the EVALUATOR, not of any shipped rule set: the baseline policy is permissive and explicit, because a deny-all default would ship a gateway that answers nothing and an allow-all default would be the pre-policy hole wearing a file. FENCED SURFACE: no credential, no key, no secret ever appears here; additionalProperties:false at every level forbids smuggling one in. A tool named by a profile must exist in the advertised tool set or the gateway fails boot -- a rule for a tool nobody serves is a rule nobody can audit. This schema validates the SHAPE; the boot-time cross-check against the advertised tools, the lexical path normalization, and the separator-boundary prefix rule are peer invariants, not schema-checkable (ADR-0041). JSON Schema 2020-12 (json-schema.org).",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/authz/gateway-authz-policy.schema.json",
+  "title": "Gateway per-action authorization policy (deployment -> gateway boot-load)",
+  "description": "The deployment-supplied policy the MCP gateway evaluates between the tool-name allowlist and the resolve step, so a denied call reaches neither the serializer nor Control and creates no session (ADR-0041, NFR-SEC-49). Named profiles grant tool names and, for the file verbs, the absolute path prefixes their `path` argument may fall under; `callers` binds a resolved caller id to a profile and `default_profile` names the profile for a caller no binding covers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "profiles", "default_profile"],
+
+  "$defs": {
+    "ProfileName": {
+      "description": "Key of an entry in `profiles`, and the value a caller binding or `default_profile` names. Constrained to a short identifier so a policy cannot smuggle structure into a name the evaluator treats as opaque.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$",
+      "examples": ["full", "resolve-only"]
+    },
+
+    "PathPrefix": {
+      "description": "One allowed absolute path prefix for a file verb's `path` argument. The evaluator compares AFTER lexical normalization and refuses a relative path or a `..` escape before comparing; a prefix matches only at a separator boundary, so `/home/assistant` does not admit `/home/assistant2`. Trailing separator required, which is what makes that boundary explicit in the document rather than implied by the evaluator.",
+      "type": "string",
+      "pattern": "^/([^/]+/)*$",
+      "maxLength": 4096,
+      "examples": ["/home/assistant/", "/mnt/user-data/outputs/"]
+    },
+
+    "ToolRule": {
+      "description": "What a profile grants for one tool. An empty object grants the tool class with no argument predicate -- the correct and only shape for a shell-class tool, whose command content carries no predicate (a command-pattern deny rule cannot meet NFR-SEC-49's zero-red-team-pass criterion; command effects are confined by the sandbox boundary, ADR-0041). `path_prefixes` applies to the file verbs and is the sole argument predicate the policy language admits: globs and regular expressions are deliberately absent, because a pattern language over agent-supplied input adds evaluation surface at the one boundary meant to have none.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path_prefixes": {
+          "description": "Allowed absolute prefixes for this tool's `path` argument. Present only for a tool that takes one. An EMPTY array is not the same as an absent key and is not permitted: it would read as 'this tool is granted' while denying every possible path, so a deployment meaning to deny the tool omits the tool instead.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/PathPrefix" },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      }
+    },
+
+    "Profile": {
+      "description": "A named grant set. A tool absent from `tools` is denied for every caller bound to this profile -- the deny-by-default half of NFR-SEC-49, expressed as omission rather than as an explicit deny list, so a tool added to the advertised set is denied until a policy grants it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tools"],
+      "properties": {
+        "tools": {
+          "description": "Tool name -> rule. Every key must name a tool the gateway advertises, or the gateway fails boot: a rule for an unserved tool is one no audit of the served surface can check. An empty object is a profile that grants nothing, which is legal and useful (a fully confined caller).",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ToolRule" },
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+        }
+      }
+    }
+  },
+
+  "properties": {
+    "version": {
+      "description": "Policy document version. Pinned to 1; a shape change takes the major-version path of 08-contracts.md, because the document is a deployment contract and every operator carrying a policy file is a consumer of it.",
+      "const": 1
+    },
+
+    "profiles": {
+      "description": "Named profiles, at least one. A policy with no profile could bind no caller and grant nothing, which is a deny-all gateway written the long way -- rejected at the schema so it fails at boot rather than at the first call.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/Profile" },
+      "propertyNames": { "$ref": "#/$defs/ProfileName" },
+      "minProperties": 1
+    },
+
+    "callers": {
+      "description": "Resolved caller id -> profile name. The key is the caller's stable non-secret identifier from the resolved credential record, never a value the caller asserts about itself (NFR-SEC-09). A caller absent here falls to `default_profile`. Optional: a deployment that draws no distinction between callers binds none.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/ProfileName" },
+      "propertyNames": { "pattern": "^[A-Za-z0-9._-]{1,256}$" }
+    },
+
+    "default_profile": {
+      "description": "Profile for a caller `callers` does not name. Required, and required to name an existing profile (checked at boot, not by this schema): leaving it implicit would make the surface of an unbound caller depend on evaluator behaviour rather than on the document an operator reads.",
+      "$ref": "#/$defs/ProfileName"
+    }
+  }
+}
