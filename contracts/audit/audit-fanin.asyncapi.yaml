@@ -16,7 +16,7 @@ asyncapi: 3.0.0
 
 info:
   title: OCU Audit Fan-in
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     One-directional fan-in from the five emitting host-side components — MCP
     gateway, Control / operator API, Egress trust-edge, Object-store service,
@@ -54,12 +54,21 @@ channels:
 
   controlPlaneAudit:
     address: audit.ingest.control-plane
-    description: ORCH — Authentication and Account/Entity management at the Control / operator API.
+    description: >-
+      ORCH — Authentication, Account/Entity management, and tool-call evidence at the
+      Control / operator API.
     messages:
       authentication:
         $ref: '#/components/messages/Authentication'
       entityManagement:
         $ref: '#/components/messages/EntityManagement'
+      # The control plane's own record of an executed tool call (ADR-0024 F10
+      # evidence). It is API-shaped and carries api.operation, so it is the same
+      # class the gateway publishes for ingress — a different observation point,
+      # not a different record shape. The two are told apart by the channel they
+      # arrive on, never by a payload field (ADR-0044, NFR-SEC-09/56).
+      apiActivity:
+        $ref: '#/components/messages/ApiActivity'
 
   objectStoreAudit:
     address: audit.ingest.object-store
@@ -127,6 +136,7 @@ operations:
     messages:
       - $ref: '#/channels/controlPlaneAudit/messages/authentication'
       - $ref: '#/channels/controlPlaneAudit/messages/entityManagement'
+      - $ref: '#/channels/controlPlaneAudit/messages/apiActivity'
 
   receiveObjectStore:
     action: receive
@@ -257,7 +267,9 @@ components:
     ApiActivity:
       name: ApiActivity
       title: API Activity (OCSF 6003)
-      summary: MCP tool-call ingress at the MCP gateway.
+      summary: >-
+        Tool-call activity, carried by the MCP gateway for ingress and by the Control
+        plane for its own execution evidence. The publishing channel names which.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
@@ -283,7 +295,9 @@ components:
       title: Entity Management (OCSF 3004)
       summary: >-
         Enumerated privileged control-plane actions (NFR-SEC-45) — retention,
-        denylist, quota, tier-downgrade, custody access.
+        denylist, quota, tier-downgrade, custody access — and the session
+        lifecycle records (NFR-SEC-72), the session being the entity the control
+        plane manages: create, destroy, resume, reclaim, and refused-create.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
