@@ -16,7 +16,7 @@ asyncapi: 3.0.0
 
 info:
   title: OCU Audit Fan-in
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     One-directional fan-in from the five emitting host-side components — MCP
     gateway, Control / operator API, Egress trust-edge, Object-store service,
@@ -47,10 +47,20 @@ servers:
 channels:
   mcpGatewayAudit:
     address: audit.ingest.mcp-gateway
-    description: GATEWAY — API Activity for MCP tool-call ingress at the gateway.
+    description: >-
+      GATEWAY — API Activity for MCP tool-call ingress, and caller-key
+      authentication, at the gateway.
     messages:
       apiActivity:
         $ref: '#/components/messages/ApiActivity'
+      # The sk-ocu- caller key is validated AT THE GATEWAY (ADR-0027); Control
+      # only ever sees the gateway's own mTLS identity, so a failed caller key
+      # is observable nowhere but here. Same emission discipline as the
+      # control-plane channel (NFR-SEC-88): one logon per accepted
+      # connection/session, every failure with its cause, fail-open with
+      # counted loss.
+      authentication:
+        $ref: '#/components/messages/Authentication'
 
   controlPlaneAudit:
     address: audit.ingest.control-plane
@@ -126,6 +136,7 @@ operations:
       - $ref: '#/components/securitySchemes/sourceMtls'
     messages:
       - $ref: '#/channels/mcpGatewayAudit/messages/apiActivity'
+      - $ref: '#/channels/mcpGatewayAudit/messages/authentication'
 
   receiveControlPlane:
     action: receive
@@ -281,7 +292,10 @@ components:
     Authentication:
       name: Authentication
       title: Authentication (OCSF 3002)
-      summary: Session JWT issue and operator authentication.
+      summary: >-
+        Authentication acts: session-JWT issue and operator authentication at the
+        Control plane, caller-key logons at the gateway. The publishing channel
+        names which.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
