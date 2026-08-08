@@ -71,6 +71,8 @@ jobs:
             npx --yes @asyncapi/cli@6.0.0 validate "$f"
             echo "::endgroup::"
           done
+      - name: audit fan-in INV-1 (receive-only)
+        run: python3 scripts/check-audit-fanin-inv1.py
 
   openapi:
     runs-on: ubuntu-latest
