@@ -143,9 +143,10 @@ The heaviest single component. Depends on Phase 0 (ADR-0009 ratification) and re
 - Keystones: one source's credential rejected on every other channel; bus-on-path for every event; daily transparency-log probe green; flood shapes not drops with zero chain breaks.
 
 ### Phase 5 — Control kill-switch SLA + frozen contracts (Control GA-blockers)
+**SHIPPED 2026-08-08 — the code half of this phase is complete; only the k6 CI ratchet stays owner-gated.**
 - ADRs: 0004 minimal-shelf ratification; 0018 accepted.
-- Build: bounded worker pool with reserved admission priority on the operator listener + k6 load harness proving ≤30s p99 revoke SLA under create+operator flood (NFR-SEC-55, the control GA-blocker). Implement frozen operator-REST/SOAR OpenAPI 3.1 + session_setup.proto gRPC; wire buf breaking + oasdiff CI (G1). Concrete SOARVerifier signed-webhook impl (D3). Gateway per-action authz (D5).
-- Keystones: revoke ≤30s p99 while flooded (non-vacuous load, sized to saturate); buf/oasdiff reds on a breaking change; SOAR revoke with a bad signature refused.
+- NFR-SEC-55 ships: the operator listener wraps every request in a reserved-priority admission gate (`ocu-control/internal/admit`) — the revoke family (revoke-one/all, resume-all) draws on a reserved pool a create/read flood on the operator socket cannot exhaust — plus a per-caller rate limiter keyed on the host-attested PeerCred UID, with a monotonic window floor so a clock setback cannot refill a spent bucket. A revoke is never rate-throttled. An in-process chaos test proves the revoke p99 stays inside the SLA under a real-socket ingress flood; the k6 perf-regression CI *ratchet* is the remaining owner call ([PERF-13](#4-layer-0-ci-gate-debt-its-own-phase)). G1 (frozen operator-REST/SOAR + session_setup binding), D3 (concrete SOARVerifier), and D5 (gateway per-action authz) all closed in their own rows.
+- Keystones (all red-probed): a revoke admits while every general slot is held; the rate limiter is rewind-defeat-resistant; a per-caller flood spares co-tenants; buf/oasdiff reds on a breaking change; a bad-signature SOAR revoke is refused.
 
 ### Phase 6 — WebUI GA half (F1, F2, I1)
 - ADRs: 0002 ratification (build the length-1 descriptor seam so implementation stops contradicting the decision); 0026 already accepted.
