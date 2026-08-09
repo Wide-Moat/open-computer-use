@@ -80,6 +80,15 @@ jobs:
           node scripts/validate-asyncapi.mjs "${files[@]}"
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
+      # The parser above proves each payload $ref resolves to a well-formed JSON
+      # Schema. It does not prove WHICH schema: swapping a vendored OCSF class
+      # for a different one leaves both sides valid and the validator green
+      # (measured — the swap exits 0 there and 1 here). This binds each message
+      # to the class uid its own title claims.
+      - name: OCSF class identity red-probe (RED-when-swapped, two-sided)
+        run: python3 scripts/check-ocsf-class-identity.py --self-test
+      - name: OCSF class identity (message title uid == vendored class uid)
+        run: python3 scripts/check-ocsf-class-identity.py
 
   openapi:
     runs-on: ubuntu-latest
