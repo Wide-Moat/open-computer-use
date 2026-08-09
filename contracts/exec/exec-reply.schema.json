@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.open-computer-use.dev/exec/exec-reply.schema.json",
+  "$comment": "SPDX-License-Identifier: FSL-1.1-Apache-2.0. Copyright (c) 2025 Open Computer Use Contributors. STATUS frozen. The F5 HTTP exec-reply envelope Control returns to the MCP gateway for a guest exec. Field names are frozen de-facto: they are already on the wire between ocu-control (internal/ingress/gateway) and ocu-mcp-gateway (internal/forward), so a rename is a breaking change to a live surface, not an edit. SIZING INVARIANT, which is the reason this file exists rather than living only as two Go structs: gateway.maxReplyBytes >= 2*ceil(control.replyCeiling*4/3) + envelope, and gateway.boundContent >= control.replyCeiling. The two caps are set in different repositories, and when they diverged (64 KiB gateway read against an 8 MiB control capture) a large output was read to the limit, the JSON truncated mid-string, and the whole result was dropped as a 502 rather than as a truncated success. The maxLength below pins the first half of that invariant in the contract: 87384 is the base64 length of the 65536-byte per-stream ceiling, so two of them plus the envelope must fit under the reader's bound. JSON Schema 2020-12 (json-schema.org).",
+
+  "title": "ExecReply",
+  "description": "One completed guest exec: the child's exit code, each captured output stream as base64, and a per-stream flag saying whether that stream was cut at the capture ceiling. Truncation is reported, never silent — a caller that sees stdout_truncated knows the bytes it holds are a prefix, not the whole output.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "exit_code",
+    "stdout_b64",
+    "stderr_b64",
+    "stdout_truncated",
+    "stderr_truncated"
+  ],
+
+  "$defs": {
+    "Base64Stream": {
+      "description": "One captured output stream, base64 (RFC 4648 standard alphabet, padded). Base64 rather than a JSON string because the bytes are arbitrary: guest output is not required to be valid UTF-8, and a raw string field would force lossy replacement or a parse failure. An empty stream is the empty string, never null. maxLength 87384 is base64(65536) — the encoded size of one stream at the capture ceiling; see the sizing invariant in $comment.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]*={0,2}$",
+      "maxLength": 87384
+    }
+  },
+
+  "properties": {
+    "exit_code": {
+      "description": "The guest child's exit status, 0-255. A non-zero exit is a completed exec whose command failed — it is carried here, not raised as a transport error, so the caller can distinguish 'the command ran and returned 3' from 'the exec did not happen'.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "stdout_b64": {
+      "$ref": "#/$defs/Base64Stream"
+    },
+    "stderr_b64": {
+      "$ref": "#/$defs/Base64Stream"
+    },
+    "stdout_truncated": {
+      "description": "True when stdout exceeded the capture ceiling and the bytes in stdout_b64 are a prefix. The flag is required, so a reply can never leave the caller unable to tell a complete stream from a cut one.",
+      "type": "boolean"
+    },
+    "stderr_truncated": {
+      "description": "True when stderr exceeded the capture ceiling and the bytes in stderr_b64 are a prefix.",
+      "type": "boolean"
+    }
+  },
+
+  "examples": [
+    {
+      "exit_code": 0,
+      "stdout_b64": "aGVsbG8K",
+      "stderr_b64": "",
+      "stdout_truncated": false,
+      "stderr_truncated": false
+    },
+    {
+      "exit_code": 2,
+      "stdout_b64": "",
+      "stderr_b64": "Y2F0OiAvbm9wZTogTm8gc3VjaCBmaWxlIG9yIGRpcmVjdG9yeQo=",
+      "stdout_truncated": false,
+      "stderr_truncated": false
+    },
+    {
+      "exit_code": 0,
+      "stdout_b64": "bG9uZyBvdXRwdXQu",
+      "stderr_b64": "",
+      "stdout_truncated": true,
+      "stderr_truncated": false
+    }
+  ]
+}
