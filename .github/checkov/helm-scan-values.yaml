@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# Values that let the chart RENDER so checkov has manifests to scan.
+#
+# The chart's values.schema.json deliberately refuses to render without a
+# secret source and a public base URL — that guard stops a deployment landing
+# with no secret, and it is correct. But `checkov --framework helm` renders with
+# defaults, so it hit the schema error, logged a WARNING, produced zero
+# findings, and the gate passed green having scanned nothing.
+#
+# These values exist only to satisfy the schema during a scan. They are never
+# deployed: the placeholder key is not a credential, and the URL resolves
+# nowhere.
+secrets:
+  create: true
+  mcpApiKey: "checkov-scan-placeholder-not-a-credential"
+
+orchestrator:
+  env:
+    PUBLIC_BASE_URL: "https://checkov-scan.invalid"
