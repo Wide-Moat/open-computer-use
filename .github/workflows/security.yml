@@ -323,23 +323,46 @@ jobs:
           python-version: "3.12"
       - name: Install checkov
         run: pip install checkov==3.2.314
+      - name: Install helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
+        with:
+          version: v3.16.4
+      - name: Assert the chart renders before scanning it
+        # checkov renders the chart itself and only WARNS when that fails, so a
+        # chart that cannot render produces zero findings and a green gate. That
+        # is what happened here: values.schema.json requires a secret source and
+        # a public base URL (correctly — it stops a deployment landing with no
+        # secret), checkov rendered with defaults, hit the schema error, and
+        # scanned nothing. Rendering here first turns that silent state into a
+        # red one.
+        run: |
+          set -euo pipefail
+          helm template scan helm/computer-use-server \
+            -f .github/checkov/helm-scan-values.yaml > /tmp/rendered.yaml
+          # A chart that renders to nothing would also scan clean.
+          test "$(grep -c '^kind:' /tmp/rendered.yaml)" -gt 0 \
+            || { echo "the chart rendered no manifests - refusing to report a clean scan" >&2; exit 1; }
+          echo "rendered $(grep -c '^kind:' /tmp/rendered.yaml) manifests"
       - name: Run checkov
         # Scope: only Helm (the next/v1 deployment substrate). The legacy
-        # Dockerfile + older workflows have pre-existing findings that
-        # belong in a separate cleanup PR — they are not the subject of
-        # this gate.
+        # Dockerfile + older workflows have pre-existing findings that belong in
+        # a separate cleanup PR — they are not the subject of this gate.
         #
-        # `--soft-fail-on LOW,MEDIUM,HIGH` means only CRITICAL Helm findings
-        # block merge for the bootstrap phase. We tighten to HIGH+ in a
-        # follow-up once the baseline cleanup PR lands, and we extend the
-        # framework list to dockerfile/compose/k8s at the same time.
+        # --var-file supplies the values the chart's schema requires; without it
+        # checkov's own render fails and the scan silently covers nothing.
+        #
+        # HIGH now blocks. The bootstrap waiver soft-failed it "until the
+        # baseline cleanup PR lands" and never tightened; with the render fixed
+        # the chart reports no findings at any severity, so there is no baseline
+        # left to wait for.
         run: |
           checkov \
             -d helm/ \
             --quiet \
             --compact \
             --framework helm \
-            --soft-fail-on LOW,MEDIUM,HIGH
+            --var-file .github/checkov/helm-scan-values.yaml \
+            --soft-fail-on LOW,MEDIUM
 
   conventional-commits:
     name: commits — conventional-commits
