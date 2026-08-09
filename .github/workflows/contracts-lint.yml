@@ -6,7 +6,12 @@
 # Enforces:
 #   - every *.schema.json is valid JSON and a valid JSON Schema 2020-12 document
 #     (ajv compile against the draft 2020-12 meta-schema).
-#   - every *.asyncapi.yaml is a valid AsyncAPI document (asyncapi validate).
+#   - every *.asyncapi.yaml is a valid AsyncAPI document (@asyncapi/parser via
+#     scripts/validate-asyncapi.mjs). Validation is hermetic: the OCSF payload
+#     schemas are vendored under contracts/audit/ocsf/ and $ref'd by relative
+#     path, so the verdict depends on the repository alone. It previously made
+#     16 requests to schema.ocsf.io per run, which made a green mean "that host
+#     answered" and produced intermittent FetchError reds.
 #   - every *.openapi.yaml is a valid OpenAPI 3.1 document (redocly lint against
 #     contracts/openapi/redocly.yaml — the operator plane is a host-owned UDS, so
 #     the no-empty-servers and the not/required-XOR rules are turned off there).
@@ -66,11 +71,13 @@ jobs:
           shopt -s globstar nullglob
           files=(contracts/**/*.asyncapi.yaml)
           if [ ${#files[@]} -eq 0 ]; then echo "no asyncapi files"; exit 0; fi
-          for f in "${files[@]}"; do
-            echo "::group::$f"
-            npx --yes @asyncapi/cli@6.0.0 validate "$f"
-            echo "::endgroup::"
-          done
+          # @asyncapi/parser, not @asyncapi/cli: the CLI pins
+          # @asyncapi/generator@3.0.1, whose "@asyncapi/generator-hooks": "*"
+          # resolves to an unpublished 0.1.1 and 404s, so the CLI cannot install
+          # at any published version. The version is pinned for the same reason
+          # a floating one broke the CLI.
+          npm install --no-save --no-audit --no-fund @asyncapi/parser@3.4.0
+          node scripts/validate-asyncapi.mjs "${files[@]}"
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
 
