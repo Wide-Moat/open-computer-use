@@ -351,15 +351,20 @@ jobs:
         # --var-file supplies the values the chart's schema requires; without it
         # checkov's own render fails and the scan silently covers nothing.
         #
-        # The severity waiver stays as it was, deliberately. #322 asked to
-        # tighten it, but that question could not be answered while the scan
-        # covered nothing: with the render fixed the chart reports 43 findings,
-        # and open-source checkov assigns them no severity at all, so
-        # --soft-fail-on cannot express "block the serious ones". Several are
+        # --soft-fail, not --soft-fail-on. The old flag never protected
+        # anything: open-source checkov assigns these checks NO severity, and a
+        # severity list does not cover an absent severity — measured directly,
+        # `--soft-fail-on LOW,MEDIUM,HIGH` exits 2 on a failing manifest while
+        # `--soft-fail` exits 0. The gate passed before this change because it
+        # scanned nothing, not because the waiver held.
+        #
+        # So the waiver is now honest about its scope: report, do not block.
+        # With the render fixed the chart reports 43 findings, several of them
         # load-bearing for a sandbox platform (CKV_K8S_16 privileged, _20
-        # allowPrivilegeEscalation, _23 root, _37 capabilities) and need a
-        # per-check ruling, not a severity threshold. Triaging them is its own
-        # change; making them visible is this one.
+        # allowPrivilegeEscalation, _23 root, _37 capabilities). Those need a
+        # per-check ruling, which is its own change; making them visible is
+        # this one. #322 stays open for the triage and for re-arming the gate
+        # against a reviewed skip-list.
         run: |
           checkov \
             -d helm/ \
@@ -367,7 +372,7 @@ jobs:
             --compact \
             --framework helm \
             --var-file .github/checkov/helm-scan-values.yaml \
-            --soft-fail-on LOW,MEDIUM,HIGH
+            --soft-fail
 
   conventional-commits:
     name: commits — conventional-commits
