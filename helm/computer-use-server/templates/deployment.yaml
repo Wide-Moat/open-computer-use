@@ -36,6 +36,11 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "computer-use-server.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -245,4 +250,8 @@ spec:
               mountPath: /tmp/computer-use-data
           resources:
             {{- toYaml .Values.cleanup.resources | nindent 12 }}
+          {{- with .Values.cleanup.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
         {{- end }}
