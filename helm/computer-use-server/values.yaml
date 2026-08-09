@@ -177,6 +177,23 @@ cleanup:
     limits:
       cpu: 500m
       memory: 256Mi
+  # The cleanup sidecar reaps aged containers and data files through the shared
+  # dockerd socket. It needs no privilege of its own: unlike the orchestrator it
+  # runs no user code, and unlike dind it is not a container runtime. The
+  # defaults are the tightest posture the image supports.
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    # NOT set here, and the reason is in the image rather than in policy:
+    # runAsNonRoot/runAsUser — the image runs `crond`, which reads /etc/crontabs
+    # as root and refuses to start otherwise;
+    # readOnlyRootFilesystem — the two cron jobs append to /var/log/cleanup.log
+    # and crond writes under /var/run, neither of which is a mounted volume.
+    # Setting either would leave the sidecar silently not reaping. Tightening
+    # them is an image change (a non-root crond, log to stdout), not a values
+    # change.
 
 secrets:
   # When true, the chart renders a Secret from the values below. Convenient but
@@ -292,6 +309,19 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
+  # The orchestrator talks to the inner dockerd over a unix socket, never to the
+  # Kubernetes API, so the projected token is unused. Mounting it anyway hands a
+  # cluster credential to a pod that runs user workloads. Set true only if you
+  # add a component that genuinely calls the API server.
+  automountToken: false
+
+# Pod-level security context, applied to every container that does not set its
+# own. seccomp is the one control the dind container cannot opt out of usefully:
+# RuntimeDefault still permits what a container runtime needs, and without it the
+# pod runs unconfined.
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
 
 podAnnotations: {}
 podLabels: {}
