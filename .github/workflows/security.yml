@@ -351,10 +351,15 @@ jobs:
         # --var-file supplies the values the chart's schema requires; without it
         # checkov's own render fails and the scan silently covers nothing.
         #
-        # HIGH now blocks. The bootstrap waiver soft-failed it "until the
-        # baseline cleanup PR lands" and never tightened; with the render fixed
-        # the chart reports no findings at any severity, so there is no baseline
-        # left to wait for.
+        # The severity waiver stays as it was, deliberately. #322 asked to
+        # tighten it, but that question could not be answered while the scan
+        # covered nothing: with the render fixed the chart reports 43 findings,
+        # and open-source checkov assigns them no severity at all, so
+        # --soft-fail-on cannot express "block the serious ones". Several are
+        # load-bearing for a sandbox platform (CKV_K8S_16 privileged, _20
+        # allowPrivilegeEscalation, _23 root, _37 capabilities) and need a
+        # per-check ruling, not a severity threshold. Triaging them is its own
+        # change; making them visible is this one.
         run: |
           checkov \
             -d helm/ \
@@ -362,7 +367,7 @@ jobs:
             --compact \
             --framework helm \
             --var-file .github/checkov/helm-scan-values.yaml \
-            --soft-fail-on LOW,MEDIUM
+            --soft-fail-on LOW,MEDIUM,HIGH
 
   conventional-commits:
     name: commits — conventional-commits
