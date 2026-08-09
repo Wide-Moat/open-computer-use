@@ -58,9 +58,16 @@ explicit `state` makes the deny deliberate and a torn document invalid.
   Deny-all is expressible; it is not the failure mode.
 - The frozen schema changes, so every vendored copy must move in lockstep and
   the parity gate must pass on the same commit.
-- The gateway's loader gains one branch. An old gateway reading a deny-all
-  document rejects it as schema-invalid and keeps last-good — so the gateway
-  must ship before Control emits the state.
+- `state` is required in both directions, so the change is breaking rather than
+  additive: a document without it is schema-invalid, and Control's current
+  renderer emits none. Producer, consumer, and both vendored copies therefore
+  land in one wave. Making `state` optional with an implied `active` default was
+  rejected for the reason this ADR exists — an absent field carrying intent is
+  the same ambiguity as an empty list carrying it. Bumping `version` to 2 was
+  rejected as a format barrier disproportionate to one added field (NFR-IC-04
+  prefers additive evolution, and a coordinated wave preserves it here).
+- The gateway's loader gains one branch: on a deny-all document it swaps in the
+  empty set rather than keeping last-good.
 
 ## Alternatives
 
