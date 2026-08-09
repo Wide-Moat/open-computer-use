@@ -287,7 +287,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/api_activity"
+          $ref: "./ocsf/1.5.0/api_activity.json"
 
     Authentication:
       name: Authentication
@@ -302,7 +302,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/authentication"
+          $ref: "./ocsf/1.5.0/authentication.json"
 
     EntityManagement:
       name: EntityManagement
@@ -318,7 +318,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/entity_management"
+          $ref: "./ocsf/1.5.0/entity_management.json"
 
     FileSystemActivity:
       name: FileSystemActivity
@@ -334,7 +334,7 @@ components:
         schemaFormat: application/schema+json;version=draft-07
         schema:
           allOf:
-            - $ref: "https://schema.ocsf.io/api/1.5.0/classes/file_activity"
+            - $ref: "./ocsf/1.5.0/file_activity.json"
             - description: >-
                 NFR-SEC-79 required-field overlay on the OCSF base class:
                 every file-activity event on either face carries the OCU
@@ -367,7 +367,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/process_activity"
+          $ref: "./ocsf/1.5.0/process_activity.json"
 
     NetworkActivity:
       name: NetworkActivity
@@ -379,7 +379,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/network_activity"
+          $ref: "./ocsf/1.5.0/network_activity.json"
 
     HttpActivity:
       name: HttpActivity
@@ -391,7 +391,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/http_activity"
+          $ref: "./ocsf/1.5.0/http_activity.json"
 
     DnsActivity:
       name: DnsActivity
@@ -403,7 +403,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/dns_activity"
+          $ref: "./ocsf/1.5.0/dns_activity.json"
 
     # ComputeMetering and SaturationEvent payloads are NOT mapped to an OCSF
     # class. OCSF v1.x (Application Activity category 6xxx) has no class for
