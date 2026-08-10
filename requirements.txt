@@ -24,7 +24,7 @@ pillow==12.3.0
 opencv-python==4.13.0.92
 opencv-contrib-python==4.11.0.86
 opencv-python-headless==4.11.0.86
-imageio==2.37.0
+imageio==2.37.4
 imageio-ffmpeg==0.6.0
 scikit-image==0.26.0
 Wand==0.6.13
