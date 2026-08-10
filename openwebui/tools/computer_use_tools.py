@@ -109,6 +109,19 @@ class _MCPClient:
 
     def __init__(self, orchestrator_url: str, mcp_api_key: str = ""):
         base = orchestrator_url.rstrip("/")
+        # Only http(s) is a valid orchestrator transport. urllib honours file://,
+        # ftp:// and data://, so a misconfigured Valve would otherwise make the
+        # health probe and the preflight read local files instead of reaching the
+        # orchestrator — and report the result as if it came from the network.
+        # The sibling filter (openwebui/functions/computer_link_filter.py) already
+        # rejects this at its own urlopen site; this closes the same hole here,
+        # once, where the URL enters rather than at each of the three call sites.
+        scheme = urllib.parse.urlparse(base).scheme
+        if scheme not in ("http", "https"):
+            raise ValueError(
+                f"orchestrator URL scheme {scheme!r} is not supported "
+                f"(expected http or https)"
+            )
         self.base_url = base
         self.mcp_url = f"{base}/mcp"
         self.health_url = f"{base}/health"
