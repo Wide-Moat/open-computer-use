@@ -53,15 +53,20 @@ echo "$VERSIONS" | grep -q "Python 3" && pass "Python 3" || fail "Python version
 # 2. CommonJS require()
 echo ""
 echo "[2/14] CommonJS require()"
-for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa marked; do
+for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa; do
     RESULT=$(run_in_container "node -e \"try { require('$pkg'); console.log('OK') } catch(e) { console.log('FAIL: ' + e.code) }\"") || RESULT=""
     echo "$RESULT" | grep -q "OK" && pass "require('$pkg')" || fail "require('$pkg'): $RESULT"
 done
 
 # marked renders, rather than merely loading. A major of a renderer keeps the
-# module importable and changes the API or the output shape, so a bare require()
-# waves it through; parsing a heading and checking for <h1> does not.
-RESULT=$(run_in_container "node -e \"const m=require('marked'); const p=(m.parse||m.marked); const h=p('# t'); console.log(/<h1/.test(h)?'OK':'FAIL')\"") || RESULT=""
+# module importable and changes the API or the output shape, so loading it alone
+# waves that through; parsing a heading and checking for <h1> does not.
+#
+# ESM, not require(): the image ships a marked build that is ESM-only, so
+# require() raises ERR_REQUIRE_ESM. It therefore does NOT belong in the CommonJS
+# list above — measured in the image, not assumed from the host, where an older
+# CommonJS marked is installed and require() succeeds.
+RESULT=$(run_in_container "node --input-type=module -e \"import {marked} from 'marked'; const h=marked.parse('# t'); console.log(/<h1/.test(h)?'OK':'FAIL')\"") || RESULT=""
 echo "$RESULT" | grep -q "OK" && pass "marked renders a heading" || fail "marked render"
 
 # tsc COMPILES. The CLI loop below only proves --version exits 0, which a major
