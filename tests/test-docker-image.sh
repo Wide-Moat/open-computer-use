@@ -58,6 +58,26 @@ for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa; d
     echo "$RESULT" | grep -q "OK" && pass "require('$pkg')" || fail "require('$pkg'): $RESULT"
 done
 
+# marked renders, rather than merely loading. A major of a renderer keeps the
+# module importable and changes the API or the output shape, so loading it alone
+# waves that through; parsing a heading and checking for <h1> does not.
+#
+# ESM, not require(): the image ships a marked build that is ESM-only, so
+# require() raises ERR_REQUIRE_ESM. It therefore does NOT belong in the CommonJS
+# list above — measured in the image, not assumed from the host, where an older
+# CommonJS marked is installed and require() succeeds.
+RESULT=$(run_in_container "node --input-type=module -e \"import {marked} from 'marked'; const h=marked.parse('# t'); console.log(/<h1/.test(h)?'OK':'FAIL')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "marked renders a heading" || fail "marked render"
+
+# tsc COMPILES. The CLI loop below only proves --version exits 0, which a major
+# that changed type-checking would also satisfy. This compiles a strict file and
+# then asserts a deliberately ill-typed one is REJECTED, so the check cannot pass
+# by accepting everything.
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'export const twice = (x: number): number => x * 2;\\n' > \$d/a.ts; tsc --noEmit --strict \$d/a.ts >/dev/null 2>&1 && echo OK || echo FAIL") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc compiles a strict file" || fail "tsc compile"
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const n: number = \\"nope\\";\\n' > \$d/b.ts; tsc --noEmit --strict \$d/b.ts >/dev/null 2>&1 && echo FAIL || echo OK") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc rejects an ill-typed file" || fail "tsc did not reject bad types"
+
 # 3. ES Modules import
 echo ""
 echo "[3/14] ES Modules import"
