@@ -16,7 +16,7 @@ asyncapi: 3.0.0
 
 info:
   title: OCU Audit Fan-in
-  version: 1.0.0
+  version: 1.2.0
   description: >-
     One-directional fan-in from the five emitting host-side components — MCP
     gateway, Control / operator API, Egress trust-edge, Object-store service,
@@ -47,19 +47,38 @@ servers:
 channels:
   mcpGatewayAudit:
     address: audit.ingest.mcp-gateway
-    description: GATEWAY — API Activity for MCP tool-call ingress at the gateway.
+    description: >-
+      GATEWAY — API Activity for MCP tool-call ingress, and caller-key
+      authentication, at the gateway.
     messages:
       apiActivity:
         $ref: '#/components/messages/ApiActivity'
+      # The sk-ocu- caller key is validated AT THE GATEWAY (ADR-0027); Control
+      # only ever sees the gateway's own mTLS identity, so a failed caller key
+      # is observable nowhere but here. Same emission discipline as the
+      # control-plane channel (NFR-SEC-88): one logon per accepted
+      # connection/session, every failure with its cause, fail-open with
+      # counted loss.
+      authentication:
+        $ref: '#/components/messages/Authentication'
 
   controlPlaneAudit:
     address: audit.ingest.control-plane
-    description: ORCH — Authentication and Account/Entity management at the Control / operator API.
+    description: >-
+      ORCH — Authentication, Account/Entity management, and tool-call evidence at the
+      Control / operator API.
     messages:
       authentication:
         $ref: '#/components/messages/Authentication'
       entityManagement:
         $ref: '#/components/messages/EntityManagement'
+      # The control plane's own record of an executed tool call (ADR-0024 F10
+      # evidence). It is API-shaped and carries api.operation, so it is the same
+      # class the gateway publishes for ingress — a different observation point,
+      # not a different record shape. The two are told apart by the channel they
+      # arrive on, never by a payload field (ADR-0044, NFR-SEC-09/56).
+      apiActivity:
+        $ref: '#/components/messages/ApiActivity'
 
   objectStoreAudit:
     address: audit.ingest.object-store
@@ -117,6 +136,7 @@ operations:
       - $ref: '#/components/securitySchemes/sourceMtls'
     messages:
       - $ref: '#/channels/mcpGatewayAudit/messages/apiActivity'
+      - $ref: '#/channels/mcpGatewayAudit/messages/authentication'
 
   receiveControlPlane:
     action: receive
@@ -127,6 +147,7 @@ operations:
     messages:
       - $ref: '#/channels/controlPlaneAudit/messages/authentication'
       - $ref: '#/channels/controlPlaneAudit/messages/entityManagement'
+      - $ref: '#/channels/controlPlaneAudit/messages/apiActivity'
 
   receiveObjectStore:
     action: receive
@@ -257,40 +278,47 @@ components:
     ApiActivity:
       name: ApiActivity
       title: API Activity (OCSF 6003)
-      summary: MCP tool-call ingress at the MCP gateway.
+      summary: >-
+        Tool-call activity, carried by the MCP gateway for ingress and by the Control
+        plane for its own execution evidence. The publishing channel names which.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/api_activity"
+          $ref: "./ocsf/1.5.0/api_activity.json"
 
     Authentication:
       name: Authentication
       title: Authentication (OCSF 3002)
-      summary: Session JWT issue and operator authentication.
+      summary: >-
+        Authentication acts: session-JWT issue and operator authentication at the
+        Control plane, caller-key logons at the gateway. The publishing channel
+        names which.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/authentication"
+          $ref: "./ocsf/1.5.0/authentication.json"
 
     EntityManagement:
       name: EntityManagement
       title: Entity Management (OCSF 3004)
       summary: >-
         Enumerated privileged control-plane actions (NFR-SEC-45) — retention,
-        denylist, quota, tier-downgrade, custody access.
+        denylist, quota, tier-downgrade, custody access — and the session
+        lifecycle records (NFR-SEC-72), the session being the entity the control
+        plane manages: create, destroy, resume, reclaim, and refused-create.
       contentType: application/json
       traits:
         - $ref: '#/components/messageTraits/auditEnvelope'
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/entity_management"
+          $ref: "./ocsf/1.5.0/entity_management.json"
 
     FileSystemActivity:
       name: FileSystemActivity
@@ -306,7 +334,7 @@ components:
         schemaFormat: application/schema+json;version=draft-07
         schema:
           allOf:
-            - $ref: "https://schema.ocsf.io/api/1.5.0/classes/file_activity"
+            - $ref: "./ocsf/1.5.0/file_activity.json"
             - description: >-
                 NFR-SEC-79 required-field overlay on the OCSF base class:
                 every file-activity event on either face carries the OCU
@@ -339,7 +367,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/process_activity"
+          $ref: "./ocsf/1.5.0/process_activity.json"
 
     NetworkActivity:
       name: NetworkActivity
@@ -351,7 +379,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/network_activity"
+          $ref: "./ocsf/1.5.0/network_activity.json"
 
     HttpActivity:
       name: HttpActivity
@@ -363,7 +391,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/http_activity"
+          $ref: "./ocsf/1.5.0/http_activity.json"
 
     DnsActivity:
       name: DnsActivity
@@ -375,7 +403,7 @@ components:
       payload:
         schemaFormat: application/schema+json;version=draft-07
         schema:
-          $ref: "https://schema.ocsf.io/api/1.5.0/classes/dns_activity"
+          $ref: "./ocsf/1.5.0/dns_activity.json"
 
     # ComputeMetering and SaturationEvent payloads are NOT mapped to an OCSF
     # class. OCSF v1.x (Application Activity category 6xxx) has no class for

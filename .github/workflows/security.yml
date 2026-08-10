@@ -6,9 +6,11 @@
 #
 #   1. Secrets scan blocks merge (gitleaks + trufflehog).
 #   2. SAST/SCA CRITICAL blocks merge (Semgrep + Trivy).
-#   3. IaC scan (Checkov) — CRITICAL on Helm blocks merge (HIGH currently
-#      soft-fail during bootstrap; tightened once the baseline cleanup PR
-#      lands and Dockerfile/Compose/K8s scopes are added back in).
+#   3. IaC scan (Checkov) — every Helm finding blocks merge except the named
+#      per-check exclusions at the job, each carrying the reason it cannot be
+#      answered in the chart. Severity thresholds do not work here: open-source
+#      checkov assigns these k8s checks no severity, so a threshold matches
+#      nothing and lets everything through.
 #
 # Signed SBOM + Cosign attestations for release artifacts live in
 # supply-chain.yml; this file covers the commit-time / PR-time gates.
@@ -276,7 +278,7 @@ jobs:
           limit-severities-for-sarif: true
       - name: Upload SARIF (CRITICAL)
         if: always()
-        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
+        uses: github/codeql-action/upload-sarif@d1ba80a13dd99fba24a470575428917156a28b43  # v4.37.5
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -306,7 +308,7 @@ jobs:
           limit-severities-for-sarif: true
       - name: Upload SARIF (HIGH)
         if: always()
-        uses: github/codeql-action/upload-sarif@fee9466b8957867761f2d78f922ab084e3e2dd17  # v3
+        uses: github/codeql-action/upload-sarif@d1ba80a13dd99fba24a470575428917156a28b43  # v4.37.5
         with:
           sarif_file: trivy-fs-high.sarif
           category: trivy-fs-high
@@ -324,23 +326,99 @@ jobs:
           python-version: "3.12"
       - name: Install checkov
         run: pip install checkov==3.2.314
+      - name: Install helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
+        with:
+          version: v3.16.4
+      - name: Assert the chart renders before scanning it
+        # checkov renders the chart itself and only WARNS when that fails, so a
+        # chart that cannot render produces zero findings and a green gate. That
+        # is what happened here: values.schema.json requires a secret source and
+        # a public base URL (correctly — it stops a deployment landing with no
+        # secret), checkov rendered with defaults, hit the schema error, and
+        # scanned nothing. Rendering here first turns that silent state into a
+        # red one.
+        run: |
+          set -euo pipefail
+          helm template scan helm/computer-use-server \
+            -f .github/checkov/helm-scan-values.yaml > /tmp/rendered.yaml
+          # A chart that renders to nothing would also scan clean.
+          test "$(grep -c '^kind:' /tmp/rendered.yaml)" -gt 0 \
+            || { echo "the chart rendered no manifests - refusing to report a clean scan" >&2; exit 1; }
+          echo "rendered $(grep -c '^kind:' /tmp/rendered.yaml) manifests"
       - name: Run checkov
         # Scope: only Helm (the next/v1 deployment substrate). The legacy
-        # Dockerfile + older workflows have pre-existing findings that
-        # belong in a separate cleanup PR — they are not the subject of
-        # this gate.
+        # Dockerfile + older workflows have pre-existing findings that belong in
+        # a separate cleanup PR — they are not the subject of this gate.
         #
-        # `--soft-fail-on LOW,MEDIUM,HIGH` means only CRITICAL Helm findings
-        # block merge for the bootstrap phase. We tighten to HIGH+ in a
-        # follow-up once the baseline cleanup PR lands, and we extend the
-        # framework list to dockerfile/compose/k8s at the same time.
+        # --var-file supplies the values the chart's schema requires; without it
+        # checkov's own render fails and the scan silently covers nothing.
+        #
+        # The gate BLOCKS. It does not use --soft-fail-on: open-source checkov
+        # assigns these k8s checks no severity at all, so a severity list matches
+        # nothing and rejects every finding alike (measured: --soft-fail-on
+        # LOW,MEDIUM,HIGH exits 2 on a failing manifest, --soft-fail exits 0).
+        # A per-check skip-list is the only instrument that discriminates here,
+        # so each exclusion below names the specific reason it cannot be fixed
+        # in the chart, and everything not named blocks the merge.
+        #
+        # --skip-path templates/tests: the helm-test Pod lives for the seconds a
+        # `helm test` takes. Liveness probes, resource limits, and an image
+        # digest on a pod that exits after one curl are noise, not posture.
+        #
+        # CKV_K8S_21 (default namespace): a render artifact. The templates set
+        # no namespace because the release supplies it via --namespace; checkov
+        # renders without one and reports the default it invented itself.
+        #
+        # CKV_K8S_16 (privileged): the dind container IS a container runtime.
+        # Its privilege is the isolation boundary this platform is built on
+        # (the sandbox runs inside it, not beside it), not an oversight.
+        #
+        # CKV_K8S_43 / CKV_K8S_15 (image digest, pullPolicy Always): the chart
+        # ships tag-based defaults so a self-hoster can install without first
+        # resolving digests. Pinning is a deployment decision the values expose,
+        # not something the chart can decide for every operator.
+        #
+        # CKV_K8S_35 (secrets as files): MCP_API_KEY reaches the orchestrator
+        # through envFrom because the server reads it from the environment.
+        # Changing that is a server change, tracked separately from this gate.
+        #
+        # The remaining exclusions are properties of the two container IMAGES,
+        # which no values edit can change, so blocking on them would only stop
+        # every merge until the images are rebuilt. Each is tracked in #322.
+        #
+        # CKV_K8S_23 / CKV_K8S_40 (root, high UID): the orchestrator image runs
+        # as root and dind must. The cleanup sidecar's `crond` reads
+        # /etc/crontabs as root and refuses to start otherwise.
+        #
+        # CKV_K8S_20 (allowPrivilegeEscalation): dind spawns the container
+        # runtime; the orchestrator image needs it for the same reason it runs
+        # as root. The cleanup sidecar already sets it false.
+        #
+        # CKV_K8S_37 / CKV_K8S_28 (capabilities, NET_RAW): dropping ALL on dind
+        # breaks the daemon it exists to run. The cleanup sidecar drops ALL.
+        #
+        # CKV_K8S_22 (read-only root filesystem): dind writes its graph driver
+        # under /var/lib/docker and the cleanup sidecar appends to
+        # /var/log/cleanup.log — neither is a mounted volume. Enforcing this
+        # would leave both silently non-functional rather than secure.
+        #
+        # CKV_K8S_8 / CKV_K8S_9 (probes on dind and cleanup): neither serves a
+        # health endpoint. The orchestrator, which does, has both.
+        #
+        # CKV2_K8S_6 (NetworkPolicy): the chart ships one, gated behind
+        # networkPolicy.enabled, defaulting false because its egress rules must
+        # match the deployment. Enabling it in the scan values would hide the
+        # finding rather than answer it.
         run: |
           checkov \
             -d helm/ \
             --quiet \
             --compact \
             --framework helm \
-            --soft-fail-on LOW,MEDIUM,HIGH
+            --var-file .github/checkov/helm-scan-values.yaml \
+            --skip-path 'templates/tests' \
+            --skip-check CKV_K8S_21,CKV_K8S_16,CKV_K8S_43,CKV_K8S_15,CKV_K8S_35,CKV_K8S_23,CKV_K8S_40,CKV_K8S_20,CKV_K8S_37,CKV_K8S_28,CKV_K8S_22,CKV_K8S_8,CKV_K8S_9,CKV2_K8S_6
 
   conventional-commits:
     name: commits — conventional-commits
@@ -422,6 +500,19 @@ jobs:
 
       - name: Self-test the exception-ledger checker
         run: python3 tests/security/check_security_exceptions.py --self-test
+
+      # Subpaths of one action repository share runtime state — CodeQL refuses
+      # to analyze when init and analyze disagree ("Loaded a configuration file
+      # for version X, but running version Y"). Dependabot opens one PR per
+      # SUBPATH, so a package used through four paths arrives as four PRs that
+      # each break the set in isolation, and the failure names a version
+      # mismatch rather than the split bump behind it. zizmor proves each ref IS
+      # a SHA; nothing proved sibling subpaths share one.
+      - name: Self-test the action-pin checker
+        run: python3 scripts/check-action-pin-consistency.py --self-test
+
+      - name: Action subpaths of one repository share a SHA
+        run: python3 scripts/check-action-pin-consistency.py
 
       - name: Enforce the HIGH-exception ledger
         # The ledger carried a schema with `since`, `expires`, an owner and a

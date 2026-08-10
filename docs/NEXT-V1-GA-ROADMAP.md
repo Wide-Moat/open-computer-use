@@ -1,0 +1,304 @@
+<!-- SPDX-License-Identifier: FSL-1.1-Apache-2.0 -->
+<!-- Copyright (c) 2025 Open Computer Use Contributors -->
+
+# next/v1 GA Roadmap
+
+Prioritized wave plan to take the `next/v1` enterprise architecture from PoC-parity to GA. Synthesized from firsthand per-component + per-ADR distance maps against the canon (`MANIFESTO.md`, `manifesto/02-nfrs.md`, `manifesto/04-non-goals.md`). GA-ready = spec invariants enforced in code with tests, cited ADRs implemented, NFRs met, `status: tbd` seams built or cleanly deferred.
+
+---
+
+## 1. Honest overall GA-readiness
+
+**≈ 52% GA-ready** (weighted by GA-criticality, not a flat mean of the eight component percentages).
+
+The flat mean of the reported component scores is ~57% (62/68/62/55/35/30/72). Weighting down-adjusts it because the two lowest-scoring components carry the two GA-defining enterprise promises:
+
+- **Egress trust-edge (06) at 35%** and **Audit pipeline (07) at 30%** are the components a regulated-enterprise auditor and the storage-credential-custody story rest on. Their weight is high and their scores are lowest, so they drag the weighted number below the mean.
+- **The entire ADR cluster is `proposed`.** Of ~30 ADRs, only 6 are `accepted` (0022, 0023, 0024, 0025, 0026, 0027, 0028, 0001, 0004 — the accepted set). The egress cluster (0005/0006/0007/0008/0011/0016/0019/0021) and the load-bearing storage-custody ADR-0019 are all `proposed`. GA canon expects decision-bearing specs `accepted`. A GA where the whole egress+audit decision spine is unratified is not GA.
+
+**PoC-parity works; GA canon does not.** The distinction is stark and consistent across the maps:
+- The minimal-shelf, single-tenant, docker/runsc, storage-swap-in-a-harness path is **genuinely built, wired, and green** — control lifecycle invariants, gateway sk-key auth, filestore prefix-confinement + subtree join, sandbox host-side teardown/admission, webui security spine. This is real code with property/fuzz tests, not scaffold.
+- The GA canon path — **stock-Envoy live enforcement, a shipping RFC-8693 exchange counterparty, the multi-source audit fan-in with a transparency-log anchor, user-namespace mapping in the sandbox, full-shelf OIDC/SCIM/SPIFFE identity** — is where four of the components (05/06/07 and the full-shelf halves of 01/02/08) have security-critical invariants with **no enforcing code**.
+
+The honest read: the platform is a strong, well-tested PoC for the minimal shelf, roughly half-way to the enterprise-GA bar the canon defines.
+
+---
+
+## 2. The gap ledger (de-duplicated, grouped by theme)
+
+### Theme A — Egress-edge live enforcement (the single largest cluster)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| A1. **CORRECTED 2026-07-26 — the edge already live-serves on stock Envoy.** | 06, ADR-0019 | The running `ocu-donegate-edge-1` is the upstream `envoyproxy/envoy` image by digest, version 1.31.10, PID 1 `/usr/local/bin/envoy`, serving `/etc/envoy/envoy.yaml` (chain `jwt_authn -> ext_authz -> router`); 7821 upstream requests, `ext_authz` denied 0 / `failure_mode_allowed` 0. What remains harness is the **exchange counterparty** (A2), not the edge. `credential_injector` is absent from the live chain entirely — the seam is `ext_authz`, and Envoy itself prints that the filter is work-in-progress and outside its security team's support, which disqualifies it for credential custody. Remaining A1 work: none as framed; the live-serving claim is closed. | closed |
+| A2. **UNBLOCKED 2026-08-09 — the owner call is ruled; this is build work now.** | 06, ADR-0019/0005/0046 | `test/harness/exchange/` still stands in for the shipping component, so a clean deploy has no counterparty. What changed is the decision: [ADR-0046](architecture/adr/0046-exchange-counterparty-is-ours-static-rooted.md) rules the counterparty is an OCU component and no secret manager is bundled. Its root follows the already-ratified shelf split — a static file on the solo shelf ([NFR-SEC-59](architecture/manifesto/02-nfrs.md) permits exactly that for the SDS source), delegation to a customer authority on the full shelf, selected by configuration on one binary. Remaining work: build the exchange with per-{filesystem_id,intent} keyed issuance, per-session caching, and the JWKS [ADR-0042](architecture/adr/0042-engine-credential-verification-anchor.md)'s engine verifies against. | L |
+| A3. Generic LLM-leg inspection hop unbuilt | 06, ADR-0006/0016/0005/0007 | Only the storage-leg edge config exists. No arbitrary-host TLS-terminate + per-host leaf from per-deployment CA + client-bearer passthrough + SDS source for the LLM leg. | L |
+| A4. Edge policy chain absent | 06, ADR-0008 | Decision names `jwt_authn→ext_authz→rbac→ratelimit→router`; only `jwt_authn` exists. No `ext_authz` denylist consult (kill-switch-at-edge), no per-session ratelimit, no `x-deny-reason`. | M |
+| A5. INV-8/9/10 no artifact | 06, ADR-0008/0021 | denylist-drop, monotonic-clock revoke, L3 host-root-netns zero-relay have no code/test in the edge repo. (INV-10 attach seam IS built sandbox-side per ADR-0021.) | M |
+| A6. Edge-authored OCSF per connection | 06, ADR-0011, NFR-SEC-03 | No access-log/tap→OCSF wiring in `envoy.yaml`; one-event-per-connection unproven. | S |
+| A7. INV-2 TLS re-origination / inspection-CA custody untested | 06 | No test proving guest trust store holds only public root, inspection-CA private key never enters guest, origin-cert validation vs public CA set. | M |
+
+### Theme B — Storage credential custody (ADR-0013/0019 vs shipped)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| B1. **RESCOPED 2026-07-26 — the mechanism runs on the stand; the shipped artifacts do not enable it.** | 04, ADR-0013/0019 | `docker inspect ocu-donegate-filestore-1` shows the real engine image running with `-verify-storage-jwt -storage-jwks-path .../credential-jwks.json -storage-jwt-issuer https://exchange.test -storage-jwt-audience filestore -claims-bind`, and a forged bearer at its south face answers 401 against 6800 legitimate 200s. So "engine does not verify the injected credential" is refuted on the stand. Two things stay open: the flags appear in NO shipped `deploy/*.yml` in the filestore repo (the stand was built from staged sources, so a clean rebuild from repo artifacts ships dark), and the **correctness** of that verification is unproven — alg pinning, absence of a fallback branch, `kid` handling. Remaining work: wire the shipped manifests plus a config-drift guard, and red-probe the three correctness axes. | M |
+| B2. **REWRITTEN 2026-07-26 — there is no mismatch and no path to choose.** | 04, ADR-0029 | The keyed store is not in the Envoy config at all: it lives in the `ext_authz` sidecar, and its key is literally the pair — `type key struct { filesystemID string; intent string }` (`ocu-rclone-filestore/internal/edgeauthz/edgeauthz.go:73-76`, written at :166, read at :211, same key on the single-flight). Both roadmap "paths" hold simultaneously: the exchange is pair-keyed AND `intent` never travels the RFC-8693 wire (the request body carries `grant_type`, `subject_token`, `subject_token_type` only), riding inside the subject token and read after re-verification. The issuing side keeps no cache, so exactly one keyed store exists in the chain and the two sides cannot disagree. Remaining work: none. ADR-0019's Decision carried the superseded claims — "keyed on the validated `filesystem_id`" and "exchanges once per session" — so a reader arriving there met the pre-0029 wording with no pointer to its own amendment; both now read the pair key and the per-mount cadence, and the Status line names ADR-0029 as the amender. | closed |
+| B3. **RESCOPED 2026-08-06 — 15 of 21 verbs serve; the rest are contract-blocked, not unbuilt.** | 04, ADR-0036/0037 | The GA read/write set named here is built: `listFiles`, `createFile`, `getFileMetadata` and `fileDelete` landed with ADR-0036, joining the path-axis verbs, `readFile`/`readMetadata`, and the two streaming verbs. `TestEveryFrozenOpIsServedOrContractBlocked` partitions the frozen enum and holds the split at 15 served / 4 routable-and-501 / 2 unroutable. Counting the dispatch registry under-reports by three: `createFile`, `fileUpload` and `fileDownload` are REST-routed out-of-band and never appear in it. The remaining six are blocked on canon, not code — `importFiles`, `importZip`, `migrateFilesystem`, `removeFilesystem` sit under `x-ocu-tbd-bodies` in `contracts/storage/file-ops.schema.json`, whose reason field rules "fill each only when a field-level source pins it", and `readFileMetadata` / `releaseQuarantinedFiles` are held out of `knownOps` entirely, so they answer 404 rather than 501. Writing handlers for any of the six means inventing the request/response field set from the implementation side. Remaining work: a field-level source or an ADR per body; the filesystem-lifecycle trio then unblocks as one tranche. | S (canon) then M (code) |
+
+### Theme C — Audit emit contract & tamper-evidence (07 / ADR-0009)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| C1. No pipeline component; only one source's emitter | 07, ADR-0009, ADR-0044 | Audit code is an in-process library inside ocu-control. No multi-source mTLS fan-in. The transport stays unpinned by design (the fan-in contract is protocol-agnostic; #150 closed NOT_PLANNED), so the buildable half is the channel binding: [ADR-0044](architecture/adr/0044-ocsf-class-follows-record-semantics.md) fixes that the channel carries source identity alone and the OCSF class follows the record. That surfaced a live divergence — the control plane emits API Activity (6003) for every record, a class its own channel does not declare, with the verb in `metadata.unmapped` and several actions collapsing to activity Other(99). The contract gained the class additively (1.1.0), the emitter remap shipped (SEC-45/SEC-72 families to 3004 with an `entity` object, exec to 6003 with `api.operation`), and the declared-but-never-emitted Authentication (3002) half now has its emitter too: one logon per accepted connection on both channels, every failure with its cause, and a fail-closed authentication-ticket event per Storage-JWT mint (NFR-SEC-88). What remains of this row is the fan-in INGRESS itself — the audit-pipeline container's ingest face (ocu-audit repo) terminating the SIX source mTLS channels (mcp-gateway, control-plane, object-store, web-ui, session-sandbox, egress-edge) plus the BUS self-emit, binding OCSF source to verified peer (INV-1), rejecting cross-channel publishes (INV-2), and acking only after the local durable commit (INV-4). This is a build on both shelves, not a customer seam: ADR-0009 lists five seams (bus, WORM, SIEM, tx-log, key custody) and host-attested ingest is not among them; the embedded WAL is the bus substrate inside the pipeline, not the pipeline's absence. The code-side half of INV-1 that lands before the service does — a receive-only lint over the contract, so it can never describe a source publish surface — ships with this row. Gateway-side mcp-key logons shipped as their own additive contract change (1.2.0). | M |
+| C2. Durable bus absent | 07, ADR-0009, NFR-REL-12 | Fsyncs straight to local file (local-commit floor met); no durable-bus seam, no decoupled fan-out, no replay-on-recovery, no bus-on-path chaos test. | L |
+| C3. **RESCOPED 2026-08-07 — the OCU-side pieces ship; the publish leg is a customer seam.** | 07, ADR-0009, NFR-SEC-03 | ADR-0009 puts the chain writer, the Merkle-head accumulator and the envelope signer on OCU's side of the build/buy line, and the transparency-log endpoint on the customer's. All three OCU pieces now exist in `ocu-control`: `MerkleRoot`/`HeadOverSpine` accumulate the daily head over the spine's envelope hashes and validate before witnessing, `SignHead`/`VerifyEnvelope` sign it under a domain-tagged length-prefixed encoding, and `occ audit head` composes them into an operator-runnable step that emits the envelope and stops. Key custody follows the same split: the host-local PEM form is the reference intake, HSM/PKCS#11 stays the enterprise alternative. Remaining: the submission path itself, which is canon-blocked rather than unbuilt ([#151](https://github.com/Wide-Moat/open-computer-use/issues/151) closed NOT_PLANNED), plus hot→cold rotation which is C5. | S |
+| C4. Per-source fairness / saturation self-emit absent | 07, NFR-SEC-56/PERF-10 | No rate-shaping keyed to host-attested source, no saturation OCSF event, no flood chaos test. Both halves sit at the fan-in INGRESS: NFR-SEC-56 rate-shapes *at the fan-in boundary* keyed to the host-attested source, and the saturation event is a `auditPipelineAudit` (BUS) self-emit — the pipeline that terminates the source channels. Neither is buildable until the ingress exists (C1's remaining half), whose transport stays deliberately unpinned. Source-side fail-closed emit already holds on every producer (a write failure denies the action), so NFR-PERF-10's no-silent-drop is met at the source; the fairness and saturation halves are the ingress's. | M |
+| C5. **RESCOPED 2026-08-08 — the OCU-side pieces ship; WORM stays the customer seam.** | 07, NFR-COMP-01, ADR-0009 | NFR-COMP-01 is explicit that the retention floor is mandatory on both shelves while only the WORM substrate is shelf-conditional, and ADR-0009 puts retention-policy enforcement on OCU's build side. All of it now exists in `ocu-control`: the floor policy (7y default clamped upward to 10y; premature deletion refused with the reason named, which is what a DORA/NYDFS reviewer actually tests), crash-idempotent hot→cold segment rotation (cold-commit-before-truncate, chain continuity across the seam via the sealed tail, foreign files at the segment path refused rather than deleted), the driver joining policy to mechanism, and boot-time wiring behind `-audit-cold-dir` with the resume seam that keeps sealed+hot one spine. Rotation runs in-process only: an external cron racing the live writer would destroy acked envelopes between its read and its truncate. Remaining: the WORM substrate and post-floor disposal, both the customer's per the ADR-0009 seam table; RTB tombstoning is NFR-COMP-12's row. | closed |
+| C6. **CLOSED 2026-08-07 — the seam and the counter ship.** | 04, INV-7 | `internal/auditgate` carries the fan-in publisher seam beside the local fsync'd chain, and `droppedFanOut` counts every committed event the publisher refused, incremented on each of the three refusal paths and readable through `DroppedFanOut()`. The local commit does not wait on the fan-out (NFR-SEC-79 durable-first, NFR-REL-12 spill-not-block): a refused publish is a counted drop, never a denied or stalled file operation. Verified non-vacuous by mutation — removing the increment reds the suite. Remaining work: none; the fan-in COUNTERPARTY is C1, a separate row. | closed |
+
+### Theme D — Full-shelf enterprise identity (01 / 02 / 08 / ADR-0004)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| D1. **RECLASSIFIED 2026-07-26 — an unselected shelf, not a gap.** | 01, ADR-0027 | The vendored constraint contract makes the RFC 8707 audience rule and the RFC 9728 resource-metadata pointer CONDITIONAL on an `oauth2-rs` auth mode, with `static-key` as the declared default; the unconditional rule is only that a 401 carries a `WWW-Authenticate: Bearer` challenge, which the shipped gateway does send. So the missing OAuth-RS validator is the unbuilt half of a ratified two-shelf design (ADR-0027, accepted), not debt — and selecting the shelf is an architect decision, deferred to Phase 7. The two items recorded underneath it are **closed as of 2026-08-06**: `internal/ingress/www_authenticate_test.go` pins the unconditional challenge (`TestUnauthenticated401CarriesWWWAuthenticateChallenge`, green), and the validator's embedded schema is **byte-identical** to the canon copy — there is no contradiction to reconcile. `TestEmbeddedProfileMatchesCanonVendoredCopy` holds them equal and reds naming the byte delta when the embedded copy is perturbed. Remaining work: none until the shelf is selected in Phase 7. | closed |
+| D2. Control full-shelf operator auth | 02, ADR-0004 | No OIDC/SCIM relying-party, PAM-JIT, or SPIFFE-SVID SOAR identity. Only minimal-shelf peer-cred + signed-webhook seam. | L |
+| D3. **UNBLOCKED 2026-08-07 — the canon it needed is now pinned.** | 02, ADR-0004/0039 | The verify-then-mint fence is fail-closed and tested; no concrete verifier is wired. The row read as code-only work, but the frozen `soar-revoke.openapi.yaml` flagged the signed-payload canonicalization as a gatekeeper decision — the signer is the customer's SOAR platform, so the byte string is an interop commitment a deployed playbook fixes in the field. [ADR-0039](architecture/adr/0039-soar-webhook-signature-scheme.md) pins it: Ed25519 with no in-band selector, `"ocu.soar.revoke.v1" \|\| LP(scope) \|\| LP(target) \|\| LP(issued_at)`, `issued_at` as verbatim RFC 3339 text, a host-owned config keyring with no fetch on the kill path, and the replay cache outside `SOARVerifier` in the operator adapter admitting only verified issuances. Both halves are now built: `internal/soarverify` verifies the signature against the config keyring, and `internal/ingress/operator` enforces the window and the seen-signature cache behind `verifyThenAdmit`, which verifies before it admits so a forged issuance cannot poison the cache and block the real revoke. The ordering is now a component-02 invariant. Remaining work: only the SOAR route, which stays deferred behind the #205 wire freeze — the gate the route will call is built and proven. | closed |
+| D4. WebUI full-shelf OIDC embed | 08 | Only minimal-shelf HS256 pre-issued token verified. No RS256/OIDC discovery/JWKS-per-issuer. INV1 holds minimal-shelf only. | L |
+| D5. **CLOSED 2026-08-07 — the gate ships.** | 01, NFR-SEC-49, [ADR-0041](architecture/adr/0041-gateway-per-action-authz-policy.md) | Every tool call is decided against a deployment-supplied policy on (caller, tool, arguments), evaluated between the tool-name allowlist and the resolve step so a denied call acquires no session slot and Control materializes nothing for it. Deny-by-default lives in the evaluator, not the rule set: the shipped baseline is permissive and explicit, and a tool omitted from a profile is refused. The only argument predicate is an absolute-prefix list on the file verbs' path, compared after normalization and bounded at a separator; globs and regular expressions are absent by construction, since the schema rejects an unknown rule key. `bash_tool.command` carries no content predicate — NFR-SEC-49 now states the exclusion, because a command-pattern deny cannot meet the row's own zero-red-team-pass criterion. The `-resolve-only-key-ids` flag compiles to caller bindings, so the confinement it used to enforce by hand runs through the one evaluator. Remaining work: none. | closed |
+
+### Theme E — Sandbox hardening & lifecycle invariants (05)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| E1. **REFRAMED 2026-07-26 — the fix is daemon config plus an admission gate, never a per-container field.** | 05, NFR-SEC-14 | `UsernsMode` is absent from all of `host/` (grep: zero hits) and guest UID0 == host UID0 under `runc`. But writing `UsernsMode` in `buildHostConfig` is the wrong fix and the repo already decided so: DD-7 (`ocu-sandbox/docs/design-decisions.md:197-205`) records that no per-container enable exists — remap is daemon-global and the only per-container control (`--userns=host`) *disables* it — so "the create path writes no per-container userns field: a no-op field would falsely imply an isolation property the container does not have". Correct form: daemon remap at deployment plus a per-create fail-closed admission gate that refuses when the daemon reports no remap, with the keystone observed as the actual in-container `uid_map`. Landlock stays absent and is a separate item; a shipped doc claims it as delivered, which is its own defect. | M |
+| E2. Snapshot/hibernate/resume/fork | 05, INV12, NFR-REL-08 | Not built — no secret-zeroization at snapshot, no resume-time re-identity + entropy/boot_id reseed, no N-fork uniqueness test. | XL |
+| E3. Monotonic-clock rollback defence | 05, INV13, NFR-SEC-48 | Guest TTLs read wall clock; no resume-time wall-clock correction; no rollback red-team. | M |
+| E4. Erase-before-reuse / per-session DEK | 05, INV14, NFR-SEC-54 | Page-cache-drop + region-zeroize / per-session-DEK-destroy on recycled mount is a stub; session-1→session-2 no-read property test absent (cross-repo with filestore). | L |
+| E5. Runtime-monitor host-authored audit half | 05, INV5, #181 | Not-guest-disableable runtime-monitor authoring in-sandbox tool-call events out-of-band unbuilt (spec residual). | M |
+| E6. Guest mount-config ingestion (F7) | 05, ADR-0013/0019 | In-guest mount-config consumption + scrub-after-load (NFR-SEC-25 guest half) not in ocu-sandbox. | M |
+| E7. **CLOSED 2026-08-07 — both tiers are required contexts.** | 05, INV16 | `e2e` (runc) and `e2e-gvisor` (runsc) are both required on `ocu-sandbox` main, and the egress e2e runs under each: it iterates `t.Run(tier, …)` over {Runc, Runsc}, so the gvisor job's `-run '(Integration|E2E).*/Runsc'` selector matches it. Each job counts the tests it actually ran (`grep -c '"Action":"run"'`) and fails on zero, so a slice that skipped everything reds instead of reporting the green a docker-gated skip would otherwise produce — which is the specific failure this row feared. The gvisor job additionally verifies the runsc runtime registered before running, so a failed install red-gates rather than silently falling back to runc. Remaining work: none. | closed |
+
+### Theme F — WebUI preview substrate & audit actor (08)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| F1. Preview-render substrate | 08, INV7, ADR-0026 | Null-origin sandboxed-iframe render under body content-CSP is a gated stub (`PREVIEW_RENDER_ENABLED` OFF; `handlePreview` no-op). INV7 preview half unbuilt. | M |
+| F2. **CLOSED 2026-08-07 — the actor is the session principal.** | 08, INV8, #181 | `attest.ts` builds `actor: { user_uid: payload.sub, session_uid: payload.jti }`, so a file-op attributes to the asserting user and files the session under its own jti rather than under the scope. `audit-actor-attribution.test.ts` holds it (10 cases, green), including that the scope never appears as the actor's `session_uid` — the assertion the pre-fix `{session_uid: filesystemId}` shape would have satisfied. Remaining work: none. | closed |
+
+### Theme G — Frozen contracts + ratification
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| G1. **CLOSED 2026-08-07 — the gate enforces; the wire is bound by test (ADR-0043).** | 02, #205, NFR-IC-04 | The buf/oasdiff half is done and is a required context: `rpc-version` runs `buf breaking` over `contracts/proto` and `oasdiff` over every `contracts/openapi/*.openapi.yaml`, with a red-probe riding the same job. It had been reporting a green that measured nothing — it probed `buf.yaml` at the repo root and `contracts/operator/openapi.yaml`, neither of which is where the contracts landed, so NFR-IC-04 went unenforced from the moment they were committed. The wire half stands: no generated `.pb.go` exists, and the operator transport is hand-written JSON whose structs are now bound to the frozen `session_setup.proto` by a field-parity test rather than by a doc comment. Remaining work: none. [ADR-0043](architecture/adr/0043-contract-binding-without-codegen.md) rules the call: the wire stays hand-written and the parity test is the binding, because no component serves or dials the session-setup surface over gRPC — it is HTTP/JSON on both ends and gRPC is an indirect dependency nothing imports. The ADR also fixes what that binding must do: both-directions field comparison read from the frozen artifact, an extent check so the covered set cannot silently shrink, annotated omissions, and a parser that fails closed rather than passing on zero fields. Generation returns when a gRPC consumer does. | closed |
+| G2. ADR ratification (proposed→accepted) | all ADRs | Egress cluster (0005/6/7/8/11/16/19/21) + storage (0010/0013/0015/0029/0030) + sandbox (0003/0017/0018) + 0002/0009/0012 all `proposed`. Owner batch sign-off + write-down reconciliations. | S–M (per cluster) |
+
+### Theme H — Image provisioning (ADR-0020, the one genuine open decision)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| H1. Appended-OCI-layer agent injection | ADR-0020 | `mutate.AppendLayers` materialize step (agent as appended layer, not baked). BYO allow-set + control-owned Entrypoint already built. | L |
+| H2. Four-rung shelf (min/medium/high/xhigh) + sign pipeline | ADR-0020 | high=Chromium+CDP, xhigh=Claude Code CLI on patch SLA. | L |
+| H3. Two-signature cosign admission | ADR-0020 | Verify image + injected-agent signatures separately at session-create admission. | M |
+| H4. Injection test matrix + NFR row + BoM/licence rows | ADR-0020, manifesto/02+05 | Merge-blocking matrix across substrate × rung × BYO; land BoM/licence rows (blocking dependency for ratification). | M |
+
+### Theme I — Session-view forward-compat (ADR-0002)
+| Gap | Component / ADR | What is missing | Effort |
+|---|---|---|---|
+| I1. Descriptor-driven session view | 08, ADR-0002 | WebUI ships a hardcoded FilePane. No descriptor type, no discovery endpoint, no ignore-unknown-kind render path. Length-1 `[files]` seam only (browser/terminal descriptors stay deferred to #210). | M |
+
+### Theme J — Layer-0 CI gate debt
+See Section 4 — treated as its own phase.
+
+**Fully implemented / clean-deferral, NOT gaps (do not re-flag):** ADR-0010 (both engines), ADR-0014 (transport triplet), ADR-0021 (attach stand-in), ADR-0023/0025/0028 (north Files-API), ADR-0026 ingest tier, ADR-0027 sk-key, ADR-0022 admin read-surface, ADR-0024 shared module, ADR-0012 language split, ADR-0030 south per-chat scope. Firecracker/k8s/microVM stubs are canon-sanctioned deferrals (untrusted profile is a locked v1 non-goal).
+
+---
+
+## 3. Dependency-ordered phases
+
+Each phase is a shippable increment; no phase depends on a later one. **Canon-change-first** steps (ADR ratification) precede the code they gate.
+
+### Phase 0 — Ratification & reconciliation (canon-change-first, mostly docs)
+Unblocks everything downstream; no code depends on a later decision.
+- **Ratify the cheap, code-conforming ADRs:** 0012 (language, code already conforms), 0003 (runtime ladder, fully implemented), 0018 (control-RPC, fully implemented), 0017 (after resolving #270/#271 repo-home calls), 0010 (both engines built). Owner batch sign-off → `accepted`.
+- **Write the storage-custody reconciliation** (gap B2): decide ADR-0029 path (a) edge re-key vs (b) doc reconciliation that intent rides the JWT claim + ADR-0030 derived-scope makes each mount distinct. Write it down before ratifying 0029.
+- **Rule the egress cluster:** owner sign-off that ADR-0016 permissive-baseline recut is final; batch-flip 0006/0007/0008/0011/0016. Rule whether ext_authz/ratelimit (0008) are v1-GA or hardening.
+- **Rule ADR-0019 exchange counterparty:** bundled OpenBao vs customer-provided authority contract (gates B1, A2, 0005, 0011).
+- Keystone: `docs/architecture` front-matter shows target ADRs `accepted`; content-routing tree walked on each reconciliation edit; doc-slop-reviewer clean.
+
+### Phase 1 — Storage credential custody made real (B1, B2, B3, C6)
+The custody model is the spine the whole egress+storage story hangs on; it precedes egress live-serving because the engine must verify the injected credential before the edge injects it live.
+- ADRs: ratify 0013/0015/0029 after Phase 0 reconciliation; 0019 stays proposed until Phase 2 lands its counterparty.
+- Build: real credential extractor binding {fsid, intent} from the injected credential, JWKS-verified (iss/aud/alg); move scope enforcement to engine-verifies-injected-credential (B1). Source the six unpinned south-verb bodies in canon, then implement them against the engine adapter with the same authz/audit/ceiling spine (B3 — the GA read/write set already serves). C6 (filestore fan-in publisher seam + drop counter) is already built.
+- Keystones: foreign-fsid 403 originates AT the engine on the injected credential (not the route layer); the frozen-enum partition holds with the served set covering every verb whose body canon pins.
+
+### Phase 2 — Egress trust-edge live (A1, A2, A6, A7)
+Depends on Phase 1 (engine must verify the injected credential) and Phase 0 (0019 counterparty ruling).
+- ADRs: ratify 0019 once the exchange counterparty is a shipping contract; ratify 0005/0011.
+- Build: graduate RFC-8693 exchange from harness to a shipping service (or bundled-OpenBao) with per-{fsid,intent} keyed issuance + per-session cache (A2). Stand up real Envoy 1.31+ serving `envoy.yaml` against live JWKS + exchange + filestore; resolve the credential_injector WIP posture (#240) (A1). Edge access-log→OCSF one-event-per-connection (A6). TLS re-origination + inspection-CA custody test (A7).
+- Keystones: forwarded Authorization ≠ inbound JWT proven on the stock binary (not harness); unauthenticated leg unchanged; 403-at-engine end-to-end; in-guest scan finds no signing key.
+
+### Phase 3 — Sandbox hardening core (E1, E3, E6, E7)
+Independent of egress; the security-critical invariants with no code. Sequenced before snapshot (E2) because userns/clock are simpler and higher-severity.
+- ADRs: 0018/0024 already accepted; no new decision.
+- Build: daemon userns-remap at deployment + a per-create fail-closed admission gate that refuses when the daemon reports no remap, keystone observed as the in-container `uid_map`, RED-on-removal test; NOT a per-container `UsernsMode` field, which DD-7 forbids as a no-op that falsely implies isolation. Landlock ruleset in guest supervisor, plus the correction of a shipped doc that already claims Landlock as delivered (E1). Route guest TTL through monotonic source + resume-time wall-clock correction + rollback red-team (E3). Guest mount-config ingestion + scrub-after-load (E6). E7 (cross-tier egress e2e required on both tiers) is already gated.
+- Keystones: admission rejects a container with host UID0==guest UID0; clock-rollback cannot extend a TTL; zero-relay stays proven on both tiers (E7, already gated).
+
+### Phase 4 — Audit pipeline as a component (C1, C2, C3, C4, C5)
+The heaviest single component. Depends on Phase 0 (ADR-0009 ratification) and reuses the filestore fan-in seam (C6) from Phase 1.
+- ADRs: ratify 0009 after owner confirms shipping the mandatory core (Merkle head + envelope signer) in v1 vs downgrading them in the ADR text.
+- Build: fan-in ingress service terminating five mTLS source channels + self-emit, binding OCSF source to verified peer, rejecting cross-channel publishes (C1). Durable-bus seam (embedded WAL solo default) + decoupled fan-out + replay-on-recovery + NFR-REL-12 chaos test (C2). C3's OCU-side pieces (Merkle-head accumulator, submission envelope, host-local signer) already ship; the tx-log endpoint stays a customer seam. Per-source token-bucket + saturation OCSF + flood chaos test (C4). C5's retention floor and hot/cold boundary already ship; the WORM substrate stays the customer seam.
+- Keystones: one source's credential rejected on every other channel; bus-on-path for every event; daily transparency-log probe green; flood shapes not drops with zero chain breaks.
+
+### Phase 5 — Control kill-switch SLA + frozen contracts (Control GA-blockers)
+**SHIPPED 2026-08-08 — the code half of this phase is complete; only the k6 CI ratchet stays owner-gated.**
+- ADRs: 0004 minimal-shelf ratification; 0018 accepted.
+- NFR-SEC-55 ships: the operator listener wraps every request in a reserved-priority admission gate (`ocu-control/internal/admit`) — the revoke family (revoke-one/all, resume-all) draws on a reserved pool a create/read flood on the operator socket cannot exhaust — plus a per-caller rate limiter keyed on the host-attested PeerCred UID, with a monotonic window floor so a clock setback cannot refill a spent bucket. A revoke is never rate-throttled. An in-process chaos test proves the revoke p99 stays inside the SLA under a real-socket ingress flood; the k6 perf-regression CI *ratchet* is the remaining owner call ([PERF-13](#4-layer-0-ci-gate-debt-its-own-phase)). G1 (frozen operator-REST/SOAR + session_setup binding), D3 (concrete SOARVerifier), and D5 (gateway per-action authz) all closed in their own rows.
+- Keystones (all red-probed): a revoke admits while every general slot is held; the rate limiter is rewind-defeat-resistant; a per-caller flood spares co-tenants; buf/oasdiff reds on a breaking change; a bad-signature SOAR revoke is refused.
+
+### Phase 6 — WebUI GA half (F1, F2, I1)
+- ADRs: 0002 ratification (build the length-1 descriptor seam so implementation stops contradicting the decision); 0026 already accepted.
+- Build: null-origin sandboxed-iframe preview render under body content-CSP + iframe-isolation test, then flip the gate (F1). Thread `session.sub` into audit actor (F2). Descriptor type + length-1 discovery endpoint + ignore-unknown-kind shell (I1).
+- Keystones: preview cannot download/write and stays non-downloadable regardless of stored tag; audit actor carries the embed principal; unknown descriptor kind renders nothing and does not crash.
+
+### Phase 7 — Full-shelf enterprise identity (D1, D2, D4)
+The bank-facing shipping path; large and sequenced late because minimal shelf ships GA-usable and the full shelf is additive behind existing seams.
+- ADRs: 0004 full-shelf; 0027 full-shelf path (already reserved).
+- Build: OAuth 2.1 RS validator (aud/8707/9728, JWKS refresh) behind CallerAuthenticator + shelf switch (D1). OIDC/SCIM RP + SPIFFE-SVID SOAR identity behind OperatorSeam (D2). WebUI OIDC/JWKS-per-issuer + per-deployment allowlist (D4). Integration tests against Dex/Keycloak stand-in.
+- Keystones: revoked full-shelf identity denied; per-deployment frame-ancestors allowlist enforced; both shelves pass their invariant suites.
+
+### Phase 8 — Image provisioning (ADR-0020, the last open decision)
+Sequenced last: ADR-0020 is a STUB with 6 open questions and cannot start until the Decision leaves TBD.
+- ADRs: close ADR-0020's 6 open questions (owner + contracts-owner calls + BoM/licence rows); move off STUB.
+- Build: appended-OCI-layer injection (H1); four-rung shelf + sign pipeline (H2); two-signature cosign admission (H3); injection test matrix + NFR row (H4).
+- Keystones: unsigned base fails closed; agent-layer signature mismatch refused; FUSE-under-gVisor + /dev/fuse cells proven.
+
+### Phase 9 — Snapshot/hibernate/resume/fork + erase-before-reuse (E2, E4, E5)
+Largest sandbox work; NFR-REL-08 is a named GA reliability promise but touches the most surface, so it lands after the higher-severity hardening (Phase 3).
+- Build: snapshot secret-zeroization + resume host-attested re-identity + entropy/boot_id reseed + N-fork uniqueness test (E2). Per-session DEK destroy + page-cache drop on mount recycle, cross-repo with filestore + session-1→session-2 no-read property test (E4). Runtime-monitor host-authored audit path (E5).
+- Keystones: N forks yield N distinct identities; session-2 cannot read session-1 marker; hibernate→resume e2e green.
+
+---
+
+## 4. Layer-0 CI-gate debt (its own phase)
+
+Canon (`CLAUDE.md` testing section + NFR-SEC-07/19/20, PERF-13) requires these as Layer-0 gates that ship *before* architectural content.
+
+**RE-MEASURED 2026-08-06 against the eight repos and the live branch-protection API.** The table below was written from the distance maps, which understated the fleet: three rows called "Missing fleet-wide" are stale, and the two real gaps are ones the table never names. Every cell now cites a workflow file, and every "required" claim was read from `gh api repos/<repo>/branches/main/protection`, not inferred from a file's presence.
+
+**The two real gaps.**
+
+1. **~~`ocu-audit` has no remote.~~ CLOSED 2026-08-06.** The repo now exists at `Wide-Moat/ocu-audit`, public like its siblings, with all five branches pushed unmodified (original SHAs, no rebase) after the whole history — not the checkout — passed the provenance scrub, gitleaks over all five commits, and a key-material sweep. `main` carries the fan-in service, twelve required contexts are set from names CI actually reported, `enforce_admins` is on, and a direct push to `main` was red-probed and refused.
+
+   The first CI run this component ever had found two production defects, both now fixed on `main`: the signed Merkle head was written `0644` (world-readable, on the artifact the component exists to produce, while the WAL beside it already opened `0600`), and `main()` mixed `log.Fatalf` with `defer w.Close()` — `log.Fatalf` skips defers, so five exit paths could drop records the chain had already sequenced. A third, `govulncheck`, red on four reachable stdlib advisories: the module pinned Go 1.26.2 while filestore was on 1.26.5, making this the fleet's laggard and the only repo whose advisories were reachable.
+
+   That is the argument for the whole wave in one repo: a gate that has never run is not a weak gate, and the defects it finds on first contact are the ones nobody was looking for.
+
+   The secrets gate there now carries an inline two-sided red-probe (PR #3), and building it corrected the probe three times. The first version planted a working-tree file while the job scans commits, so it measured a place the gate never looks and passed proving nothing. The second derived the image pin from the workflow but hardcoded the scan arguments, so pointing the job's `--source` at a nonexistent path left it reporting health. The third passed locally and failed in CI: it captured its starting point with `rev-parse --abbrev-ref HEAD`, which on the detached HEAD `actions/checkout` produces answers the literal string `HEAD`, so cleanup never returned and the planted commit survived into the clean arm. A probe is worth exactly what its own mutation testing proves.
+
+   ORIGINAL FINDING: **`ocu-audit` has no remote.** The Wide-Moat org hosts seven fleet repos; `ocu-audit` is local-only on `feat/ga-supply-chain-release`, whose HEAD is `ci(release): add signed-SBOM + SLSA release pipeline` — a release pipeline that has never executed anywhere. No Actions, no protection, no required checks. One of canon's four mutation-gated package classes is entirely unverified: not a weak gate, an absent one. This is the wave's largest finding.
+2. **~~`ocu-sandbox` ships an unsigned, unattested image.~~ WITHDRAWN 2026-08-06, same day.** The first census read the local worktrees, and `ocu-sandbox` had `chore/unblock-sast-sca` checked out — eight commits behind its own `origin/main`, which carries cosign keyless signing, an SPDX SBOM attestation and SLSA build provenance. Re-measured against `origin/main` rather than whatever branch a worktree sits on, **every one of the seven remote repos carries SBOM tooling**. `ocu-admin`'s main is the lone exception and it is being fixed in flight: `feat/ga-image-scan-gate` holds fourteen unpushed commits adding exactly that gate.
+
+**The method error is the finding.** A fleet census that greps working copies measures which branch each worktree happens to sit on, not what the fleet ships. Every claim in this table is now read from `origin/main` with `git grep <ref>`; a claim about a repo's shipped CI that was taken from a checked-out branch is not evidence.
+
+**The red-probe shape the fleet already settled.** `ocu-control` carries eleven probe scripts wired INLINE into jobs that are themselves required contexts (`secrets-gitleaks`, `secrets-trufflehog`, `sast-semgrep`, `sca-trivy-fs`, `mutation`, `deadcode`, `docs`), and `ocu-mcp-gateway` carries two the same way. Inline is the right shape: the probe rides an existing required context, so "is the probe required?" dissolves by construction and a red probe is a blocked merge. `ocu-filestore`'s separate `gate-redprobe.yml` is the deeper two-tree variant on a path filter plus a daily cron — a backstop, deliberately not per-PR, and correctly absent from its required set.
+
+| Gate | Canon requirement | Status from the maps | Action |
+|---|---|---|---|
+| gitleaks + trufflehog blocking | NFR-SEC-19, top-3 | **Required in all 8 remote repos.** Red-probed per-PR inline in control and ocu-audit; on a cron in filestore | Port the inline two-sided probe to webui, admin, sandbox. Do NOT touch rclone: a peer's `ci/layer0-red-probes` branch is in flight there |
+| Semgrep + CodeQL HIGH/CRITICAL block | NFR-SEC-20, top-3 | Gateway IaC self-test exists; general SAST/SCA per-repo state unverified fleet-wide | Verify Semgrep+CodeQL on changed files across all 8 repos + Trivy/Grype CRITICAL on deps/images |
+| Signed SBOM + SLSA L3 provenance | NFR-SEC-07/18, top-3 | **STALE — shipped on `origin/main` in every remote repo**, sandbox included (`ghcr-guest.yml` signs by digest, attests SPDX, records SLSA provenance). Measured with `git grep origin/main`, not the worktrees | No fill. `ocu-admin` is the only main without it and carries fourteen unpushed commits adding it (`feat/ga-image-scan-gate`) — leave it to that branch |
+| Mutation ≥60% on auth/sandbox/audit/broker | CLAUDE.md CI | Present historically (gateway G2b mutation gate in memory); audit/broker/sandbox coverage unverified | Confirm mutation gate on all four package classes; the audit + exchange packages are new and need it |
+| Property-based tests on parsers/scheduler/policy | CLAUDE.md CI | Strong in filestore (fuzz/property) + control; verify gateway profile validator + audit chain | Confirm property tests on every parser/scheduler/policy engine |
+| k6 perf regression <10% | PERF-13 | **STALE for the gateway.** `ocu-mcp-gateway/.github/workflows/perf.yml` is a pinned-checksum k6 ABAB gate (`head_p95 > base_p95*1.10 AND delta > 2ms`), deliberately `continue-on-error` with its ratchet-to-required marked owner-gated in the file | Ratchet the gateway gate to required (owner call), then extend to PERF-02/03/06/08 + the SEC-55 revoke SLA (Phase 5) |
+| Playwright golden-path E2E | CLAUDE.md CI | WebUI live-browser proof exists (memory); not a required per-merge fleet gate | Promote to required golden-path on every merge |
+| LLM red-team gate (Promptfoo/Garak/PyRIT) | CLAUDE.md CI | **OUT OF SCOPE — no generative surface to evaluate, and the two static prompt surfaces are already gated per-PR.** Zero installs across all eight repos on `origin/main`; the single hit is a comment recording the choice (`ocu-mcp-gateway/internal/projection/injection_corpus_test.go:12` — "a NATIVE Go harness (no promptfoo, zero new deps)"). OCU hosts no model and runs no loop ([non-goals](architecture/manifesto/04-non-goals.md)), so there is no generated output for a statistical eval harness to score. The model-facing text OCU does author is static and version-controlled: five MCP tool descriptions in `ocu-mcp-gateway/internal/ingress/tools_list.json`, pinned by `tool_description_guidance_test.go` against the live `tools/list` response (path steering, the two-mount negative contract, the 8192-byte ceiling per NFR-SEC-51, and a no-unreachable-surface check that verifies its own matcher); and `openwebui/system_prompt.txt`, pinned by `tests/test-system-prompt-skills-contract.sh` plus `deploy/tests/test_system_prompt_contract.py`. The prompt-injection payload class rides `internal/{projection,forward}/injection_corpus_test.go` — adversarial cases through production code paths. Promptfoo would add a Node toolchain and an LLM-provider API key, a new egress dependency, to red-team text that deterministic assertions already pin. | **Closed as out of scope.** Revisit only if OCU ships a generative surface — a bundled skill that calls an LLM, or an OCU-authored prompt that varies at runtime. |
+| IaC scan, no-operator-route assertion | NFR-SEC-52 | **ACTIONABLE, but one repo, not eight.** The row's "fleet-wide … unproven" framing overstates it: six repos have no IaC surface, and webui and admin decline Checkov in their CI saying so. The gateway half is fully gated and genuinely two-sided — `ocu-mcp-gateway/scripts/iac_policy_check.py` parses the shipped NetworkPolicy and Compose manifests structurally, fails closed on an absent or malformed manifest, and its `--self-test` plants an operator route in four k8s selector forms plus the Compose network join and asserts each is caught. It runs as the first step of the required `iac-policy` context. Fleet-wide there is zero Conftest, OPA, tfsec, kube-score or datree; Checkov exists only in the main-line repo, scoped to `helm/` and soft-failed below CRITICAL. | **Close the Control half.** Reachability is a pair — the gateway must not reach the operator ingress and Control must not expose it — and only the gateway end is falsifiable today. The gateway's allowlist searches for an `ocu.dev/ingress: operator` label that Control's manifests never stamp, so the assertion has nothing to bind against on the other side. `ocu-control` self-declares this (`docs/requirements.md`, issue #1, still open). Port the mirror-image check into `ocu-control`, add the ingress labels and a split operator network, wire it as a required `iac-policy` context, then flip P2-E1 in `06-threat-model.md` off PARTIAL. Keystone: a planted NetworkPolicy whose operator listener admits `app.kubernetes.io/name: ocu-mcp-gateway`, and its Compose twin, must red the new Control-side gate — the gateway's existing gate stays green on both, which is exactly why the row is actionable. |
+| License scan against allow-list | Dependency policy | **ACTIONABLE, and already breached.** One repo of eight gates licences: `ocu-sandbox` runs `cargo deny check` (`rust.yml`, allow-list in `guest/deny.toml`) in a required context. The other seven run none. Two traps found underneath: `ocu-rclone-filestore/.github/workflows/dependency-review.yml` carries a header comment promising it "fails when one pulls in … a disallowed license" while its config sets only `fail-on-severity: high` and no licence inputs at all — a vulnerability gate wearing a licence gate's docstring, which would have closed this row on a comment. And SBOMs are produced fleet-wide (`anchore/sbom-action` in filestore and control release jobs) but nothing reads their `licenses` fields; every trivy invocation is vuln-only. An SBOM nobody inspects is not a licence gate. | **Owner decision needed before any gate lands.** `ocu-webui` and `ocu-admin` ship LGPL-3.0-or-later on `origin/main` today: 14 `@img/sharp-libvips-*` entries in `web/package-lock.json`, of which `linux-x64`/`linuxmusl-x64` install on an amd64 container build. Canon's accept list carries LGPL-**2.1** only, and only "as a separately-running service" — a linked native `.so` is neither. Landing a licence gate first turns both frontends red on day one. The call is the owner's: drop Next image optimisation, pin a wasm-free `sharp`, or write an ADR carving out dynamically-linked LGPL-3.0 the way canon carved out LGPL-2.1. Then hook `trivy --scanners license` into the already-required `sca-trivy-fs` contexts (no branch-protection change needed) with the canon accept list, and realign `ocu-sandbox`'s allow-list, which is stricter than canon in some places and looser in others. Keystone: land it with `sharp` still present and `sca-trivy-fs` must red on webui and admin naming the LGPL package — a green run means the gate is not reading the npm tree. |
+
+**This is a standalone phase, run early and in parallel** (it does not depend on component code): a "Layer-0 CI-gate fleet audit + fill" that red-probes each gate (plant a secret, a CRITICAL dep, a breaking API change, a >10% perf regression) and proves each reddens before declaring green — per the memory lessons on vacuous gates (`required + continue-on-error`, whitelisted example secrets, required-ABSENT).
+
+---
+
+## 5. Non-goals guardrail (must stay UNBUILT with clean boundaries)
+
+Per `manifesto/04-non-goals.md`. A builder must NOT implement any of these:
+
+1. **Skill registry** — v1 ships zero default skills. `SkillProvider` stays `status: tbd`; skills load from a customer-supplied registry over a stable contract. Do not invent the skill metadata schema, versioning, or discovery protocol. (NFR-SEC-24 carries the invariant only when it lands post-v1.)
+2. **Hosted models & the agent loop** — OCU hosts/proxies/selects no LLM and runs no loop. The loop lives in the calling client (Open WebUI / n8n / LiteLLM / any MCP caller). A sandbox tool needing an LLM reaches it as **one allow-listed egress endpoint** under the Egress trust-edge + audit path — never an OCU model abstraction. Gateway routes only; do not add a model/loop abstraction to 01 or 02. (The REVISIT NFRs — FS-03, REL-04, SEC-21, COMP-09/10/14/25/26 — are non-gating; do not enforce them.)
+3. **Mutating admin web UI** — no read-write operator console. Every mutation (lifecycle, quota, denylist) runs over `occ` CLI + GitOps. **Clarification for builders:** the *read-only* `ocu-admin` console IS in scope and already built (ADR-0022, accepted) — a live view with no write path. The end-user data-plane UI (upload/download/preview/render) is ALSO in scope (that is component-08, NFR-SEC-82). Do not add a mutation route to ocu-admin.
+4. **Durable customer-data store** — OCU is an ephemeral workspace; session files live on the mounted scope only while the session runs, scrubbed at teardown (NFR-SEC-65/54). The only long-term artifact is the audit record (who/what/when, not bytes) on the NFR-COMP-01 floor. The object store is a customer-provided capability reached via `ocu-filestore`; do not make OCU a system of record.
+5. **SaaS offered by us** — FSL-1.1-Apache-2.0 forbids competing hosted/embedded offerings. Self-hostable software only.
+
+Also keep deferred (canon-sanctioned, not gaps): microVM/Firecracker + k8s runtime tiers (untrusted profile is not deployable in v1 GA; admission rejects it), server-side heavy parser substrate (ADR-0026, behind a future trigger ADR), mid-session Storage-JWT refresh (ADR-0013 #267), within-tenant north hard boundary (ADR-0030 #348), per-object authz (#187), embed-token replay-binding (#217).
+
+---
+
+## 6. The first 3 concrete waves to run next
+
+Each is a Workflow-sized unit (one coherent PR-cluster with keystone verification), ordered so none depends on a later one. Wave 1 is deliberately the CI-gate fleet audit (no code dependency, unblocks trustworthy green everywhere) run in parallel with the storage-custody spine.
+
+### Wave 1 — Layer-0 CI-gate fleet audit + fill (parallelizable, no code dependency)
+- **Canon:** NFR-SEC-07/18/19/20, PERF-13, CLAUDE.md testing section.
+- **Components:** all 8 repos + `deploy/fleet`.
+- **Build:** confirm gitleaks/trufflehog/Semgrep/CodeQL/Trivy required-and-red-probing per repo; **build the two missing gates** — Syft→SPDX + Cosign + SLSA L3 provenance, and k6 perf gates for PERF-02/03/06; add the fleet Conftest/OPA gateway→operator-route assertion.
+- **Keystones:** plant a secret → gitleaks reds; plant a CRITICAL dep → Trivy reds; remove SBOM → release fails; a rendered manifest granting gateway→operator route → OPA reds. Each proven `required-ABSENT`, not just not-green (per the required-ABSENT memory lesson).
+
+### Wave 2 — Storage credential custody made real (Phase 1 core)
+- **Canon-change-first:** write the ADR-0029 reconciliation (path a vs b) and the ADR-0019 counterparty ruling in Phase 0; ratify 0013/0015/0029.
+- **ADRs:** 0013, 0015, 0029 (0019 stays proposed pending Wave-3 counterparty).
+- **Components:** 04 (ocu-filestore), 02 (ocu-control, intent mint already built).
+- **Build:** real credential extractor binding {fsid, intent} from the injected credential with JWKS/iss/aud/alg verification (gap B1); move scope enforcement to engine-verifies-injected-credential; source the four filesystem-lifecycle and ingest bodies in canon before building them (gap B3 — `listFiles`, `createFile`, `getFileMetadata` and `fileDelete` already serve; `removeFilesystem` is contract-blocked, not code-blocked); C6 (filestore fan-in publisher seam + drop counter) is already built.
+- **Keystones:** foreign filesystem_id → 403 originating **at the engine** on the injected credential (not the route layer — this is the inv-4 that option-c currently violates); missing/expired credential → 401; the frozen-enum partition holds, with each newly sourced body moving from contract-blocked to served in the commit that builds it.
+
+### Wave 3 — Egress trust-edge live on stock Envoy (Phase 2 core)
+- **Canon-change-first:** ratify 0019 once the exchange counterparty is a shipping contract (owner ruling from Phase 0: bundled OpenBao vs customer authority); ratify 0005/0011.
+- **ADRs:** 0019, 0005, 0011.
+- **Components:** 06 (ocu-rclone-filestore edge + exchange), depends on Wave-2 engine.
+- **Build:** graduate RFC-8693 exchange from `test/harness/exchange/` to a shipping service (or bundled-OpenBao) with per-{fsid,intent} keyed issuance + per-session cache (A2); stand up real Envoy 1.31+ serving `envoy.yaml` against live control-plane JWKS + exchange + Wave-2 filestore; resolve the credential_injector WIP-filter posture (#240); add edge access-log→OCSF per connection (A6).
+- **Keystones:** on the **stock Envoy binary** (not the Go harness), forwarded `Authorization` ≠ inbound weak JWT AND the unauthenticated leg is unchanged; end-to-end swap → engine enforces scope → foreign fsid denied; one OCSF event per connection emitted; in-guest secret scan finds no signing key. This closes the 06 GA-blocker that today is proven only by a harness reimplementation.
+
+---
+
+*Sources: firsthand per-component distance maps (01–08) and per-ADR maps (egress 0005/6/7/8/11/16/19/21, storage 0010/13/15/23/25/28/29/30, sandbox 0003/17/18/20/24/26/27, cross 0001/2/4/9/12/22); canon `MANIFESTO.md`, `manifesto/02-nfrs.md`, `manifesto/04-non-goals.md`.*
+---
+
+## 7. Wave sequencing ruling (Fable advisor, 2026-07-12)
+
+The owner delegated the wave-order decision to Fable. Ruling: start with storage
+credential custody, NOT Layer-0 CI and NOT pure ratification.
+
+**WAVE 1 (FIRST) - Storage credential custody made real (theme B core + canon head).**
+PREMISE CORRECTED 2026-07-26, and the correction shrinks the wave. The original
+rationale claimed the shipped `ocu-filestore` trusts a forged bearer's
+`filesystem_id`/`intent` claims in the RUNNING path. On the stand that is refuted:
+the running engine verifies an exchange-issued credential and answers 401 to a
+forged bearer. What survives is narrower and still worth the wave: the verifying
+flags live only in staged sources, so a clean rebuild from repo artifacts ships
+dark; the verification's correctness (alg pinning, fallback branch, `kid`
+handling) has no red-probe; and the two token pairs were unpinned until this week.
+The wave keeps its place at the head because the engine is the hard dependency for
+egress work, not because isolation is currently a lie. It is
+also the critical-path head: Wave 3 (egress-live) hard-depends on the engine
+verifying the injected credential first; Layer-0 CI depends on nothing and blocks
+nothing, so doing the parallelizable item first wastes the longest lead time. The
+XL fear belongs to the egress half (stock Envoy + exchange counterparty = Wave 3);
+the custody CORE (JWKS-verified extractor + engine-enforced scope) is effort L.
+- Canon head (folded in): draft ADR-0029 reconciliation as PATH (b) - intent rides
+  the JWT claim, ADR-0030 derived scope keeps mounts distinct (matches what is
+  built; path (a) touches the edge = Wave-3 territory). Queue 0013/0015/0029
+  ratification drafts for OWNER sign-off; 0019 stays proposed pending the
+  counterparty ruling (OpenBao vs customer authority).
+- Repos: ocu-filestore (primary); ocu-control (JWKS artifact already renders - pin
+  iss/aud off "PIN-PENDING").
+- Build: B1 - real credential extractor binding {fsid,intent} with JWKS/iss/aud/alg
+  verification; scope enforcement moved to engine-verifies-injected-credential.
+  B3 - listFiles, createFile, getFileMetadata and fileDelete SERVE (ADR-0036);
+  removeFilesystem and the other five need a sourced body before any handler.
+  C6 - audit fan-in publisher seam + drop counter: ALREADY BUILT.
+- KEYSTONE (non-vacuous, red-probe FIRST): today's shipped binary must ACCEPT a
+  forged unsigned bearer (proving the hole is live), then the fix reds it -
+  forged/unsigned -> denied; foreign fsid -> 403 ORIGINATING AT THE ENGINE;
+  missing/expired -> 401; the frozen-enum partition holds.
+- Effort: L (~5-7 builder agents, one PR-cluster). Merges OWNER-GATED.
+- Unblocks: Wave 3 egress-live (hard dep), ADR-0019/0025 "impossible by
+  construction" becoming true, 0013/0015/0029 ratification, Phase-4 audit fan-in.
+
+**WAVE 2 - Layer-0 CI-gate fleet audit + fill** (theme J): SBOM/SLSA + k6 built,
+every existing gate red-probed required-ABSENT, landing BEFORE egress goes live so
+Wave-3 keystones sit on a trustworthy substrate.
+
+**WAVE 3 - Egress trust-edge live on stock Envoy** (A1/A2/A6/A7), with the owner's
+ADR-0019 counterparty ruling (OpenBao vs customer authority) obtained during Waves 1-2.

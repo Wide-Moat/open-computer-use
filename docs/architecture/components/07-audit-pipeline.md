@@ -92,7 +92,7 @@ The pipeline is the enforcement point for the write-before-ack property of [NFR-
 
 | Concern | Detail | Target / anchor |
 |---|---|---|
-| Config surface | five host-side source-channel addresses + per-source mTLS trust; self-emit channel; per-source ingest share; retention tier; sink bindings (FS always-on, SIEM opt-in); transparency-log endpoint | [NFR-COMP-01](../manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](../manifesto/02-nfrs.md) |
+| Config surface | five host-side source-channel addresses + per-source mTLS trust; self-emit channel; per-source ingest share; retention tier (floor years, hot ceiling, cold directory — [ADR-0045](../adr/0045-audit-retention-rotation-checkpoint.md)); sink bindings (FS always-on, SIEM opt-in); transparency-log endpoint | [NFR-COMP-01](../manifesto/02-nfrs.md), [NFR-MAINT-AUDIT-SCHEMA](../manifesto/02-nfrs.md) |
 | Observability | per-source ingest rate vs share, saturation events, bus depth / backpressure, chain-continuity, sink replay lag; self-emitted on its own channel | [NFR-PERF-10](../manifesto/02-nfrs.md), [NFR-COST-05](../manifesto/02-nfrs.md) |
 | Scaling axis | per-deployment (single durable bus + store); sources scale `[1..N]` independently; whether the store partitions per tenant is a deployment concern | [NFR-REL-12](../manifesto/02-nfrs.md) |
 | Capacity model | ingest headroom with no silent drop and zero chain breaks; hot tier then cold tier to the retention floor | [NFR-PERF-10](../manifesto/02-nfrs.md), [NFR-COMP-01](../manifesto/02-nfrs.md) |

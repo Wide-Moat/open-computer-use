@@ -123,6 +123,141 @@
       "x-ocu-tbd": "Cursor wire ENCODING (what the opaque token packs) is not pinned; the opaque-string contract is sourced, the internal structure stays TBD. Do not model decoded subfields."
     },
 
+    "FileObject": {
+      "description": "Object metadata: the shape returned by getFileMetadata, by the createFile response, and as each listFiles entry. Derived field-for-field from the frozen north Files-API FileObject (ADR-0028) because both faces read the same durable handle record; a second shape for one record would drift independently (ADR-0036). Server-built \u2014 no field is caller-supplied.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "filename", "mime_type", "size_bytes", "created_at"],
+      "properties": {
+        "id": {
+          "description": "The opaque, server-minted DURABLE file_id \u2014 the handle-store id, never the session-scoped transfer uuid the streaming ops mint for their own frames. Not a capability (ADR-0023 keystone).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "description": "The object discriminator; always `file`.",
+          "type": "string",
+          "const": "file"
+        },
+        "filename": {
+          "description": "Display name \u2014 the create `filename`, or the `path` leaf when none was given.",
+          "type": "string",
+          "maxLength": 4096
+        },
+        "mime_type": {
+          "description": "The resolved MIME type (the dialect name for the create `media_type`).",
+          "type": "string",
+          "maxLength": 256
+        },
+        "size_bytes": {
+          "description": "The stored byte count \u2014 equal to the create `declared_size_bytes`.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "created_at": {
+          "description": "Creation instant, RFC 3339. Primary key of the store's total order.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+
+    "ListFilesResponse": {
+      "description": "One listFiles page, mirroring the frozen north list envelope (ADR-0028, ADR-0036). The forward cursor is the opaque `next_cursor`: it carries the (created_at, file_id) boundary tuple, so a bare id cannot resume the walk. The page direction follows the request's optional `order` selector (ADR-0037): `desc` walks newest-first, absence or any other value the created-at-primary ascending default. The cursor binds its direction, so a token minted under one order does not resume under the other.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["data", "has_more"],
+      "properties": {
+        "data": {
+          "description": "The FileObjects on this page, in list order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/FileObject" }
+        },
+        "has_more": {
+          "description": "Whether a further page exists past this one.",
+          "type": "boolean"
+        },
+        "first_id": {
+          "description": "The `id` of the first item on this page. An informational boundary marker, not a resume key. Absent on an empty page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "last_id": {
+          "description": "The `id` of the last item on this page \u2014 an informational boundary marker, NOT the resume key. Absent on an empty page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "next_cursor": {
+          "description": "The opaque forward resume token; treat as opaque. Present while `has_more` is true.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+
+    "ListFilesRequest": {
+      "description": "The scope-wide object enumeration (ADR-0036). Scope is the credential-bound authority, never a body field; filesystem_id is the cross-check hint. The cursor is the opaque next_cursor from a prior page, and it binds its direction \u2014 a token minted under one order does not resume under the other (ADR-0037).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" },
+        "after": {
+          "description": "Forward list cursor: the previous page's opaque next_cursor. Absence lists from the first page.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "limit": {
+          "description": "Page-size ceiling for this page; absence uses the store default.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "order": {
+          "description": "Page direction, mirroring the north ?order= query parameter (ADR-0037). `desc` walks newest-first; absence, or any other value, is the ascending default. Tolerant by design: an unrecognised value renders ascending rather than refusing the list.",
+          "type": "string"
+        }
+      }
+    },
+
+    "GetFileMetadataRequest": {
+      "description": "The by-handle metadata read (ADR-0036), addressed by the DURABLE file_id rather than the session-scoped transfer uuid. An absent or cross-scope id degrades to not_found, so a valid id minted in another session cannot probe scope membership.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_id"],
+      "properties": {
+        "file_id": {
+          "description": "The durable handle-store id to read.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" }
+      }
+    },
+
+    "FileDeleteRequest": {
+      "description": "The by-handle delete (ADR-0036), distinct from removeFile which is path-addressed. Mirrors the frozen north DELETE /v1/files/{file_id}: nothing beyond the handle, and an absent or cross-scope id degrades to not_found, so a repeat delete maps to deleted and offers no existence oracle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_id"],
+      "properties": {
+        "file_id": {
+          "description": "The durable handle-store id to delete.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "filesystem_id": { "$ref": "#/$defs/FilesystemId" },
+        "authorization_metadata": { "$ref": "#/$defs/AuthorizationMetadata" }
+      }
+    },
+
     "FileUploadRequest_Params": {
       "description": "Chunked-upload params sub-message on a fileUpload request. The object-store service reassembles the streamed chunks; this is NOT a single inline body. Chunking is mandatory because a single RPC message is capped (see SizeLimits.rpc_message_ceiling_bytes), independent of the engine max-file-size and the per-mount VFS cache ceiling.",
       "type": "object",
@@ -180,19 +315,15 @@
 
   "x-ocu-tbd-bodies": {
     "status": "partial",
-    "reason": "The sourced message shapes (ReadFileRequest_Range, ListDirectoryRecursiveCursor, FileUploadRequest_Params) and the layered SizeLimits are now real $defs, reachable from the request envelope. What stays TBD is the wire field set inside the remaining request bodies (createFile, readMetadata) and every response body. Fill each only when a field-level source pins it.",
+    "reason": "The sourced message shapes (ReadFileRequest_Range, ListDirectoryRecursiveCursor, FileUploadRequest_Params, FileObject, ListFilesResponse, GetFileMetadataRequest, FileDeleteRequest) and the layered SizeLimits are real $defs, reachable from the request envelope. ADR-0036 sourced the four object-addressed verbs (createFile, getFileMetadata, listFiles, fileDelete) from the frozen north dialect, since both faces read one durable handle record. What stays TBD is the remaining request bodies (readMetadata, readFileMetadata) and the lifecycle/ingest bodies. Fill each only when a field-level source pins it.",
     "known-shape-hints": {
-      "createFile": "request body field set TBD",
       "readMetadata": "request body field set TBD",
-      "getFileMetadata": "single-object metadata read by uuid; response field set TBD (distinct from listFiles, the directory-enumeration op, and from readFileMetadata, the path+filesystem_id read)",
       "readFileMetadata": "metadata read by path + filesystem_id; request/response field set TBD (distinct from readMetadata, the path-addressed dir-entry read, and getFileMetadata, the by-uuid read)",
-      "listFiles": "object enumeration under a scope; response entry shape TBD (distinct from getFileMetadata)",
       "fileDownload": "mount-plane read-path counterpart to the chunked fileUpload; streams the object back, the object-store service chunks it under the RPC message ceiling; request/response field set TBD",
       "importFiles": "session-pseudobucket import; request/response field set TBD",
       "importZip": "one-op zip import (the whole archive imported in a single op); request/response field set TBD",
       "migrateFilesystem": "in-session pseudobucket control primitive (rebind the session scope, not a durable-store data migration); request/response field set TBD",
       "removeFilesystem": "session-pseudobucket control primitive; request/response field set TBD",
-      "fileDelete": "delete-by-uuid (distinct from removeFile, the path-addressed delete); request/response field set TBD",
       "releaseQuarantinedFiles": "whole-filesystem-scope quarantine-release control op, grouped with migrateFilesystem / removeFilesystem; request carries verdictRef + fsId + sourceOrg + targetOrg, response carries filesReleased; field set TBD"
     },
     "operations": {}
