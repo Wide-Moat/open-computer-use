@@ -78,7 +78,6 @@ echo "$RESULT" | grep -q "OK" && pass "tsc compiles a strict file" || fail "tsc 
 RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const n: number = \\"nope\\";\\n' > \$d/b.ts; tsc --noEmit --strict \$d/b.ts >/dev/null 2>&1 && echo FAIL || echo OK") || RESULT=""
 echo "$RESULT" | grep -q "OK" && pass "tsc rejects an ill-typed file" || fail "tsc did not reject bad types"
 
-
 # 3. ES Modules import
 echo ""
 echo "[3/14] ES Modules import"
