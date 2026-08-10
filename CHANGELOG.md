@@ -4,6 +4,18 @@
 
 ### Changed
 
+- **TypeScript 7 removes the JavaScript compiler API from the sandbox image.** The
+  image now ships `typescript@7.0.2`, the native compiler. `require('typescript')`
+  returns `{version, versionMajorMinor}` only — `createProgram`, `ts.sys` and the
+  rest of the API are gone. The `tsc` CLI is unaffected (type-checking and emit
+  both verified under 7.0.2, including downlevel to es2019 and `.mts` ESM output),
+  and `tsx` is unaffected (it transpiles through esbuild, not the API). What breaks
+  is assistant-written code inside the sandbox that consumes the API
+  programmatically; it fails at the first property access rather than at import,
+  so the symptom is an undefined-function error rather than a missing module.
+  `ts-node` was removed for exactly this reason — it consumed the API and had no
+  consumer here.
+
 - **License migration: BUSL-1.1 → FSL-1.1-Apache-2.0.** All future releases ship under the Functional Source License, Version 1.1, Apache 2.0 Future License. Use, modification, forking, internal self-hosting, and redistribution remain permitted; offering a hosted or embedded service that competes with our paid version(s) requires a separate commercial agreement. Each release automatically converts to Apache-2.0 two years after publication under the Grant of Future License clause. Past releases retain their original BUSL-1.1 terms per the LICENSE file published at that tag. Affected: `LICENSE`, `NOTICE`, `README.md` badge + License section, `CLAUDE.md` License Headers section, `CONTRIBUTING.md`, `package.json`, SPDX headers across 176 source files, `helm/computer-use-server/`, `THIRD-PARTY-LICENSES.md`, `computer-use-server/cli-defaults/*.json`.
 
 ## v0.11.0.0-rc.1 — release candidate for the 0.11.0 base bump (2026-08-02)
