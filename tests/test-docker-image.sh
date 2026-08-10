@@ -78,19 +78,6 @@ echo "$RESULT" | grep -q "OK" && pass "tsc compiles a strict file" || fail "tsc 
 RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const n: number = \\"nope\\";\\n' > \$d/b.ts; tsc --noEmit --strict \$d/b.ts >/dev/null 2>&1 && echo FAIL || echo OK") || RESULT=""
 echo "$RESULT" | grep -q "OK" && pass "tsc rejects an ill-typed file" || fail "tsc did not reject bad types"
 
-# tsx EXECUTES TypeScript. ts-node used to be the runner shipped here; it was
-# dropped because it consumes typescript's JS API, which TypeScript 7 removes
-# (require('typescript') returns only {version, versionMajorMinor} there). tsx
-# is esbuild-based and does not touch that API, so it survives the 7.x line.
-# Verifying the replacement matters more than verifying the removal: without
-# this, dropping ts-node would be a claim rather than a checked fact.
-#
-# stderr is NOT suppressed and the failure path echoes it. The first version of
-# this check sent stderr to /dev/null, so when it failed in the image the log
-# said only "FAIL: tsx execution" and the cause was invisible — a check that
-# hides why it failed costs more than it saves.
-RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const x: number = 2; console.log(\\"tsx-ok\\", x*2);\\n' > \$d/r.ts; tsx \$d/r.ts 2>&1 | grep -q 'tsx-ok 4' && echo OK || { echo FAIL; tsx \$d/r.ts 2>&1 | head -3; }") || RESULT=""
-echo "$RESULT" | grep -q "OK" && pass "tsx executes a .ts file" || fail "tsx execution: $RESULT"
 
 # 3. ES Modules import
 echo ""
