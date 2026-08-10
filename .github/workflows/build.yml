@@ -6,6 +6,13 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag the images with, no leading v (e.g. 0.10.2.0). Empty builds without a version tag.'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -21,7 +28,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Free disk space for 8GB+ image + local load
         run: |
@@ -34,7 +41,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
@@ -53,6 +60,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -112,11 +125,11 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
@@ -135,6 +148,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -154,11 +173,11 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
@@ -177,6 +196,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -196,11 +221,11 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  # v4.2.0
         if: github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
@@ -219,6 +244,12 @@ jobs:
             # both 3-segment SemVer and 4-segment tags, with or without a
             # pre-release suffix.
             type=match,pattern=v(.*),group=1
+            # Manual release path: a tag pushed by release.yml's GITHUB_TOKEN
+            # does not start a new workflow run (GitHub's recursion guard), so
+            # release.yml dispatches this workflow and passes the version here.
+            # type=match reads the ref, which is not a tag on dispatch, so the
+            # version has to arrive as an explicit raw tag instead.
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -235,7 +266,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Run structure and English-only tests
         run: |
@@ -248,7 +279,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
@@ -272,7 +303,7 @@ jobs:
     # 2026-04-19 regression in one CI run.
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5  # v4.1.0
 
@@ -331,7 +362,7 @@ jobs:
     # the publish step.
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Free disk space for the workspace image
         run: |

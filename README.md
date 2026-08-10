@@ -13,7 +13,7 @@ MCP server that gives any LLM its own computer — managed Docker workspaces wit
 
 > **Online demo:** **[chat.yambr.com](https://chat.yambr.com)** — Open WebUI with Computer Use already set up, sign in with GitHub or Google. ([More ways to try it](#ways-to-try-it) below.)
 >
-> **See it in action:** **[Demo course on docs.yambr.com](https://docs.yambr.com/demo-course)** — eight live scenarios captured from the chat above (pitch deck, Word doc, Excel, PDF invoice, data chart, live-rendered landing page, web scrape, building a custom skill). Real prompts, real screenshots, copy-pasteable.
+> **Transformation in progress:** the project is being reorganised. The managed dashboard, the hosted MCP endpoint and the hosted docs site are offline and their links have been removed from this repository. `chat.yambr.com` stays up and may be interrupted while the move is in progress.
 >
 > If any of this looks useful, a ⭐ on the repo really helps — thanks!
 
@@ -77,7 +77,7 @@ Works with **any MCP-compatible client**: Open WebUI, Claude Desktop, LiteLLM, n
 
 ![Sub-Agent Dashboard](docs/screenshots/06-sub-agent-dashboard.png)
 
-For all eight live scenarios with prompts you can copy-paste, see the **[Demo course](https://docs.yambr.com/demo-course)**. See [docs/FEATURES.md](docs/FEATURES.md) for architecture details and [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for all screenshots.
+See [docs/FEATURES.md](docs/FEATURES.md) for architecture details and [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) for all screenshots.
 
 > **Pro tip**: Create skills with Claude Code in the terminal, then use them with any model in the chat. Skills are model-agnostic — write once, use everywhere.
 
@@ -94,10 +94,9 @@ For all eight live scenarios with prompts you can copy-paste, see the **[Demo co
 | Path | URL | What you need | Best for |
 |------|-----|---------------|----------|
 | **Free online demo** — Open WebUI + Computer Use, models included | **[chat.yambr.com](https://chat.yambr.com)** | GitHub or Google sign-in | Trying it end-to-end in 30 seconds |
-| **Hosted MCP endpoint** — tools only, bring your own LLM | Key at [app.yambr.com](https://app.yambr.com) → connect to `https://api.yambr.com/mcp/computer_use` | GitHub/Google sign-in; your own OpenAI / Anthropic / OpenRouter key | Plugging Computer Use into Claude Desktop, n8n, OpenAI Agents SDK |
 | **Self-host** | [Quick Start](#quick-start) below | Docker, ~15 min first build | Full control, air-gapped, heavy use |
 
-OAuth only — no email/password, no SMS. On `chat.yambr.com` models are bundled as a free convenience; the hosted API is tools-only. Canonical cloud docs: [docs.yambr.com](https://docs.yambr.com). Repo-side orientation: [docs/CLOUD.md](docs/CLOUD.md).
+OAuth only — no email/password, no SMS. On `chat.yambr.com` models are bundled as a free convenience. The hosted MCP endpoint is offline during the transformation; see [docs/CLOUD.md](docs/CLOUD.md).
 
 ## Quick Start
 
@@ -172,9 +171,8 @@ See [docs/SKILLS.md](docs/SKILLS.md) for details.
 
 ## MCP Integration
 
-The server speaks standard MCP over Streamable HTTP. Point any MCP client at it — hosted or self-hosted.
+The server speaks standard MCP over Streamable HTTP. Point any MCP client at your own deployment.
 
-- **Hosted**: `https://api.yambr.com/mcp/computer_use` with `Authorization: Bearer <key from app.yambr.com>`. Client configs and full reference live on [docs.yambr.com](https://docs.yambr.com).
 - **Self-hosted**: `http://localhost:8081/mcp`. Quick sanity check:
   ```bash
   curl -X POST http://localhost:8081/mcp \
@@ -198,7 +196,7 @@ All settings via `.env`:
 | `SUB_AGENT_TIMEOUT` | `3600` | Sub-agent timeout (seconds) |
 | `SINGLE_USER_MODE` | — | `true` = one container, no chat ID needed; `false` = require X-Chat-Id; unset = lenient |
 | `PUBLIC_BASE_URL` | `http://computer-use-server:8081` | Browser-reachable URL of the Computer Use server. Baked into `/system-prompt` and returned to the Open WebUI filter in the `X-Public-Base-URL` response header — **single source of truth** for the public URL. [Open WebUI filter URL requirements](docs/openwebui-filter.md#two-url-roles--public-server-env-and-internal-filtertool-valve). |
-| `CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES`, `ORCHESTRATOR_URL`, `TOOL_RESULT_MAX_CHARS`, `TOOL_RESULT_PREVIEW_CHARS` | — | Settings on the **`open-webui` container** (not CU-server). Required when embedding — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack). |
+| `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS`, `ORCHESTRATOR_URL`, `TOOL_RESULT_MAX_CHARS`, `TOOL_RESULT_PREVIEW_CHARS` | — | Settings on the **`open-webui` container** (not CU-server). Required when embedding — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack). |
 | `POSTGRES_PASSWORD` | `openwebui` | PostgreSQL password |
 | `VISION_API_KEY` | — | Vision API key (for describe-image) |
 | `ANTHROPIC_AUTH_TOKEN` | — | Anthropic key (for Claude Code sub-agent) |
@@ -215,21 +213,21 @@ By default, all 13 built-in skills are available to everyone. For per-user skill
 
 The Computer Use Server speaks standard **MCP over Streamable HTTP** — any MCP-compatible client can connect. Open WebUI is the primary tested frontend, but not the only option.
 
-| Client | Self-hosted URL | Hosted URL | Status |
-|--------|-----------------|------------|--------|
-| [**Open WebUI**](https://github.com/open-webui/open-webui) | Docker Compose stack included, auto-configured | n/a — use [chat.yambr.com](https://chat.yambr.com) directly (pointing your own Open WebUI at the hosted API isn't a documented path) | Tested in production |
-| [**Claude Desktop**](https://claude.ai/download) | `http://localhost:8081/mcp` — see [docs/MCP.md](docs/MCP.md) | `https://api.yambr.com/mcp/computer_use` — see [docs/CLOUD.md](docs/CLOUD.md) | Works |
-| [**n8n**](https://n8n.io) | MCP Tool node → `http://computer-use-server:8081/mcp` | MCP Tool node → `https://api.yambr.com/mcp/computer_use` | Works |
-| [**LiteLLM**](https://github.com/BerriAI/litellm) | MCP proxy config — see [docs/MCP.md](docs/MCP.md) | MCP proxy → `https://api.yambr.com/mcp/computer_use` | Works |
-| **Custom client** | Any HTTP client with MCP JSON-RPC — see curl examples in [docs/MCP.md](docs/MCP.md) | Same, with `Authorization: Bearer sk-...` (key from [app.yambr.com](https://app.yambr.com)) | Works |
+| Client | Self-hosted URL | Status |
+|--------|-----------------|--------|
+| [**Open WebUI**](https://github.com/open-webui/open-webui) | Docker Compose stack included, auto-configured | Tested in production |
+| [**Claude Desktop**](https://claude.ai/download) | `http://localhost:8081/mcp` — see [docs/MCP.md](docs/MCP.md) | Works |
+| [**n8n**](https://n8n.io) | MCP Tool node → `http://computer-use-server:8081/mcp` | Works |
+| [**LiteLLM**](https://github.com/BerriAI/litellm) | MCP proxy config — see [docs/MCP.md](docs/MCP.md) | Works |
+| **Custom client** | Any HTTP client with MCP JSON-RPC — see curl examples in [docs/MCP.md](docs/MCP.md) | Works |
 
 ## Open WebUI Integration
 
 > **[Open WebUI](https://github.com/open-webui/open-webui)** is an extensible, self-hosted AI interface. We use it as the primary frontend because it supports tool calling, function filters, and artifacts — everything needed for Computer Use.
 
-**Compatibility:** This build is strictly built and verified against Open WebUI 0.9.2. The first 3 segments of our build version (`v0.9.2.X`) always match the Open WebUI base version it targets. If you run a different Open WebUI version, pick the Open Computer Use build whose first 3 version segments match yours — e.g., for Open WebUI 0.8.12 use a `v0.8.12.Y` build.
+**Compatibility:** This build is strictly built and verified against Open WebUI 0.11.0. The first 3 segments of our build version (`v0.11.0.X`) always match the Open WebUI base version it targets. If you run a different Open WebUI version, pick the Open Computer Use build whose first 3 version segments match yours — e.g., for Open WebUI 0.8.12 use a `v0.8.12.Y` build.
 
-**Why not a fork?** We intentionally did not fork Open WebUI. Instead, everything is bolted on via the official plugin API (tools + functions) and build-time patches for missing features. This means you can use stock [Open WebUI](https://github.com/open-webui/open-webui) 0.9.2 with this build (the version that the first 3 segments of our build version `v0.9.2.X` match) — just install the tool and filter. Patches are applied at Docker build time; strongly recommended — 4 of them affect user-visible UX (artifacts panel, preview iframe, error banners, large tool-result handling). Pulling `ghcr.io/open-webui/open-webui` directly skips all of them — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack) for the full checklist.
+**Why not a fork?** We intentionally did not fork Open WebUI. Instead, everything is bolted on via the official plugin API (tools + functions) and build-time patches for missing features. This means you can use stock [Open WebUI](https://github.com/open-webui/open-webui) 0.11.0 with this build (the version that the first 3 segments of our build version `v0.11.0.X` match) — just install the tool and filter. Patches are applied at Docker build time; strongly recommended — 4 of them affect user-visible UX (artifacts panel, preview iframe, error banners, large tool-result handling). Pulling `ghcr.io/open-webui/open-webui` directly skips all of them — see [Required setup when embedding Open WebUI](#required-setup-when-embedding-open-webui-into-your-own-stack) for the full checklist.
 
 Running Claude Code through a corporate gateway (LiteLLM, Azure, Bedrock)? See [docs/claude-code-gateway.md](docs/claude-code-gateway.md) for the three-path operator recipe.
 
@@ -286,7 +284,7 @@ Pulling `ghcr.io/open-webui/open-webui:vX.Y.Z` gives you a stock image **without
 | `fix_tool_loop_errors` | Raw exceptions instead of banners; `MCP call failed: Session terminated` appears unwrapped |
 | `fix_large_tool_results` | `TOOL_RESULT_MAX_CHARS` stops truncating and the large-result upload path (via `ORCHESTRATOR_URL`) becomes a no-op; large outputs wreck the model context |
 
-Only `CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES` keeps working on an upstream image (it's a stock Open WebUI env) — which creates a false "everything is configured" feeling.
+Only `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS` keeps working on an upstream image (it's a stock Open WebUI env) — which creates a false "everything is configured" feeling.
 
 Use `build:` in your downstream compose, mirroring `docker-compose.webui.yml:11-15`:
 
@@ -297,7 +295,7 @@ services:
       context: ./openwebui   # path into this repo
       dockerfile: Dockerfile
       args:
-        OPENWEBUI_VERSION: "0.9.2"
+        OPENWEBUI_VERSION: "0.11.0"
     image: open-webui-with-cu-patches:latest   # local tag, do not pull
 ```
 
@@ -350,7 +348,7 @@ services:
   open-webui:
     environment:
       # --- Computer Use required env vars (read by build-time patches) ---
-      - CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES=200
+      - CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=200
       - TOOL_RESULT_MAX_CHARS=50000
       - TOOL_RESULT_PREVIEW_CHARS=2000
       # Internal URL of the Computer Use server — seeded by init.sh into both
@@ -361,7 +359,7 @@ services:
 
 | Variable | Default if unset | Effect when correctly set |
 |----------|------------------|---------------------------|
-| `CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES` | `30` (upstream) | Tool-call cap per turn. `30` cuts Computer Use multi-step tasks short; stock repo uses `200`. |
+| `CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS` | `256` (upstream) | Tool-call cap per turn; stock repo sets `200`, `-1` disables the cap. Open WebUI reads the pre-0.10 name `CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES` as a fallback. |
 | `TOOL_RESULT_MAX_CHARS` | `50000` (patch built-in) | Truncation threshold above which a tool result is truncated or uploaded. `0` disables. |
 | `TOOL_RESULT_PREVIEW_CHARS` | `2000` (patch built-in) | Preview size the model sees after truncation or upload. |
 | `ORCHESTRATOR_URL` | empty | Seeded into both Tool and Filter Valves by `init.sh`, and read by `fix_large_tool_results` patch as the upload target. If empty, oversized results are **silently truncated** — the model loses the data. |
@@ -406,7 +404,7 @@ docker exec open-webui bash -c \
 # → should print "patches applied"
 
 # 3. Env vars reached the container:
-docker exec open-webui env | grep -E 'CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES|TOOL_RESULT_|ORCHESTRATOR_URL'
+docker exec open-webui env | grep -E 'CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS|TOOL_RESULT_|ORCHESTRATOR_URL'
 
 # 4. Tool+Filter Valve (Session-terminated trap) — Admin UI is simplest:
 #    Workspace → Tools → ai_computer_use → Valves → ORCHESTRATOR_URL
@@ -438,7 +436,7 @@ docker exec <postgres-container> psql -U openwebui -d openwebui -c \
 | HTML artifact renders as raw `<iframe ...>` text in chat | 1 (upstream image, `fix_artifacts_auto_show` missing) |
 | Preview iframe auto-insertion doesn't happen for file links | 1 (`fix_preview_url_detection` missing) or `PUBLIC_BASE_URL` unreachable from browser |
 | `MCP call failed: Session terminated` on every tool call | 3 (tool Valve points at public domain) |
-| Tool loop cuts off at ~30 calls; banner *"Model temporarily unavailable"* | 4 (`CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES` not set) |
+| Tool loop cuts off early; banner *"Model temporarily unavailable"* | 4 (`CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS` not set) |
 | Large tool outputs silently `...(truncated)`; model makes wrong decisions | 4 (`ORCHESTRATOR_URL` not set or unreachable) OR 1 (`fix_large_tool_results` missing) |
 | Tool-loop errors show raw Python exception | 1 (`fix_tool_loop_errors` missing) |
 | Tool list is empty for non-admin users (admin sees it) | 5 (tool missing `access_grant`s — not public-read) |
@@ -476,7 +474,7 @@ We plan to address these in future releases:
 - [ ] **Secret management** — move credentials from headers to encrypted server-side storage
 - [ ] **gVisor (runsc) runtime** — optional container sandboxing for stronger isolation (like Claude.ai)
 
-Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or reach out on Telegram [@yambrcom](https://t.me/yambrcom).
+Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or email developer@widemoat.ai.
 
 ## Development
 
@@ -499,15 +497,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
 
 ## Community
 
-- **Managed hosting**: [yambr.com](https://yambr.com) — cloud version by the maintainers ([chat.yambr.com](https://chat.yambr.com) for the free demo, [app.yambr.com](https://app.yambr.com) for API keys, [docs.yambr.com](https://docs.yambr.com) for the cloud docs)
+- **Free online demo**: [chat.yambr.com](https://chat.yambr.com) — hosted by the maintainers
 - **Issues & Ideas**: [GitHub Issues](https://github.com/Wide-Moat/open-computer-use/issues)
-- **Telegram**: [@yambrcom](https://t.me/yambrcom)
+- **Contact**: developer@widemoat.ai
 
 ## License
 
 This project uses a multi-license model:
 
-- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0). Free to use, modify, fork, redistribute, and self-host internally. Each release automatically converts to [Apache 2.0](LICENSE-APACHE) two years after publication. Offering a hosted or embedded service that competes with our paid version(s) requires a [commercial agreement](https://t.me/yambrcom).
+- **Core** (`computer-use-server/`, `openwebui/`, `settings-wrapper/`, Docker configs): [Functional Source License, Version 1.1, Apache 2.0 Future License](LICENSE) (FSL-1.1-Apache-2.0). Free to use, modify, fork, redistribute, and self-host internally. Each release automatically converts to [Apache 2.0](LICENSE-APACHE) two years after publication. Offering a hosted or embedded service that competes with our paid version(s) requires a [commercial agreement](mailto:developer@widemoat.ai).
 - **Our skills** (`skills/public/describe-image`, `skills/public/sub-agent`): [MIT](LICENSE-MIT)
 - **Third-party skills**: see individual LICENSE.txt files or original sources.
 

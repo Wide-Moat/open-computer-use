@@ -49,3 +49,11 @@ MD046:
 # MD059 — link text should be descriptive. Allow "here" / "this" because we
 # use them in legitimate context-sentence patterns.
 MD059: false
+
+# MD060 — table-column-style. Introduced in markdownlint-cli2 19; it requires
+# each delimiter cell to match the width of its header cell. The compact
+# `|---|---|` form renders identically and is what every table in
+# docs/architecture/ uses, so enforcing it would rewrite 500 delimiter rows
+# across the canon for no reader-visible change — history noise that buries
+# real diffs. Column ALIGNMENT (the colons) is unaffected and still linted.
+MD060: false

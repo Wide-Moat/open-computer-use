@@ -83,9 +83,9 @@ Node.js uses parent-directory resolution: if a package isn't found in `/home/ass
 
 ## Versioning (current `main`-line scheme)
 
-Format: `v0.9.X.Y` — the first three segments (`0.9.X`) track the **Open WebUI** base version this project is built on. Never bump them independently.
+Format: `v0.11.X.Y` — the first three segments (`0.11.X`) track the **Open WebUI** base version this project is built on. Never bump them independently.
 
-- **Patch release** (`Y+1`): bug fixes, security patches, dependency bumps, test additions → e.g. `v0.9.5.0` → `v0.9.5.1`
+- **Patch release** (`Y+1`): bug fixes, security patches, dependency bumps, test additions → e.g. `v0.11.0.0` → `v0.11.0.1`
 - **Minor release** (`X+1`, reset `Y=0`): new features, new tools, significant changes → only when Open WebUI base version also bumps
 
 To release:
@@ -93,6 +93,8 @@ To release:
 1. Update `CHANGELOG.md` with the new version heading.
 2. Commit: `chore: release vX.X.X.X`.
 3. Tag: `git tag vX.X.X.X && git push origin main --tags`.
+
+If the environment cannot push a tag — Claude Code on the web restricts git pushes to the working branch — run the **Release** workflow manually instead (`gh workflow run release.yml -f version=vX.X.X.X`, or the Actions tab). It validates the version, refuses to tag a version with no `CHANGELOG.md` heading, creates the tag, cuts the GitHub Release, and dispatches the image build and chart publish. `supply-chain.yml` (SBOM + cosign signing) stays manual either way: it signs as the project's Sigstore identity and requires `production`-environment approval.
 
 The `next/v1` branch will define its own versioning scheme in an ADR; until then it carries no tagged releases.
 
