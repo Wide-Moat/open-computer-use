@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
-ARG OPENWEBUI_VERSION=0.9.5
+ARG OPENWEBUI_VERSION=0.11.0
 FROM ghcr.io/open-webui/open-webui:${OPENWEBUI_VERSION}
 
 # Copy all patches into the image
@@ -21,10 +21,6 @@ RUN python3 /tmp/patches/fix_preview_url_detection.py
 RUN python3 /tmp/patches/fix_large_tool_results.py
 
 # Enabled backend patches:
-#
-# fix_large_tool_args: Truncates oversized tool call arguments in HTML attributes
-# to prevent browser UI freeze on large tool outputs (>10KB).
-RUN python3 /tmp/patches/fix_large_tool_args.py
 #
 # fix_attached_files_position: Moves file context to end of messages instead of
 # prepend, improving prompt cache hit rates with large file attachments.

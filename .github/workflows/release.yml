@@ -3,9 +3,20 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Manual entry point for environments that cannot push a tag — Claude Code
+  # on the web restricts git pushes to the working branch, so `git push --tags`
+  # from a cloud session is refused. Dispatch this workflow instead and it
+  # creates the tag itself.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag and release, with the leading v (e.g. v0.10.2.0). CHANGELOG.md must already carry its heading.'
+        required: true
+        type: string
 
 permissions:
   contents: write
+  actions: write   # dispatch the tag-driven workflows the recursion guard skips
 
 jobs:
   release:
@@ -13,9 +24,57 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+
+      # Every `${{ }}` value below is bound to an env var and referenced as
+      # "$VAR" inside run: blocks — semgrep's run-shell-injection rule (CWE-78)
+      # blocks direct interpolation.
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = 'workflow_dispatch' ]; then
+            version="$INPUT_VERSION"
+            # Only the manual path is validated. A tag push has already
+            # committed to whatever name it carries, and older releases used a
+            # 3-segment scheme this pattern would reject.
+            if ! printf '%s' "$version" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+              echo "::error::version '$version' is not vX.Y.Z.W or vX.Y.Z.W-suffix"
+              exit 1
+            fi
+          else
+            version="$REF_NAME"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # build.yml tags images with `type=match,pattern=v(.*),group=1`, i.e.
+          # the version without the leading v.
+          echo "image_tag=${version#v}" >> "$GITHUB_OUTPUT"
+          echo "chart_version=$(printf '%s' "${version#v}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?(-.*)?$/\1\3/')" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag $VERSION already exists on the remote"
+            exit 1
+          fi
+          # The release notes link the CHANGELOG entry, so refuse to tag a
+          # version that has none rather than publish a release with no record.
+          if ! grep -qF "## $VERSION " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $VERSION' heading — add the release entry first"
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "refs/tags/$VERSION"
 
       - name: Generate changelog
         id: changelog
@@ -32,6 +91,8 @@ jobs:
 
       - name: Detect pre-release tag
         id: prerelease
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Strip leading v; if what's left contains a SemVer pre-release suffix
           # (`-rc.1`, `-alpha.2`, `-beta.0`, `-dev.X`), mark the GitHub Release
@@ -41,25 +102,28 @@ jobs:
           # 4-segment app-version scheme (`0.8.12.3-rc.1`). Any pre-release
           # suffix flips the release to "pre-release" in GitHub so the
           # "Latest" badge keeps tracking stable.
-          v="${GITHUB_REF_NAME#v}"
+          v="${VERSION#v}"
           if echo "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-[A-Za-z0-9.]+$'; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
+      - uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228  # v3.0.2
         with:
+          # Explicit: on a dispatch the ref is a branch, so the action cannot
+          # infer the tag from it.
+          tag_name: ${{ steps.version.outputs.version }}
           generate_release_notes: true
           prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
           body: |
             ## Docker Images
 
             ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-server:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-cleanup:${{ github.ref_name }}
-            docker pull ghcr.io/${{ github.repository }}-webui:${{ github.ref_name }}
+            docker pull ghcr.io/${{ github.repository }}:${{ steps.version.outputs.image_tag }}
+            docker pull ghcr.io/${{ github.repository }}-server:${{ steps.version.outputs.image_tag }}
+            docker pull ghcr.io/${{ github.repository }}-cleanup:${{ steps.version.outputs.image_tag }}
+            docker pull ghcr.io/${{ github.repository }}-webui:${{ steps.version.outputs.image_tag }}
             ```
 
             ## Helm chart (Kubernetes)
@@ -68,7 +132,7 @@ jobs:
             # Image tags follow the 4-segment app version (e.g. 0.8.12.3);
             # Helm chart versions are 3-segment SemVer, so strip the 4th
             # segment (and any pre-release suffix) for --version.
-            VERSION="${{ github.ref_name }}"; VERSION="${VERSION#v}"
+            VERSION="${{ steps.version.outputs.image_tag }}"
             CHART_VERSION="$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?(-.*)?$/\1\3/')"
             helm install ocu oci://ghcr.io/${{ github.repository_owner }}/charts/computer-use-server \
               --version "$CHART_VERSION" \
@@ -78,14 +142,14 @@ jobs:
               --set cleanup.image.tag="$VERSION"
             ```
 
-            See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/helm/computer-use-server/README.md) for prerequisites (Kata Containers) and full values reference.
+            See [`helm/computer-use-server/README.md`](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/helm/computer-use-server/README.md) for prerequisites (Kata Containers) and full values reference.
 
             ## Quick Start (Docker Compose)
 
             ```bash
             git clone https://github.com/${{ github.repository }}.git
             cd open-computer-use
-            git checkout ${{ github.ref_name }}
+            git checkout ${{ steps.version.outputs.version }}
             cp .env.example .env
             # Edit .env with your API key
             docker compose up
@@ -93,3 +157,24 @@ jobs:
 
             ## Changes
             ${{ steps.changelog.outputs.changes }}
+
+      # A tag pushed with GITHUB_TOKEN does not start new workflow runs, so on
+      # the manual path the tag-driven workflows never fire. Start the two that
+      # publish artefacts. supply-chain.yml is deliberately left out: it signs
+      # as the project's Sigstore identity and is gated behind the `production`
+      # environment's required reviewer, so it stays a human decision.
+      - name: Dispatch the tag-driven workflows
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          IMAGE_TAG: ${{ steps.version.outputs.image_tag }}
+          CHART_VERSION: ${{ steps.version.outputs.chart_version }}
+          # The tag, not the dispatch branch: a commit landing on the branch
+          # between the tag and this step would otherwise be what gets built,
+          # so the images would not match the commit the release points at.
+          REF: ${{ steps.version.outputs.version }}
+        run: |
+          gh workflow run build.yml --repo "$REPO" --ref "$REF" -f version="$IMAGE_TAG"
+          gh workflow run release-chart.yml --repo "$REPO" --ref "$REF" -f version="$CHART_VERSION"
+          echo "::notice::Images and chart dispatched. supply-chain.yml (SBOM + cosign) still needs a manual run per image — it requires production-environment approval."

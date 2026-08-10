@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-Apache-2.0
 # Copyright (c) 2025 Open Computer Use Contributors
 """
-Patch for Open WebUI 0.9.5: append <attached_files> instead of prepend.
+Patch for Open WebUI 0.11.0: append <attached_files> instead of prepend.
 
 Problem:
   add_file_context() prepends <attached_files> to the beginning of user message.
