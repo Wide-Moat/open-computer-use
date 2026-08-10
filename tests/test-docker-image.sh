@@ -58,6 +58,26 @@ for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa; d
     echo "$RESULT" | grep -q "OK" && pass "require('$pkg')" || fail "require('$pkg'): $RESULT"
 done
 
+# marked renders, rather than merely loading. A major of a renderer keeps the
+# module importable and changes the API or the output shape, so loading it alone
+# waves that through; parsing a heading and checking for <h1> does not.
+#
+# ESM, not require(): the image ships a marked build that is ESM-only, so
+# require() raises ERR_REQUIRE_ESM. It therefore does NOT belong in the CommonJS
+# list above — measured in the image, not assumed from the host, where an older
+# CommonJS marked is installed and require() succeeds.
+RESULT=$(run_in_container "node --input-type=module -e \"import {marked} from 'marked'; const h=marked.parse('# t'); console.log(/<h1/.test(h)?'OK':'FAIL')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "marked renders a heading" || fail "marked render"
+
+# tsc COMPILES. The CLI loop below only proves --version exits 0, which a major
+# that changed type-checking would also satisfy. This compiles a strict file and
+# then asserts a deliberately ill-typed one is REJECTED, so the check cannot pass
+# by accepting everything.
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'export const twice = (x: number): number => x * 2;\\n' > \$d/a.ts; tsc --noEmit --strict \$d/a.ts >/dev/null 2>&1 && echo OK || echo FAIL") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc compiles a strict file" || fail "tsc compile"
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const n: number = \\"nope\\";\\n' > \$d/b.ts; tsc --noEmit --strict \$d/b.ts >/dev/null 2>&1 && echo FAIL || echo OK") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc rejects an ill-typed file" || fail "tsc did not reject bad types"
+
 # 3. ES Modules import
 echo ""
 echo "[3/14] ES Modules import"
@@ -115,6 +135,24 @@ for pkg in docx pptx openpyxl; do
     RESULT=$(run_in_container "python3 -c \"import $pkg; print('OK')\"") || RESULT=""
     echo "$RESULT" | grep -q "OK" && pass "python import $pkg" || fail "python import $pkg"
 done
+
+# The data/imaging packages requirements.txt installs but nothing imported. A
+# major bump of any of these builds cleanly — pip resolves it, the image layer
+# is produced, "Build Sandbox Image" goes green — and then fails the first time
+# a skill touches it. Each line below EXERCISES the package rather than merely
+# importing it, because a broken major usually imports fine and moves an API.
+RESULT=$(run_in_container "python3 -c \"import pandas as pd; df=pd.DataFrame({'a':[1,2]}); assert df['a'].sum()==3; print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python pandas (DataFrame + sum)" || fail "python pandas"
+RESULT=$(run_in_container "python3 -c \"import numpy as np; assert np.arange(3).sum()==3; print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python numpy (arange + sum)" || fail "python numpy"
+RESULT=$(run_in_container "python3 -c \"import scipy.stats as st; assert round(st.norm.cdf(0),3)==0.5; print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python scipy (stats.norm)" || fail "python scipy"
+RESULT=$(run_in_container "python3 -c \"import cv2, numpy as np; img=np.zeros((4,4,3),dtype=np.uint8); assert cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).shape==(4,4); print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python opencv (cvtColor)" || fail "python opencv"
+RESULT=$(run_in_container "python3 -c \"import imageio.v3 as iio, numpy as np, tempfile, os; p=os.path.join(tempfile.mkdtemp(),'t.png'); iio.imwrite(p, np.zeros((4,4,3),dtype=np.uint8)); assert iio.imread(p).shape==(4,4,3); print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python imageio (write + read round-trip)" || fail "python imageio"
+RESULT=$(run_in_container "python3 -c \"from PIL import Image; im=Image.new('RGB',(4,4)); assert im.size==(4,4); print('OK')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "python pillow (Image.new)" || fail "python pillow"
 RESULT=$(run_in_container "python3 -c \"from playwright.sync_api import sync_playwright; print('OK')\"") || RESULT=""
 echo "$RESULT" | grep -q "OK" && pass "python playwright" || fail "python playwright"
 
