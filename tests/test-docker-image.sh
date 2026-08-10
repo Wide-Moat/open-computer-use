@@ -53,10 +53,25 @@ echo "$VERSIONS" | grep -q "Python 3" && pass "Python 3" || fail "Python version
 # 2. CommonJS require()
 echo ""
 echo "[2/14] CommonJS require()"
-for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa; do
+for pkg in react pptxgenjs pdf-lib docx sharp react-dom/server react-icons/fa marked; do
     RESULT=$(run_in_container "node -e \"try { require('$pkg'); console.log('OK') } catch(e) { console.log('FAIL: ' + e.code) }\"") || RESULT=""
     echo "$RESULT" | grep -q "OK" && pass "require('$pkg')" || fail "require('$pkg'): $RESULT"
 done
+
+# marked renders, rather than merely loading. A major of a renderer keeps the
+# module importable and changes the API or the output shape, so a bare require()
+# waves it through; parsing a heading and checking for <h1> does not.
+RESULT=$(run_in_container "node -e \"const m=require('marked'); const p=(m.parse||m.marked); const h=p('# t'); console.log(/<h1/.test(h)?'OK':'FAIL')\"") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "marked renders a heading" || fail "marked render"
+
+# tsc COMPILES. The CLI loop below only proves --version exits 0, which a major
+# that changed type-checking would also satisfy. This compiles a strict file and
+# then asserts a deliberately ill-typed one is REJECTED, so the check cannot pass
+# by accepting everything.
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'export const twice = (x: number): number => x * 2;\\n' > \$d/a.ts; tsc --noEmit --strict \$d/a.ts >/dev/null 2>&1 && echo OK || echo FAIL") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc compiles a strict file" || fail "tsc compile"
+RESULT=$(run_in_container "d=\$(mktemp -d); printf 'const n: number = \\"nope\\";\\n' > \$d/b.ts; tsc --noEmit --strict \$d/b.ts >/dev/null 2>&1 && echo FAIL || echo OK") || RESULT=""
+echo "$RESULT" | grep -q "OK" && pass "tsc rejects an ill-typed file" || fail "tsc did not reject bad types"
 
 # 3. ES Modules import
 echo ""
