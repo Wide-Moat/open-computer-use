@@ -32,7 +32,9 @@ from pydantic import BaseModel, Field
 
 from system_prompt import SYSTEM_PROMPT_TEMPLATE, build_system_prompt, render_system_prompt
 from docker_manager import (
-    get_container_cdp_address,
+    get_container_service_address,
+    CDP_PORT,
+    TTYD_PORT,
     PUBLIC_BASE_URL,
     warn_if_public_base_url_is_default,
     warn_if_mcp_api_key_missing,
@@ -634,14 +636,14 @@ async def browser_status(chat_id: str, response: Response):
     """Check if browser (Chromium CDP) is running in the chat's container."""
     chat_id = sanitize_chat_id(chat_id)
     response.headers["Cache-Control"] = "no-cache, no-store"
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, CDP_PORT)
+    if not container_addr:
         return {"active": False, "pages": []}
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://{container_ip}:9222/json",
+                f"http://{container_addr}/json",
                 timeout=aiohttp.ClientTimeout(total=2)
             ) as resp:
                 pages = await resp.json()
@@ -661,14 +663,14 @@ async def browser_status(chat_id: str, response: Response):
 async def browser_cdp_json(chat_id: str):
     """Proxy CDP /json endpoint from container."""
     chat_id = sanitize_chat_id(chat_id)
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, CDP_PORT)
+    if not container_addr:
         raise HTTPException(404, "Container not found or not running")
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://{container_ip}:9222/json",
+                f"http://{container_addr}/json",
                 timeout=aiohttp.ClientTimeout(total=3)
             ) as resp:
                 return await resp.json()
@@ -680,14 +682,14 @@ async def browser_cdp_json(chat_id: str):
 async def browser_cdp_json_version(chat_id: str):
     """Proxy CDP /json/version endpoint from container."""
     chat_id = sanitize_chat_id(chat_id)
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, CDP_PORT)
+    if not container_addr:
         raise HTTPException(404, "Container not found or not running")
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://{container_ip}:9222/json/version",
+                f"http://{container_addr}/json/version",
                 timeout=aiohttp.ClientTimeout(total=3)
             ) as resp:
                 return await resp.json()
@@ -699,14 +701,14 @@ async def browser_cdp_json_version(chat_id: str):
 async def browser_ws_proxy(websocket: WebSocket, chat_id: str, page_id: str):
     """Bidirectional WebSocket proxy for CDP — connects browser viewer to container's Chromium."""
     chat_id = sanitize_chat_id(chat_id)
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, CDP_PORT)
+    if not container_addr:
         await websocket.close(code=1008, reason="Container not found")
         return
 
     await websocket.accept()
 
-    backend_url = f"ws://{container_ip}:9222/devtools/page/{page_id}"
+    backend_url = f"ws://{container_addr}/devtools/page/{page_id}"
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -798,8 +800,8 @@ async def terminal_status(chat_id: str, response: Response):
     """Check if ttyd terminal is available in the chat's container."""
     chat_id = sanitize_chat_id(chat_id)
     response.headers["Cache-Control"] = "no-cache, no-store"
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, TTYD_PORT)
+    if not container_addr:
         # Check if container exists but is stopped
         container = _get_container_stopped(chat_id)
         if container:
@@ -812,7 +814,7 @@ async def terminal_status(chat_id: str, response: Response):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://{container_ip}:7681/",
+                f"http://{container_addr}/",
                 timeout=aiohttp.ClientTimeout(total=2)
             ) as resp:
                 return {"active": resp.status == 200}
@@ -1069,14 +1071,14 @@ async def terminal_heartbeat(chat_id: str):
 async def terminal_ws_proxy(websocket: WebSocket, chat_id: str):
     """Bidirectional WebSocket proxy — connects xterm.js to container's ttyd."""
     chat_id = sanitize_chat_id(chat_id)
-    container_ip = get_container_cdp_address(chat_id)
-    if not container_ip:
+    container_addr = get_container_service_address(chat_id, TTYD_PORT)
+    if not container_addr:
         await websocket.close(code=1008, reason="Container not found")
         return
 
     await websocket.accept(subprotocol="tty")
 
-    backend_url = f"ws://{container_ip}:7681/ws"
+    backend_url = f"ws://{container_addr}/ws"
 
     try:
         async with aiohttp.ClientSession() as session:
