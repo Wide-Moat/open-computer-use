@@ -193,6 +193,9 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
 
     always_shell_names: set[str] = set()
     runner_names: set[str] = set()
+    # ``import os as o`` binds the module under another name; without this the
+    # guard matches the spelling ``os.system`` rather than the callee.
+    module_aliases: dict[str, str] = {"os": "os", "subprocess": "subprocess"}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module in ("os", "subprocess"):
             for alias in node.names:
@@ -201,6 +204,10 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
                     always_shell_names.add(bound)
                 elif alias.name in _RUNNERS:
                     runner_names.add(bound)
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in ("os", "subprocess") and alias.asname:
+                    module_aliases[alias.asname] = alias.name
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute):
             attr = node.value.attr
             for tgt in node.targets:
@@ -237,29 +244,49 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
             return "a .format() string"
         return None
 
-    string_locals: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            built = _built_string(node.value)
-            if built is None:
-                continue
-            for tgt in node.targets:
-                if isinstance(tgt, ast.Name):
-                    string_locals[tgt.id] = built
+    # Scoped per enclosing function, never file-global: a local holding a list
+    # argv in one function must not be tainted by a same-named local holding a
+    # built string in another. `cmd`, `args` and `argv` are what this harness
+    # calls its list argv, so a flat dict would red the safe form.
+    string_locals_by_scope: dict[int, dict[str, str]] = {}
+    scope_of: dict[int, int] = {}
 
-    def _command_string(node: ast.AST) -> str | None:
+    def _index_scope(scope: ast.AST) -> None:
+        found: dict[str, str] = {}
+        for child in ast.walk(scope):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child is not scope:
+                continue
+            if isinstance(child, ast.Assign):
+                built = _built_string(child.value)
+                if built is not None:
+                    for tgt in child.targets:
+                        if isinstance(tgt, ast.Name):
+                            found[tgt.id] = built
+            if isinstance(child, ast.Call):
+                scope_of[id(child)] = id(scope)
+        string_locals_by_scope[id(scope)] = found
+
+    _index_scope(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _index_scope(node)
+
+    def _command_string(node: ast.AST, call: ast.Call) -> str | None:
         built = _built_string(node)
         if built is not None:
             return built
-        if isinstance(node, ast.Name) and node.id in string_locals:
-            return f"{string_locals[node.id]} (via {node.id})"
+        if isinstance(node, ast.Name):
+            scope = string_locals_by_scope.get(scope_of.get(id(call), id(tree)), {})
+            if node.id in scope:
+                return f"{scope[node.id]} (via {node.id})"
         return None
 
     def _callee(node: ast.Call) -> tuple[str, bool, bool]:
         """(display name, is-always-shell, is-runner) for a call's callee."""
         func = node.func
         if isinstance(func, ast.Attribute):
-            base = func.value.id if isinstance(func.value, ast.Name) else "?"
+            raw = func.value.id if isinstance(func.value, ast.Name) else "?"
+            base = module_aliases.get(raw, raw)
             if base in ("os", "subprocess") and func.attr in _ALWAYS_SHELL:
                 return f"{base}.{func.attr}", True, False
             if base == "subprocess" and func.attr in _RUNNERS:
@@ -276,6 +303,15 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
         name, always_shell, is_runner = _callee(node)
 
         for kw in node.keywords:
+            if kw.arg is None and isinstance(kw.value, ast.Dict):
+                for k, v in zip(kw.value.keys, kw.value.values):
+                    if (
+                        isinstance(k, ast.Constant)
+                        and k.value == "shell"
+                        and not (isinstance(v, ast.Constant) and v.value is False)
+                    ):
+                        hits.append((node.lineno, "shell= via a ** splat"))
+                continue
             if kw.arg != "shell":
                 continue
             if isinstance(kw.value, ast.Constant) and kw.value.value is False:
@@ -288,7 +324,7 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
             continue
 
         if is_runner and node.args:
-            built = _command_string(node.args[0])
+            built = _command_string(node.args[0], node)
             if built is not None:
                 hits.append((node.lineno, f"{built} as the command"))
     return hits
@@ -344,6 +380,7 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         ('subprocess.run(f"docker rm {x}")', "an f-string as the command"),
         ('subprocess.check_output("cat %s" % x)', "a %-formatted string as the command"),
         ('subprocess.run("docker rm " + x)', "a concatenated string as the command"),
+        ('subprocess.run(a, **{"shell": True})', "shell= via a ** splat"),
     ]
     for src, want in hazards:
         planted = f"import os, subprocess\ndef t(a, x, sh):\n    {src}\n"
@@ -359,11 +396,13 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
 
     # Callees reached under another name are the same hazard as the dotted form.
     aliased = (
+        "import os as o\n"
         "from os import system\n"
         "from subprocess import run\n"
         "import subprocess\n"
         "sh = subprocess.run\n"
         "def t(x):\n"
+        '    o.system("rm " + x)\n'
         '    system("rm -rf " + x)\n'
         '    run(f"docker rm {x}")\n'
         '    sh("docker rm " + x)\n'
@@ -376,6 +415,7 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         whats = sorted(w for _, w in _shell_hazard_sites(f))
     assert whats == sorted(
         [
+            "os.system (runs /bin/sh by construction)",
             "system (runs /bin/sh by construction)",
             "an f-string as the command",
             "a concatenated string as the command",
@@ -385,6 +425,30 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         f"a hazardous callee reached via from-import or an alias, and a command "
         f"hoisted into a local, must all be detected; got {whats!r}. Resolving "
         "only the dotted spelling measures house style, not safety."
+    )
+
+    # Scope: a local holding a LIST argv must not be tainted by a same-named
+    # local holding a built string elsewhere in the file. `cmd`, `args` and
+    # `argv` are what this harness names its argv, so a file-global map would
+    # red the safe form — the failure this whole test exists to prevent.
+    scoped = (
+        "import subprocess\n"
+        "def list_probe(name):\n"
+        '    cmd = ["docker", "ps", "--filter", f"name={name}"]\n'
+        "    return subprocess.run(cmd)\n"
+        "def other(x):\n"
+        '    cmd = f"echo {x}"\n'
+        "    return subprocess.getoutput(cmd)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "scoped.py"
+        f.write_text(scoped, encoding="utf-8")
+        scoped_hits = _shell_hazard_sites(f)
+    assert [ln for ln, _ in scoped_hits] == [7], (
+        f"only the getoutput call on line 7 is a hazard; got {scoped_hits!r}. A "
+        "file-global map of string locals reds the clean list-argv call on line "
+        "4 because another function binds the same name — a false red on the "
+        "safe form, which forces the waivers off instead of keeping them honest."
     )
 
     clean = (
