@@ -88,6 +88,28 @@ def _extract_resolve_scope(payload: dict):
 # MCP Streamable HTTP Client
 # ============================================================================
 
+def _require_http_scheme(url: str) -> None:
+    """Refuse an orchestrator URL that urlopen would not fetch over the network.
+
+    urllib honours ``file://``, ``ftp://`` and ``data://``, so a misconfigured
+    Valve turns a health probe or a scope resolve into a local-file read whose
+    result is then reported as if it had come from the orchestrator. The
+    resolve path is the dangerous one: it catches every exception and degrades
+    to the base scope, so a bad scheme there fails silently rather than loudly.
+
+    Shared by every construction path — the MCP client and the direct
+    ``_resolve_scope`` request, which does not go through that client. The
+    sibling filter (``openwebui/functions/computer_link_filter.py``) enforces
+    the same rule at its own urlopen sites.
+    """
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"orchestrator URL scheme {scheme!r} is not supported "
+            f"(expected http or https)"
+        )
+
+
 class _MCPClient:
     """MCP Streamable HTTP client for computer-use-orchestrator."""
 
@@ -109,19 +131,7 @@ class _MCPClient:
 
     def __init__(self, orchestrator_url: str, mcp_api_key: str = ""):
         base = orchestrator_url.rstrip("/")
-        # Only http(s) is a valid orchestrator transport. urllib honours file://,
-        # ftp:// and data://, so a misconfigured Valve would otherwise make the
-        # health probe and the preflight read local files instead of reaching the
-        # orchestrator — and report the result as if it came from the network.
-        # The sibling filter (openwebui/functions/computer_link_filter.py) already
-        # rejects this at its own urlopen site; this closes the same hole here,
-        # once, where the URL enters rather than at each of the three call sites.
-        scheme = urllib.parse.urlparse(base).scheme
-        if scheme not in ("http", "https"):
-            raise ValueError(
-                f"orchestrator URL scheme {scheme!r} is not supported "
-                f"(expected http or https)"
-            )
+        _require_http_scheme(base)
         self.base_url = base
         self.mcp_url = f"{base}/mcp"
         self.health_url = f"{base}/health"
@@ -705,6 +715,18 @@ class Tools:
         upload path must not break on a resolve miss.
         """
         base = self.valves.OCU_FILESYSTEM_ID
+
+        def _degrade_early(reason: object) -> str:
+            if self.valves.DEBUG_LOGGING:
+                print(f"[SCOPE] resolve_scope miss for chat {chat_id}: {reason} -> base {base}")
+            return base
+
+        try:
+            _require_http_scheme(self.valves.ORCHESTRATOR_URL)
+        except ValueError as exc:
+            # This path never raises — the upload must survive a resolve miss —
+            # so a bad scheme degrades like any other miss, but visibly.
+            return _degrade_early(exc)
         endpoint = self.valves.ORCHESTRATOR_URL.rstrip("/") + "/mcp"
         body = json.dumps(
             {

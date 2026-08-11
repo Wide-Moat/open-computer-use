@@ -66,5 +66,67 @@ class OrchestratorURLScheme(unittest.TestCase):
             self._client("orchestrator:8000/mcp")
 
 
+class ResolveScopeSchemeGuard(unittest.TestCase):
+    """`_resolve_chat_scope_sync` builds its own request and does not go
+    through `_MCPClient`, so the constructor check alone left it open.
+
+    It is the worse of the two paths: it catches every exception and degrades
+    to the base scope, so a `file://` Valve would read a local file and any
+    failure would look like an ordinary resolve miss.
+
+    That degrade-on-anything behaviour is also why asserting the RETURN VALUE
+    proves nothing here — without the guard, urlopen raises on the bad scheme
+    and the method returns the base scope anyway. Every assertion below is
+    bound to whether urlopen was REACHED, which is the thing the guard changes.
+    """
+
+    def _tools_with_url(self, url):
+        tools = computer_use_tools.Tools()
+        tools.valves.ORCHESTRATOR_URL = url
+        tools.valves.OCU_FILESYSTEM_ID = "base-scope"
+        return tools
+
+    def _reached_urlopen(self, url):
+        """Run the resolve path with urlopen instrumented; report if it ran."""
+        import urllib.request
+
+        original = urllib.request.urlopen
+        seen = []
+
+        def _record(req, *a, **kw):
+            seen.append(getattr(req, "full_url", req))
+            raise OSError("blocked by the test; the call itself is the signal")
+
+        urllib.request.urlopen = _record
+        try:
+            scope = self._tools_with_url(url)._resolve_chat_scope_sync("chat-1")
+        finally:
+            urllib.request.urlopen = original
+        return bool(seen), scope
+
+    def test_a_refused_scheme_never_reaches_urlopen(self):
+        for url in ("file:///etc/passwd", "ftp://host/x", "data:text/plain,hi"):
+            with self.subTest(url=url):
+                reached, scope = self._reached_urlopen(url)
+                self.assertFalse(
+                    reached,
+                    f"{url} reached urlopen; the scheme guard did not run on "
+                    "the resolve path, so a file:// Valve would read a local "
+                    "file and the miss would look like any other miss",
+                )
+                self.assertEqual(scope, "base-scope")
+
+    def test_an_http_url_does_reach_urlopen(self):
+        # The control: without this, a guard that refused everything — or a
+        # method that never issued a request at all — would pass the test above.
+        reached, scope = self._reached_urlopen("http://orchestrator:8000")
+        self.assertTrue(
+            reached,
+            "an http URL must still be attempted; if it is not, the assertion "
+            "above is not about the scheme",
+        )
+        self.assertEqual(scope, "base-scope")
+
+
 if __name__ == "__main__":
     unittest.main()
