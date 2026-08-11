@@ -188,6 +188,13 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
       element of a list argv is deliberately not flagged: that is the safe form
       (``f"name={cname}"`` reaches the program as a single argument, with no
       shell to re-parse it), and it is what the per-site waivers describe.
+
+    Known gaps, both deliberate: a name rebound through ``global``/``nonlocal``
+    in another scope, and a closure reading an enclosing function's local. Both
+    need cross-scope name resolution, and neither is a shell hazard —
+    ``subprocess.run("<str>")`` without ``shell=`` is a program-name lookup that
+    fails, not a command line. The shell surface is ``shell=`` and the
+    ``_ALWAYS_SHELL`` callees, and those resolve regardless of scope.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
@@ -373,8 +380,16 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
                     if isinstance(bound, ast.Name) and bound.id == name:
                         return None
             args = getattr(node, "args", None)
-            for a in (args.args if args else []):
-                if a.arg == name:
+            if args is not None:
+                # Every parameter kind binds inside the lambda and shadows the
+                # enclosing name: positional-only, ordinary, keyword-only, and
+                # the *args / **kwargs collectors.
+                bound = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+                if args.vararg is not None:
+                    bound.append(args.vararg)
+                if args.kwarg is not None:
+                    bound.append(args.kwarg)
+                if any(a.arg == name for a in bound):
                     return None
             scope_id = parent_scope.get(scope_id, id(tree)) if scope_id != id(tree) else None
         return None
@@ -626,6 +641,28 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         f"must red; line 7 binds `cmd` as its own loop target and must stay "
         f"clean; line 10 uses a name a walrus bound OUTSIDE the comprehension "
         f"(PEP 572) and must red. Got {outward_hits!r}."
+    )
+
+    # Every parameter kind binds inside the lambda. Popping only `args.args`
+    # left positional-only, keyword-only and the collectors inheriting the
+    # enclosing string, which reds a lambda whose own argument is a list argv.
+    lambda_args = (
+        "import subprocess\n"
+        'cmd = f"echo {X}"\n'
+        "posonly = lambda cmd, /: subprocess.run(cmd)\n"
+        "kwonly = lambda *, cmd: subprocess.run(cmd)\n"
+        "collector = lambda *cmd: subprocess.run(cmd)\n"
+        "kwcollector = lambda **cmd: subprocess.run(cmd)\n"
+        "ordinary = lambda cmd: subprocess.run(cmd)\n"
+        "reads = lambda y: subprocess.run(cmd)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "lambda_args.py"
+        f.write_text(lambda_args, encoding="utf-8")
+        lambda_hits = _shell_hazard_sites(f)
+    assert sorted(ln for ln, _ in lambda_hits) == [8], (
+        f"only line 8 reads the module's built string; every lambda above binds "
+        f"`cmd` itself and passes its own argument. Got {lambda_hits!r}."
     )
 
     clean = (
