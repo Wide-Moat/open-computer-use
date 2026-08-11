@@ -233,19 +233,22 @@ func main() {
 
 	addr := envOr("LISTEN", ":8099")
 	log.Printf("g7-proxy: listening on %s → %s", addr, base)
-	// Plain HTTP is deliberate here and only here. The compose service
-	// publishes this port as `127.0.0.1:8099:8099`, so the listener is
-	// reachable from the host loopback alone — never from the fleet network
-	// and never off-box — and terminating TLS on a loopback port means
-	// shipping a cert nobody can validate.
+	// Plain HTTP on this listener, and what actually contains it.
 	//
-	// Read this together with what sits behind it: the handler forwards to
-	// the gateway over mTLS (TLS 1.3, client cert from /pki), so this port is
-	// an UNAUTHENTICATED front to an authenticated channel. That is tolerable
-	// only while the bind stays on loopback, where reaching it already means
-	// host access. Two things invalidate the waiver: the published port
-	// losing its 127.0.0.1 prefix, and any route here that is not safe for
-	// whoever holds a shell on the host.
+	// Do not read this as "it is only a visualiser": `/api/create`, `/api/exec`,
+	// `/api/tool` and `/api/destroy` take no inbound credential and drive the
+	// real chain through the gateway mTLS client cert this process holds. Anything
+	// that can open a socket here acts with that cert and none of its own.
+	//
+	// Two compose properties contain it, and `deploy/tests/test_fleet_g7_isolation.py`
+	// reds if either is lost:
+	//   - the port publishes as `127.0.0.1:8099:8099`, so it is not offered off-box;
+	//   - the service shares a bridge with control ALONE. A `ports:` publish does
+	//     not restrict in-network callers, so sharing the frontend bridge would
+	//     hand these routes to the web tier, which processes untrusted input.
+	//
+	// TLS on this hop would encrypt a channel whose real exposure is authorisation,
+	// not eavesdropping; the containment above is what the rule cannot see.
 	// nosemgrep: go.lang.security.audit.net.use-tls.use-tls
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
