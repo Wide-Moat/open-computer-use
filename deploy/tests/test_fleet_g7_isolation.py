@@ -28,9 +28,11 @@ _COMPOSE = (
     Path(__file__).resolve().parents[1] / "fleet" / "docker-compose.fleet.yml"
 )
 
-# Services that handle untrusted input and must never share a bridge with the
-# unauthenticated exec surface.
-_WEB_TIER = {"open-webui", "webui", "embed-portal", "admin", "mcp-gateway"}
+# The ONLY service allowed to share a bridge with the unauthenticated exec
+# surface. An allowlist rather than a denylist of web-tier names: a denylist
+# passes silently the moment a service is renamed or a new one is added, which
+# is exactly how this containment would be lost.
+_ALLOWED_CO_TENANTS = {"control"}
 
 
 def _doc() -> dict:
@@ -48,22 +50,23 @@ def test_the_visualiser_publishes_on_loopback_only() -> None:
         )
 
 
-def test_the_visualiser_shares_no_bridge_with_the_web_tier() -> None:
+def test_the_visualiser_shares_a_bridge_with_control_alone() -> None:
     doc = _doc()
     g7 = set(doc["services"]["g7-visualizer"].get("networks") or [])
     assert g7, "g7-visualizer declares no network; this guard would be vacuous"
 
-    for name in sorted(_WEB_TIER):
-        svc = doc["services"].get(name)
-        if svc is None:
-            continue
-        shared = g7 & set(svc.get("networks") or [])
-        assert not shared, (
-            f"g7-visualizer and {name} share {sorted(shared)}. The loopback "
-            "publish does not restrict in-network callers, so {name} could "
-            "POST /api/exec in cleartext and execute in a live guest using the "
-            "proxy's mTLS cert, with no credential of its own."
-        )
+    co_tenants = {
+        name
+        for name, svc in doc["services"].items()
+        if name != "g7-visualizer" and g7 & set(svc.get("networks") or [])
+    }
+    unexpected = co_tenants - _ALLOWED_CO_TENANTS
+    assert not unexpected, (
+        f"{sorted(unexpected)} share a bridge with g7-visualizer. The loopback "
+        "publish does not restrict in-network callers, so each of these could "
+        "POST /api/exec in cleartext and run an arbitrary argv in a live guest "
+        "under the proxy's mTLS cert, holding no credential of its own."
+    )
 
 
 def test_the_visualiser_still_reaches_control() -> None:
