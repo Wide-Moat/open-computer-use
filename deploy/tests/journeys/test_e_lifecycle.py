@@ -115,7 +115,12 @@ def _operator_sock_reachable() -> bool:
     POST uses. Never raises; a missing sudo/curl surfaces as False -> loud skip.
     """
     try:
+        # `_OPERATOR_SOCK` is a module constant and `_sudo_prefix()` returns
+        # either [] or ["sudo"]; the only env-derived part is whether sudo is
+        # used at all, decided by the operator running the suite on their own
+        # host. List argv, no shell.
         probe = subprocess.run(
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             _sudo_prefix() + ["test", "-S", _OPERATOR_SOCK],
             capture_output=True,
             timeout=10,
@@ -175,7 +180,13 @@ def _psql(sql: str) -> Optional[str]:
     if not docker:
         return None
     try:
+        # `sql` is a literal written in this test file, never external input.
+        # `_CONTROL_DB`, `_DB_USER` and `_DB_NAME` are stand config from the
+        # operator's env, each a single argv element with no shell in between —
+        # `docker exec` execs directly rather than through /bin/sh. Would NOT
+        # hold if `sql` were ever built from a fixture the caller controls.
         proc = subprocess.run(
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             [
                 docker, "exec", _CONTROL_DB,
                 "psql", "-U", _DB_USER, "-d", _DB_NAME, "-t", "-A", "-c", sql,
@@ -238,6 +249,10 @@ def _operator_post(path: str) -> int:
         )
     try:
         proc = subprocess.run(
+            # `curl`, `_OPERATOR_SOCK` and the URL path are harness constants;
+            # `_sudo_prefix()` returns [] or ["sudo"]. curl receives the socket path as
+            # one argv element with no shell in between.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             _sudo_prefix() + [
                 curl, "-sS", "--max-time", "15",
                 "--unix-socket", _OPERATOR_SOCK,
@@ -262,6 +277,10 @@ def _control_container_id(docker: str) -> Optional[str]:
     """Resolve the running control container by its compose service label."""
     try:
         proc = subprocess.run(
+            # `docker` is the resolved binary and `_CONTROL_SERVICE` is stand config from
+            # the operator's own env, passed as one argv element to a `--filter` flag.
+            # No shell parses it.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             [
                 docker, "ps", "--filter",
                 f"label=com.docker.compose.service={_CONTROL_SERVICE}",
@@ -699,6 +718,10 @@ def test_e6_rowless_container_killed_valid_row_survives(backend: Backend, expect
     stray_key = f"stray-{int(time.time() * 1000)}"
     stray_name = f"ocu-sess-{stray_key}"
     run = subprocess.run(
+        # `docker` and `stray_name` are harness-controlled: the name is built from a
+        # literal prefix in this file. Stand config (`_SESSION_IMAGE`) is a single
+        # argv element that docker execs directly, never through /bin/sh.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         [
             docker, "run", "-d", "--name", stray_name,
             "--label", "ocu-session=true",
@@ -744,6 +767,9 @@ def test_e6_rowless_container_killed_valid_row_survives(backend: Backend, expect
         )
     finally:
         # Clean up the stray if it somehow survived (so a re-run is idempotent).
+        # `docker` is the resolved binary path and `stray_cid` is a container id this
+        # test itself created moments earlier. List argv, no shell.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         subprocess.run([docker, "rm", "-f", stray_cid], capture_output=True, timeout=30)
 
 

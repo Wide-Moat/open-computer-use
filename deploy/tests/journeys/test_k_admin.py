@@ -87,6 +87,11 @@ def _curl(
     if body is not None:
         args += ["-H", "content-type: application/json", "-d", body]
     try:
+        # `args` is assembled above from literals, `ADMIN_URL` (stand config from
+        # the operator's env) and this function's own parameters, which every
+        # caller in this file passes as literals. curl gets each as one argv
+        # element; no shell parses any of them.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout + 5)
     except subprocess.SubprocessError as exc:
         raise RuntimeError(f"curl transport failure on {path}: {exc}") from exc
