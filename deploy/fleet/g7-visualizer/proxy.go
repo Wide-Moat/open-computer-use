@@ -236,10 +236,16 @@ func main() {
 	// Plain HTTP is deliberate here and only here. The compose service
 	// publishes this port as `127.0.0.1:8099:8099`, so the listener is
 	// reachable from the host loopback alone — never from the fleet network
-	// and never off-box. It serves a read-only visualiser over data the
-	// operator already has locally, and terminating TLS on a loopback port
-	// would mean shipping a cert nobody can validate. Would NOT hold the
-	// moment the published port drops its 127.0.0.1 prefix.
+	// and never off-box — and terminating TLS on a loopback port means
+	// shipping a cert nobody can validate.
+	//
+	// Read this together with what sits behind it: the handler forwards to
+	// the gateway over mTLS (TLS 1.3, client cert from /pki), so this port is
+	// an UNAUTHENTICATED front to an authenticated channel. That is tolerable
+	// only while the bind stays on loopback, where reaching it already means
+	// host access. Two things invalidate the waiver: the published port
+	// losing its 127.0.0.1 prefix, and any route here that is not safe for
+	// whoever holds a shell on the host.
 	// nosemgrep: go.lang.security.audit.net.use-tls.use-tls
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
