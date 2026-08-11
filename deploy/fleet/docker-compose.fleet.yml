@@ -28,6 +28,12 @@ name: ocu-fleet
 networks:
   ocu-frontend:
     driver: bridge
+  # g7-visualizer serves an UNAUTHENTICATED /api/* that drives real
+  # create/exec/destroy through its gateway mTLS cert. It must not share
+  # a bridge with the web tier, which processes untrusted input: a
+  # loopback `ports:` publish does not restrict in-network callers.
+  ocu-g7:
+    driver: bridge
   ocu-north:
     driver: bridge
   ocu-mount-facing:
@@ -820,6 +826,9 @@ services:
     networks:
       - ocu-frontend
       - ocu-state
+      # Reachable from the g7 visualiser, which no longer shares the frontend
+      # bridge with the web tier.
+      - ocu-g7
     user: "65532:65532"
     # Control runs as uid 65532 with a read-only rootfs, so it must JOIN the
     # group that owns the Docker socket to read it for the per-session container
@@ -1181,7 +1190,7 @@ services:
     ports:
       - "127.0.0.1:8099:8099"
     networks:
-      - ocu-frontend
+      - ocu-g7
     read_only: true
     cap_drop: [ALL]
     security_opt:
