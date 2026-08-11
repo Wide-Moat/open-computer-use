@@ -285,6 +285,15 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
                     args = getattr(child, "args", None)
                     for sub in (getattr(args, "defaults", []) if args else []):
                         _descend(sub)
+                    if isinstance(child, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                        # A walrus in a comprehension binds outward (PEP 572),
+                        # so its assignment belongs to THIS scope even though
+                        # the comprehension owns its other names.
+                        for sub in ast.walk(child):
+                            if isinstance(sub, ast.NamedExpr) and isinstance(sub.target, ast.Name):
+                                built = _built_string(sub.value)
+                                if built is not None:
+                                    found[sub.target.id] = built
                     continue
                 if isinstance(child, ast.Assign):
                     built = _built_string(child.value)
@@ -292,6 +301,13 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
                         for tgt in child.targets:
                             if isinstance(tgt, ast.Name):
                                 found[tgt.id] = built
+                if isinstance(child, ast.NamedExpr):
+                    # PEP 572: a walrus inside a comprehension binds in the
+                    # ENCLOSING scope, so it is collected here rather than in
+                    # the comprehension's own scope.
+                    built = _built_string(child.value)
+                    if built is not None and isinstance(child.target, ast.Name):
+                        found[child.target.id] = built
                 if isinstance(child, ast.Call):
                     scope_of[id(child)] = id(scope)
                 _descend(child)
@@ -306,48 +322,71 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
         string_locals_by_scope[id(scope)] = found
 
     _index_scope(tree)
+    # Nearest enclosing scope, not the first one a walk happens to reach: a
+    # comprehension inside a function must resolve names through that function,
+    # never through the module.
     parent_scope: dict[int, int] = {}
 
     def _map_parents(scope: ast.AST) -> None:
-        for child in ast.walk(scope):
-            if child is scope or not isinstance(child, _SCOPES):
-                continue
-            if id(child) not in parent_scope:
-                parent_scope[id(child)] = id(scope)
+        def _walk(node: ast.AST) -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, _SCOPES):
+                    parent_scope[id(child)] = id(scope)
+                    _map_parents(child)
+                else:
+                    _walk(child)
+
+        _walk(scope)
 
     _map_parents(tree)
     for node in ast.walk(tree):
         if isinstance(node, _SCOPES):
             _index_scope(node)
-            _map_parents(node)
 
-    # A comprehension or lambda reads the enclosing scope's names except the
-    # ones it binds itself, so inherit what the parent knows. A function body
-    # does not inherit: its own local shadows, and a closure read is not a
-    # shell hazard (a command string without shell= never reaches /bin/sh).
+    _INHERITS = (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+    scope_node: dict[int, ast.AST] = {id(tree): tree}
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-            continue
-        own = string_locals_by_scope.get(id(node), {})
-        inherited = dict(string_locals_by_scope.get(parent_scope.get(id(node), id(tree)), {}))
-        for gen in getattr(node, "generators", []):
-            for name in ast.walk(gen.target):
-                if isinstance(name, ast.Name):
-                    inherited.pop(name.id, None)
-        args = getattr(node, "args", None)
-        for a in (args.args if args else []):
-            inherited.pop(a.arg, None)
-        inherited.update(own)
-        string_locals_by_scope[id(node)] = inherited
+        if isinstance(node, _SCOPES):
+            scope_node[id(node)] = node
+
+    def _lookup(scope_id: int, name: str) -> str | None:
+        """Resolve ``name`` outward from ``scope_id``.
+
+        A comprehension or lambda reads the enclosing scope's names except the
+        ones it binds itself, so the chain is walked at lookup time rather than
+        precomputed — a comprehension nested in a function would otherwise
+        inherit before that function had been indexed. A function body does not
+        inherit: its own local shadows, and a closure read is not a shell
+        hazard (a command string without shell= never reaches /bin/sh).
+        """
+        seen: set[int] = set()
+        while scope_id is not None and scope_id not in seen:
+            seen.add(scope_id)
+            found = string_locals_by_scope.get(scope_id, {})
+            if name in found:
+                return found[name]
+            node = scope_node.get(scope_id)
+            if not isinstance(node, _INHERITS):
+                return None
+            for gen in getattr(node, "generators", []):
+                for bound in ast.walk(gen.target):
+                    if isinstance(bound, ast.Name) and bound.id == name:
+                        return None
+            args = getattr(node, "args", None)
+            for a in (args.args if args else []):
+                if a.arg == name:
+                    return None
+            scope_id = parent_scope.get(scope_id, id(tree)) if scope_id != id(tree) else None
+        return None
 
     def _command_string(node: ast.AST, call: ast.Call) -> str | None:
         built = _built_string(node)
         if built is not None:
             return built
         if isinstance(node, ast.Name):
-            scope = string_locals_by_scope.get(scope_of.get(id(call), id(tree)), {})
-            if node.id in scope:
-                return f"{scope[node.id]} (via {node.id})"
+            built = _lookup(scope_of.get(id(call), id(tree)), node.id)
+            if built is not None:
+                return f"{built} (via {node.id})"
         return None
 
     def _callee(node: ast.Call) -> tuple[str, bool, bool]:
@@ -560,6 +599,33 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         f"line 3 binds `cmd` to a list argv in the comprehension's own scope "
         f"and must stay clean, while line 4 reads the module's built string and "
         f"must red; got {comp_hits!r}."
+    )
+
+    # Resolution walks OUTWARD to the nearest enclosing scope. A comprehension
+    # inside a function must read that function's locals, not the module's —
+    # mapping it to the first scope a walk reaches put every comprehension
+    # under the module and silently stopped resolving.
+    outward = (
+        "import subprocess\n"
+        "def reads(x):\n"
+        '    cmd = f"rm {x}"\n'
+        "    return [subprocess.run(cmd) for _ in y]\n"
+        "def shadows(x):\n"
+        '    cmd = f"rm {x}"\n'
+        '    return [subprocess.run(cmd) for cmd in [["docker", "ps"]]]\n'
+        "def walrus(x):\n"
+        '    [(c := f"rm {x}") for _ in range(1)]\n'
+        "    subprocess.run(c)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "outward.py"
+        f.write_text(outward, encoding="utf-8")
+        outward_hits = _shell_hazard_sites(f)
+    assert sorted(ln for ln, _ in outward_hits) == [4, 10], (
+        f"line 4 reads the function's built string through a comprehension and "
+        f"must red; line 7 binds `cmd` as its own loop target and must stay "
+        f"clean; line 10 uses a name a walrus bound OUTSIDE the comprehension "
+        f"(PEP 572) and must red. Got {outward_hits!r}."
     )
 
     clean = (
