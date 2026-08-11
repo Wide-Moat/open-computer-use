@@ -233,6 +233,14 @@ func main() {
 
 	addr := envOr("LISTEN", ":8099")
 	log.Printf("g7-proxy: listening on %s → %s", addr, base)
+	// Plain HTTP is deliberate here and only here. The compose service
+	// publishes this port as `127.0.0.1:8099:8099`, so the listener is
+	// reachable from the host loopback alone — never from the fleet network
+	// and never off-box. It serves a read-only visualiser over data the
+	// operator already has locally, and terminating TLS on a loopback port
+	// would mean shipping a cert nobody can validate. Would NOT hold the
+	// moment the published port drops its 127.0.0.1 prefix.
+	// nosemgrep: go.lang.security.audit.net.use-tls.use-tls
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
