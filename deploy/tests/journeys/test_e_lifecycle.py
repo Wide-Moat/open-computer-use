@@ -180,11 +180,12 @@ def _psql(sql: str) -> Optional[str]:
     if not docker:
         return None
     try:
-        # `sql` is a literal written in this test file, never external input.
-        # `_CONTROL_DB`, `_DB_USER` and `_DB_NAME` are stand config from the
-        # operator's env, each a single argv element with no shell in between —
-        # `docker exec` execs directly rather than through /bin/sh. Would NOT
-        # hold if `sql` were ever built from a fixture the caller controls.
+        # `sql` comes from this file only: literals, plus one f-string whose
+        # interpolations are `int(value)` and a module constant. `_CONTROL_DB`,
+        # `_DB_USER` and `_DB_NAME` are stand config from the operator's env.
+        # Each reaches psql as one argv element — `docker exec` execs directly
+        # rather than through /bin/sh — so nothing is re-parsed. Would NOT hold
+        # if `sql` were ever built from a fixture the caller controls.
         proc = subprocess.run(
             # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             [

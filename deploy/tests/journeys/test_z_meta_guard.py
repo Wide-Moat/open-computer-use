@@ -159,25 +159,57 @@ def _harness_files() -> list[Path]:
     return sorted(p for p in _HERE.rglob("*.py") if p.name != _SELF)
 
 
+# Shell-by-construction: these take a COMMAND STRING and hand it to /bin/sh, so
+# no safe list-argv form of them exists and any call is a hit.
+_ALWAYS_SHELL = {"getoutput", "getstatusoutput", "system", "popen"}
+
+# These take either a list argv (safe) or a command string (a shell).
+_RUNNERS = {"run", "call", "check_output", "check_call", "Popen"}
+
+
 def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
     """Return (line_no, what) for each host-side shell hazard in ``path``.
 
-    Three shapes, all decided on the AST rather than on how the source is
-    written, so a hazard hidden in a differently-formatted call still counts:
+    Decided on the AST, and on the RESOLVED callee rather than its spelling:
+    ``from os import system`` and ``sh = subprocess.run`` are the same hazard as
+    the dotted form, and a guard matching only the dotted form measures house
+    style rather than safety.
 
-    * ``shell=True`` on any call - hands the argv to /bin/sh, which is what the
-      per-site ``# nosemgrep`` waivers all assert does NOT happen.
-    * ``os.system`` / ``os.popen`` - a shell by construction.
-    * an f-string (or a ``%``/``.format`` built string) passed as the COMMAND
-      argument of ``subprocess.run``/``call``/``check_output``/``check_call``/
-      ``Popen`` - i.e. a command line rather than a list argv. Interpolation
-      INSIDE one element of a list argv is deliberately not flagged: that is the
-      safe form (``f"name={cname}"`` reaches the program as a single argument,
-      with no shell to re-parse it), and it is what the waivers describe.
+    Three shapes:
+
+    * ``shell=`` with anything but a literal ``False``. Not merely literal
+      ``True`` — ``shell=sh``, ``shell=1`` and ``shell=bool(os.getenv(...))``
+      all reach /bin/sh, and a guard keyed on ``is True`` reads them as clean.
+    * a shell-by-construction callee (``os.system``/``os.popen``,
+      ``subprocess.getoutput``/``getstatusoutput``).
+    * a built command STRING as a runner's first argument — an f-string, ``%``,
+      ``.format``, a string ``+``, or a local holding one of those, so hoisting
+      the string out of the call does not launder it. Interpolation INSIDE one
+      element of a list argv is deliberately not flagged: that is the safe form
+      (``f"name={cname}"`` reaches the program as a single argument, with no
+      shell to re-parse it), and it is what the per-site waivers describe.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    runners = {"run", "call", "check_output", "check_call", "Popen"}
-    hits: list[tuple[int, str]] = []
+
+    always_shell_names: set[str] = set()
+    runner_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in ("os", "subprocess"):
+            for alias in node.names:
+                bound = alias.asname or alias.name
+                if alias.name in _ALWAYS_SHELL:
+                    always_shell_names.add(bound)
+                elif alias.name in _RUNNERS:
+                    runner_names.add(bound)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute):
+            attr = node.value.attr
+            for tgt in node.targets:
+                if not isinstance(tgt, ast.Name):
+                    continue
+                if attr in _ALWAYS_SHELL:
+                    always_shell_names.add(tgt.id)
+                elif attr in _RUNNERS:
+                    runner_names.add(tgt.id)
 
     def _built_string(node: ast.AST) -> str | None:
         if isinstance(node, ast.JoinedStr):
@@ -185,8 +217,7 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
             return "a %-formatted string"
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            # ``[...] + args`` builds a list argv, not a command line. Only flag
-            # a ``+`` whose operands are strings.
+            # ``[...] + args`` builds a list argv, not a command line.
             if any(
                 isinstance(side, (ast.List, ast.Tuple))
                 for side in (node.left, node.right)
@@ -206,26 +237,60 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
             return "a .format() string"
         return None
 
+    string_locals: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            built = _built_string(node.value)
+            if built is None:
+                continue
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    string_locals[tgt.id] = built
+
+    def _command_string(node: ast.AST) -> str | None:
+        built = _built_string(node)
+        if built is not None:
+            return built
+        if isinstance(node, ast.Name) and node.id in string_locals:
+            return f"{string_locals[node.id]} (via {node.id})"
+        return None
+
+    def _callee(node: ast.Call) -> tuple[str, bool, bool]:
+        """(display name, is-always-shell, is-runner) for a call's callee."""
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            base = func.value.id if isinstance(func.value, ast.Name) else "?"
+            if base in ("os", "subprocess") and func.attr in _ALWAYS_SHELL:
+                return f"{base}.{func.attr}", True, False
+            if base == "subprocess" and func.attr in _RUNNERS:
+                return f"subprocess.{func.attr}", False, True
+            return f"{base}.{func.attr}", False, False
+        if isinstance(func, ast.Name):
+            return func.id, func.id in always_shell_names, func.id in runner_names
+        return "?", False, False
+
+    hits: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
+        name, always_shell, is_runner = _callee(node)
 
         for kw in node.keywords:
-            if (
-                kw.arg == "shell"
-                and isinstance(kw.value, ast.Constant)
-                and kw.value.value is True
-            ):
-                hits.append((node.lineno, "shell=True"))
+            if kw.arg != "shell":
+                continue
+            if isinstance(kw.value, ast.Constant) and kw.value.value is False:
+                continue
+            literal_true = isinstance(kw.value, ast.Constant) and kw.value.value is True
+            hits.append((node.lineno, "shell=True" if literal_true else "a non-literal shell="))
 
-        func = node.func
-        if isinstance(func, ast.Attribute):
-            if func.attr in ("system", "popen") and isinstance(func.value, ast.Name) and func.value.id == "os":
-                hits.append((node.lineno, f"os.{func.attr}"))
-            if func.attr in runners and node.args:
-                built = _built_string(node.args[0])
-                if built is not None:
-                    hits.append((node.lineno, f"{built} as the command"))
+        if always_shell:
+            hits.append((node.lineno, f"{name} (runs /bin/sh by construction)"))
+            continue
+
+        if is_runner and node.args:
+            built = _command_string(node.args[0])
+            if built is not None:
+                hits.append((node.lineno, f"{built} as the command"))
     return hits
 
 
@@ -255,46 +320,91 @@ def test_no_host_side_shell_in_the_harness(path: Path) -> None:
 def test_shell_hazard_guard_reds_on_planted_violations() -> None:
     """The shell-hazard guard is non-vacuous, and does not red on the clean form.
 
-    Plants one of each detected shape and asserts all four are found, then
-    asserts the shapes the harness legitimately uses - a list argv holding an
-    env-derived value, and a literal-joined list - are NOT flagged. Without the
-    negative half the guard could flag everything and still look green here.
+    The planted set deliberately includes the EVASIONS, not only the shapes the
+    guard already caught: a command hoisted into a local, ``from``-imported and
+    aliased callees, a non-literal ``shell=``, and the shell-by-construction
+    ``subprocess.getoutput``/``getstatusoutput`` (which semgrep's python bundle
+    does not flag either, so this guard is their only backstop). A negative test
+    that plants only what the detector already finds is green by construction.
+
+    The clean half matters as much: an f-string inside ONE argv element and a
+    list+list concat are what the harness actually uses, and flagging them would
+    force the per-site waivers off rather than keep them honest.
     """
     import tempfile
 
-    planted = (
+    hazards = [
+        ('subprocess.run("ls -l", shell=True)', "shell=True"),
+        ("subprocess.run(a, shell=sh)", "a non-literal shell="),
+        ("subprocess.run(a, shell=1)", "a non-literal shell="),
+        ('os.system("rm -rf " + x)', "os.system (runs /bin/sh by construction)"),
+        ('os.popen("ls " + x)', "os.popen (runs /bin/sh by construction)"),
+        ('subprocess.getoutput("docker rm " + x)', "subprocess.getoutput (runs /bin/sh by construction)"),
+        ('subprocess.getstatusoutput(f"docker rm {x}")', "subprocess.getstatusoutput (runs /bin/sh by construction)"),
+        ('subprocess.run(f"docker rm {x}")', "an f-string as the command"),
+        ('subprocess.check_output("cat %s" % x)', "a %-formatted string as the command"),
+        ('subprocess.run("docker rm " + x)', "a concatenated string as the command"),
+    ]
+    for src, want in hazards:
+        planted = f"import os, subprocess\ndef t(a, x, sh):\n    {src}\n"
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "planted.py"
+            f.write_text(planted, encoding="utf-8")
+            hits = _shell_hazard_sites(f)
+        assert [w for _, w in hits] == [want], (
+            f"planted hazard {src!r} must be detected as {want!r}; got {hits!r}. "
+            "A guard that misses a planted hazard leaves every # nosemgrep "
+            "waiver in this tree asserting a property nothing enforces."
+        )
+
+    # Callees reached under another name are the same hazard as the dotted form.
+    aliased = (
+        "from os import system\n"
+        "from subprocess import run\n"
+        "import subprocess\n"
+        "sh = subprocess.run\n"
+        "def t(x):\n"
+        '    system("rm -rf " + x)\n'
+        '    run(f"docker rm {x}")\n'
+        '    sh("docker rm " + x)\n'
+        '    cmd = f"docker rm {x}"\n'
+        "    subprocess.run(cmd)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "aliased.py"
+        f.write_text(aliased, encoding="utf-8")
+        whats = sorted(w for _, w in _shell_hazard_sites(f))
+    assert whats == sorted(
+        [
+            "system (runs /bin/sh by construction)",
+            "an f-string as the command",
+            "a concatenated string as the command",
+            "an f-string (via cmd) as the command",
+        ]
+    ), (
+        f"a hazardous callee reached via from-import or an alias, and a command "
+        f"hoisted into a local, must all be detected; got {whats!r}. Resolving "
+        "only the dotted spelling measures house style, not safety."
+    )
+
+    clean = (
         "import os, subprocess\n"
-        "def t(name, sql):\n"
-        '    subprocess.run("ls -l", shell=True)\n'
-        '    os.system("rm -rf /tmp/x")\n'
-        '    subprocess.run(f"docker rm {name}")\n'
-        '    subprocess.run("docker rm " + name)\n'
-        # Clean forms below. The f-string INSIDE one argv element and the
-        # list+list concat are the shapes the harness actually uses; flagging
-        # them would force the waivers off rather than keep them honest.
+        "def t(name, sql, docker, args):\n"
         '    subprocess.run(["docker", "rm", "-f", name])\n'
         '    subprocess.check_output(["docker", "ps", "--filter", f"name={name}"])\n'
         '    subprocess.run(_sudo_prefix() + ["test", "-S", SOCK])\n'
+        '    subprocess.run(["curl", "-sS"] + args)\n'
         '    subprocess.run([docker, "exec", CONTAINER, "psql", "-c", sql])\n'
+        '    subprocess.run(["ls"], shell=False)\n'
     )
     with tempfile.TemporaryDirectory() as td:
-        planted_path = Path(td) / "planted_hazards.py"
-        planted_path.write_text(planted, encoding="utf-8")
-        hits = _shell_hazard_sites(planted_path)
-
-    whats = sorted(w for _, w in hits)
-    assert whats == sorted(
-        [
-            "shell=True",
-            "os.system",
-            "an f-string as the command",
-            "a concatenated string as the command",
-        ]
-    ), (
-        "the shell-hazard guard must detect each planted shape exactly once and "
-        f"leave the clean list-argv forms alone; got {hits!r}. A guard that does "
-        "not red on a planted violation is vacuous, and one that reds on the "
-        "clean form would force the waivers off rather than keep them honest."
+        f = Path(td) / "clean.py"
+        f.write_text(clean, encoding="utf-8")
+        clean_hits = _shell_hazard_sites(f)
+    assert clean_hits == [], (
+        f"the clean list-argv forms must NOT be flagged; got {clean_hits!r}. A "
+        "guard that reds on interpolation inside one argv element would force "
+        "the waivers off rather than keep them honest."
     )
 
 
