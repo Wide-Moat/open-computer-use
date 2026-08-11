@@ -60,8 +60,9 @@ class OrchestratorURLScheme(unittest.TestCase):
                     self._client(url)
 
     def test_a_bare_host_without_a_scheme_is_refused(self):
-        # urlparse gives this an empty scheme, which urlopen then rejects far
-        # from here with a message that names neither the Valve nor the URL.
+        # urlparse reads `orchestrator:` as the scheme here, not as a host — so
+        # this is refused for the same reason ftp:// is, and the operator gets a
+        # message naming the Valve instead of a urlopen error far from here.
         with self.assertRaises(ValueError):
             self._client("orchestrator:8000/mcp")
 
