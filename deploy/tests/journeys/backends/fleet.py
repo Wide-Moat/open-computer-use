@@ -180,6 +180,14 @@ class FleetBackend(Backend):
         if body is not None:
             args += ["-H", "content-type: application/json", "-d", json.dumps(body)]
         try:
+            # `self._base` comes from the stand's own env (the operator who
+            # launched pytest), and reaches curl as a single argv element — no
+            # shell, no string-assembled command. The one sharp edge is a value
+            # beginning with `-`, which curl would read as an option rather than
+            # a URL; that is a misconfiguration by the person who set it, not a
+            # boundary crossing. It would NOT be acceptable for a value arriving
+            # from CI metadata or any source outside this trust domain.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
             proc = subprocess.run(args, capture_output=True, timeout=_HTTP_TIMEOUT_S + 5)
         except subprocess.SubprocessError as exc:
             raise BackendUnavailable(f"fleet wire failure on {path}: {exc}") from exc

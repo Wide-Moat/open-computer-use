@@ -87,6 +87,13 @@ def _curl(
     if body is not None:
         args += ["-H", "content-type: application/json", "-d", body]
     try:
+        # `args` is assembled above from literals, `ADMIN_URL` and the operator
+        # credentials (all stand config from the operator's own env), plus this
+        # function's parameters — `body` carries the env-derived credentials via
+        # `_login`, so this is env-sourced data, not literals. It is safe because
+        # curl gets each value as ONE argv element with no shell in between, not
+        # because the values are constants.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout + 5)
     except subprocess.SubprocessError as exc:
         raise RuntimeError(f"curl transport failure on {path}: {exc}") from exc

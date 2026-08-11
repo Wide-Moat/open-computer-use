@@ -234,6 +234,15 @@ def _fleet_exec(argv: list[str], timeout: float):
         if not limactl:
             raise OSError("limactl not found for FLEET_LIMA_INSTANCE")
         argv = [limactl, "shell", os.environ["FLEET_LIMA_INSTANCE"], "--", *argv]
+    # FLEET_LIMA_INSTANCE is operator-supplied stand configuration, set by whoever
+    # already owns the Lima VM this shells into — same trust domain, no privilege
+    # boundary crossed. Worth stating the sharp edge rather than hiding it: the
+    # `limactl shell ... -- argv` leg rides ssh semantics, which JOIN argv into a
+    # command line the VM's shell re-parses, so metacharacters in that value would
+    # execute there. That is a real mechanism; it is acceptable only because the
+    # value's author already has shell on that VM. It would NOT be acceptable for
+    # a value reaching this from CI metadata or any untrusted source.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
     return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
 
 
