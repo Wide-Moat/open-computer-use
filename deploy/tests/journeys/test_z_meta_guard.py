@@ -296,11 +296,24 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
                         # A walrus in a comprehension binds outward (PEP 572),
                         # so its assignment belongs to THIS scope even though
                         # the comprehension owns its other names.
-                        for sub in ast.walk(child):
-                            if isinstance(sub, ast.NamedExpr) and isinstance(sub.target, ast.Name):
-                                built = _built_string(sub.value)
-                                if built is not None:
-                                    found[sub.target.id] = built
+                        def _walrus(node: ast.AST) -> None:
+                            for sub in ast.iter_child_nodes(node):
+                                # A walrus binds outward only as far as the
+                                # nearest scope: one written inside a nested
+                                # lambda or comprehension belongs to THAT
+                                # scope, so stop instead of sweeping the
+                                # whole subtree.
+                                if isinstance(sub, _SCOPES):
+                                    continue
+                                if isinstance(sub, ast.NamedExpr) and isinstance(
+                                    sub.target, ast.Name
+                                ):
+                                    built = _built_string(sub.value)
+                                    if built is not None:
+                                        found[sub.target.id] = built
+                                _walrus(sub)
+
+                        _walrus(child)
                     continue
                 if isinstance(child, ast.Assign):
                     built = _built_string(child.value)
@@ -663,6 +676,30 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
     assert sorted(ln for ln, _ in lambda_hits) == [8], (
         f"only line 8 reads the module's built string; every lambda above binds "
         f"`cmd` itself and passes its own argument. Got {lambda_hits!r}."
+    )
+
+    # A walrus binds outward only as far as the nearest scope. Sweeping the
+    # whole comprehension subtree collected one written inside a NESTED lambda
+    # and attributed it to the enclosing function, reding that function's clean
+    # list argv — the same over-collection as the nested-def leak.
+    walrus_scope = (
+        "import subprocess\n"
+        "def f(x):\n"
+        '    cmd = ["docker", "ps"]\n'
+        '    fns = [lambda: (cmd := f"rm {x}") for _ in range(1)]\n'
+        "    subprocess.run(cmd)\n"
+        "def g(x):\n"
+        '    data = [(cmd := f"rm {x}") for _ in range(1)]\n'
+        "    subprocess.run(cmd)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "walrus_scope.py"
+        f.write_text(walrus_scope, encoding="utf-8")
+        walrus_hits = _shell_hazard_sites(f)
+    assert sorted(ln for ln, _ in walrus_hits) == [8], (
+        f"line 5 passes a list argv — the walrus on line 4 binds inside the "
+        f"lambda, not in `f` — while line 8 uses a name the comprehension's own "
+        f"walrus bound in `g`. Got {walrus_hits!r}."
     )
 
     clean = (
