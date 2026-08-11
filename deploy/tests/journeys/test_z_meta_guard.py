@@ -251,25 +251,94 @@ def _shell_hazard_sites(path: Path) -> list[tuple[int, str]]:
     string_locals_by_scope: dict[int, dict[str, str]] = {}
     scope_of: dict[int, int] = {}
 
+    # A comprehension and a lambda each get their own runtime scope, so a call
+    # inside one must not read the enclosing scope's locals.
+    _SCOPES = (
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.Lambda,
+        ast.ListComp,
+        ast.SetComp,
+        ast.DictComp,
+        ast.GeneratorExp,
+    )
+
     def _index_scope(scope: ast.AST) -> None:
+        """Record this scope's string locals and the calls that belong to it.
+
+        Walks DIRECT CHILDREN and stops at each nested scope rather than using
+        ``ast.walk`` with a ``continue``: walk yields the nested node and then
+        descends into it anyway, so a ``continue`` prunes one node, never the
+        subtree — which leaks an inner helper's locals into its parent and reds
+        the parent's clean list argv.
+        """
         found: dict[str, str] = {}
-        for child in ast.walk(scope):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) and child is not scope:
-                continue
-            if isinstance(child, ast.Assign):
-                built = _built_string(child.value)
-                if built is not None:
-                    for tgt in child.targets:
-                        if isinstance(tgt, ast.Name):
-                            found[tgt.id] = built
-            if isinstance(child, ast.Call):
-                scope_of[id(child)] = id(scope)
+
+        def _descend(node: ast.AST) -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, _SCOPES):
+                    # A nested scope owns its own locals and its own calls; its
+                    # decorators and argument defaults evaluate out here, so
+                    # they stay with this scope.
+                    for sub in getattr(child, "decorator_list", []):
+                        _descend(sub)
+                    args = getattr(child, "args", None)
+                    for sub in (getattr(args, "defaults", []) if args else []):
+                        _descend(sub)
+                    continue
+                if isinstance(child, ast.Assign):
+                    built = _built_string(child.value)
+                    if built is not None:
+                        for tgt in child.targets:
+                            if isinstance(tgt, ast.Name):
+                                found[tgt.id] = built
+                if isinstance(child, ast.Call):
+                    scope_of[id(child)] = id(scope)
+                _descend(child)
+
+        _descend(scope)
+        # A comprehension's loop targets bind inside it and shadow anything of
+        # the same name outside, so they are never a built string here.
+        for gen in getattr(scope, "generators", []):
+            for name in ast.walk(gen.target):
+                if isinstance(name, ast.Name):
+                    found.pop(name.id, None)
         string_locals_by_scope[id(scope)] = found
 
     _index_scope(tree)
+    parent_scope: dict[int, int] = {}
+
+    def _map_parents(scope: ast.AST) -> None:
+        for child in ast.walk(scope):
+            if child is scope or not isinstance(child, _SCOPES):
+                continue
+            if id(child) not in parent_scope:
+                parent_scope[id(child)] = id(scope)
+
+    _map_parents(tree)
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, _SCOPES):
             _index_scope(node)
+            _map_parents(node)
+
+    # A comprehension or lambda reads the enclosing scope's names except the
+    # ones it binds itself, so inherit what the parent knows. A function body
+    # does not inherit: its own local shadows, and a closure read is not a
+    # shell hazard (a command string without shell= never reaches /bin/sh).
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+            continue
+        own = string_locals_by_scope.get(id(node), {})
+        inherited = dict(string_locals_by_scope.get(parent_scope.get(id(node), id(tree)), {}))
+        for gen in getattr(node, "generators", []):
+            for name in ast.walk(gen.target):
+                if isinstance(name, ast.Name):
+                    inherited.pop(name.id, None)
+        args = getattr(node, "args", None)
+        for a in (args.args if args else []):
+            inherited.pop(a.arg, None)
+        inherited.update(own)
+        string_locals_by_scope[id(node)] = inherited
 
     def _command_string(node: ast.AST, call: ast.Call) -> str | None:
         built = _built_string(node)
@@ -449,6 +518,48 @@ def test_shell_hazard_guard_reds_on_planted_violations() -> None:
         "file-global map of string locals reds the clean list-argv call on line "
         "4 because another function binds the same name — a false red on the "
         "safe form, which forces the waivers off instead of keeping them honest."
+    )
+
+    # A nested `def` must not leak its locals into its parent. `ast.walk` with a
+    # `continue` prunes the FunctionDef NODE and still descends into its body,
+    # so the outer scope collected the inner's built string and reddened the
+    # outer's clean list argv — the same false red as the flat map, one level
+    # down. Every waiver-bearing file here already contains nested helpers.
+    nested = (
+        "import subprocess\n"
+        "def outer(name):\n"
+        '    cmd = ["docker", "ps"]\n'
+        "    subprocess.run(cmd)\n"
+        "    def inner(x):\n"
+        '        cmd = f"docker rm {x}"\n'
+        "        subprocess.run(cmd)\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "nested.py"
+        f.write_text(nested, encoding="utf-8")
+        nested_hits = _shell_hazard_sites(f)
+    assert [ln for ln, _ in nested_hits] == [7], (
+        f"only the inner call on line 7 is a hazard; got {nested_hits!r}. The "
+        "outer call passes a list argv and must stay clean."
+    )
+
+    # A comprehension binds its loop target, which shadows an enclosing name; a
+    # lambda binds its arguments the same way. Both still READ what they do not
+    # bind, so the guard neither reds the shadowed case nor misses the read.
+    comprehension = (
+        "import subprocess\n"
+        'cmd = f"echo {X}"\n'
+        'shadowed = [subprocess.run(cmd) for cmd in [["docker", "ps"]]]\n'
+        "reads = [subprocess.run(cmd) for _ in range(2)]\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "comprehension.py"
+        f.write_text(comprehension, encoding="utf-8")
+        comp_hits = _shell_hazard_sites(f)
+    assert [ln for ln, _ in comp_hits] == [4], (
+        f"line 3 binds `cmd` to a list argv in the comprehension's own scope "
+        f"and must stay clean, while line 4 reads the module's built string and "
+        f"must red; got {comp_hits!r}."
     )
 
     clean = (
