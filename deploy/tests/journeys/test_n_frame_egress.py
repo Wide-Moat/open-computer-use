@@ -157,6 +157,21 @@ _CHANNELS: list[tuple[str, str]] = [
 ]
 
 
+def _attempt(context, payload: str) -> None:
+    """Run a leak attempt, tolerating the context navigating away.
+
+    The self-navigation channel destroys its own execution context by design —
+    that IS the attempt. Playwright raises for the destroyed context, which
+    would fail the whole test instead of recording one channel's outcome. The
+    verdict comes from the sink either way, so the raise is not information.
+    """
+    try:
+        context.evaluate(f"() => {{ {payload} }}")
+    except Exception as exc:  # noqa: BLE001 - any evaluate failure is not the verdict
+        if "context was destroyed" not in str(exc) and "Execution context" not in str(exc):
+            raise
+
+
 def _render_frame(page):
     """The frame the artifact renders in, or None when it is not present yet."""
     for frame in page.frames:
@@ -212,7 +227,7 @@ def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
                     "claims to test"
                 )
                 payload = js.replace("SINK", repr(sink.url)).replace("MARKER", marker)
-                frame.evaluate(f"() => {{ {payload} }}")
+                _attempt(frame, payload)
                 page.wait_for_timeout(1500)
             finally:
                 browser.close()
@@ -254,7 +269,7 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
                     # cannot reach the sink from here is not a live channel.
                     page.goto("about:blank")
                     payload = js.replace("SINK", repr(sink.url)).replace("MARKER", marker)
-                    page.evaluate(f"() => {{ {payload} }}")
+                    _attempt(page, payload)
                     page.wait_for_timeout(800)
                     if not sink.saw(marker):
                         dead.append(channel)
