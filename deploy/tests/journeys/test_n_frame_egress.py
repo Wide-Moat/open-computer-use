@@ -230,6 +230,23 @@ def _attempt(context, payload: str) -> None:
 _RENDER_FRAME_MARKERS = ("/render", "about:srcdoc", "blob:")
 
 
+def _ordered_channels() -> list[tuple[str, str]]:
+    """Channels with self-navigation last, because it contaminates the rest.
+
+    A successful self-navigation moves the frame to the ATTACKER's origin, where
+    no policy applies. Every channel probed after it then runs in that document
+    and reaches the sink trivially — measured: run in declaration order, worker
+    and prefetch both "leaked"; run with self-navigation last, both are blocked
+    and the console shows CSP refusing them by name.
+
+    That is a false POSITIVE, which is the rarer and more confusing direction:
+    the suite reports a breach that is really its own probe order.
+    """
+    return [c for c in _CHANNELS if c[0] != "self-navigation"] + [
+        c for c in _CHANNELS if c[0] == "self-navigation"
+    ]
+
+
 def _render_frame(page):
     """The sandboxed render frame, or None when the page has no such child.
 
@@ -273,7 +290,9 @@ def test_n0_the_sink_records_a_hit_when_nothing_blocks_it():
         sink.stop()
 
 
-@pytest.mark.parametrize("channel,js", _CHANNELS, ids=[c for c, _ in _CHANNELS])
+@pytest.mark.parametrize(
+    "channel,js", _ordered_channels(), ids=[c for c, _ in _ordered_channels()]
+)
 def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
     """No channel carries a byte out of the render frame.
 
@@ -342,7 +361,7 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
             browser = p.chromium.launch()
             try:
                 page = browser.new_page()
-                for channel, js in _CHANNELS:
+                for channel, js in _ordered_channels():
                     marker = "ctl-" + channel.replace(" ", "-").replace(".", "")
                     # Served BY the sink: a real http origin on the same
                     # address space, so Private Network Access does not refuse
