@@ -338,11 +338,15 @@ def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
 
         assert not sink.saw(marker), (
             f"the {channel} channel carried a request out of the render frame to "
-            f"an attacker origin: {sink.hits!r}. The frame's egress block is not "
-            "closed for this channel — check the renderer document's CSP "
-            "(remembering that base-uri and form-action do NOT inherit from "
-            "default-src, and that a same-frame navigation is not a fetch at "
-            "all, so no fetch directive touches it)."
+            f"an attacker origin: {sink.hits!r}. Which control failed depends on "
+            "the channel, so check the right one: `form post` and `window.open` "
+            "are stopped by the SANDBOX token list (allow-forms and allow-popups "
+            "are absent) rather than by CSP — measured, they stay blocked with "
+            "form-action removed from the policy. The fetch-class channels are "
+            "stopped by the renderer document's CSP, where base-uri and "
+            "form-action do NOT inherit from default-src. A same-frame "
+            "navigation is neither: no fetch directive touches it, and it is the "
+            "residual ADR-0026 states."
         )
     finally:
         sink.stop()
@@ -475,6 +479,14 @@ def test_n3_the_render_frame_reads_nothing_it_does_not_own(surface: str, js: str
 _HOST_PAGE = """<!doctype html><meta charset=utf-8><title>host</title>
 <iframe {sandbox} srcdoc="{body}"></iframe>"""
 
+# The artifact body's own policy, which is what stops a hostile body's script in
+# production. Delivered inside the body here because srcdoc carries no headers;
+# the shipped path sends it as a header on the content route.
+_BODY_CSP_META = (
+    "&lt;meta http-equiv=&quot;Content-Security-Policy&quot; "
+    "content=&quot;default-src 'none'; script-src 'none'&quot;&gt;"
+)
+
 
 def _script_body(sink_url: str, marker: str) -> str:
     """A render body whose inline script tries to phone home, HTML-escaped for srcdoc."""
@@ -485,8 +497,13 @@ def _script_body(sink_url: str, marker: str) -> str:
 @pytest.mark.parametrize(
     "label,sandbox_attr,expect_leak",
     [
-        ("sandboxed, no allow-scripts", 'sandbox=""', False),
-        ("unsandboxed (control)", "", True),
+        # What production ships: the frame KEEPS allow-scripts (the renderer
+        # needs it) and the artifact BODY carries script-src 'none'. Testing
+        # sandbox="" instead would prove a stricter primitive the product does
+        # not rely on, and would stay green if the shipped body lost its CSP —
+        # which is the misconfiguration that lets a hostile body's script run.
+        ("allow-scripts + body script-src 'none'", 'sandbox="allow-scripts"', False),
+        ("allow-scripts, no body CSP (control)", 'sandbox="allow-scripts"', True),
     ],
     ids=["blocked", "control"],
 )
@@ -510,11 +527,11 @@ def test_n4_an_inline_script_in_the_body_never_runs(label, sandbox_attr, expect_
             try:
                 page = browser.new_page()
                 page.goto(f"{sink.url}/__control__")
+                body = _script_body(sink.url, marker)
+                if not expect_leak:
+                    body = _BODY_CSP_META + body
                 page.set_content(
-                    _HOST_PAGE.format(
-                        sandbox=sandbox_attr,
-                        body=_script_body(sink.url, marker),
-                    )
+                    _HOST_PAGE.format(sandbox=sandbox_attr, body=body)
                 )
                 _await_hit(page, sink, marker)
             finally:
