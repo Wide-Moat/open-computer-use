@@ -3,7 +3,7 @@
 
 ---
 status: accepted
-last-reviewed: 2026-06-28
+last-reviewed: 2026-08-12
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
 supersedes: []
@@ -35,7 +35,11 @@ The latent surface is concentrated in two formats a future preview could wire �
 We will select the parser-sandbox substrate by **render location**, because the location decides where the untrusted body actually executes — and pin a trigger that re-opens the choice when that location changes.
 
 - **Ingest — in-language capability confinement.** The lexical validator stays server-side and in-process. It holds no signer, no key, no network capability, and reads only bounded metadata; the co-residency ADR-0015 names is already closed in-language and proven by the three-guard harness. A process fork adds an operational substrate for no blast-radius gain, so we do not fork it.
-- **Body render — the browser.** Preview render runs in the browser, in a null-origin sandboxed iframe under a strict per-artifact content security policy (`default-src 'none'; script-src 'none'; object-src 'none'`; an iframe `sandbox` attribute carrying neither `allow-scripts` nor `allow-same-origin`). This is a distinct, stricter directive class from the SPA's `frame-ancestors` policy, which governs who frames the SPA, not what an artifact body may do. A null-origin frame cannot reach the embedder's origin, so it also closes the `postMessage` exfil leg without setting COOP.
+- **Body render — the browser.** Preview render runs in the browser, in a null-origin sandboxed iframe: a `sandbox` attribute carrying `allow-scripts` and **never** `allow-same-origin`. This is a distinct, stricter directive class from the SPA's `frame-ancestors` policy, which governs who frames the SPA, not what an artifact body may do. A null-origin frame cannot reach the embedder's origin, so it also closes the `postMessage` exfil leg without setting COOP.
+
+  Two documents with two policies meet in that frame, and conflating them is the mistake to avoid. The **artifact body**, served from the content route, keeps `default-src 'none'; script-src 'none'; object-src 'none'` — those bytes stay inert wherever they land. The **renderer document** is our own asset, served same-origin into the frame, and its policy admits its own bundle and nothing else: no `connect-src`, so a renderer that parses a hostile body cannot phone home with what it read.
+
+  `allow-scripts` is what buys format coverage. A frame that runs no script renders only what the browser renders natively — an image, a PDF in the native viewer, media, plain text — and no amount of policy work makes a markdown, spreadsheet, or office renderer appear in it. The isolation that matters is the opaque origin, which is unchanged: no cookie, no storage, no reach into the embedder, no named origin to `postMessage` at.
 - **Server-side heavy parser — process boundary, deferred behind a trigger.** Adopting any server-side full-body parser or rasterizer (a Node PDF renderer, a spreadsheet library, a headless office converter) flips the substrate to a separate OS process with a seccomp-bpf syscall filter, no network namespace, a memory and CPU cgroup, a non-root user, and a read-only rootfs. That adoption is itself a load-bearing decision and requires its own ADR; until a heavy parser is introduced, this tier is not built.
 
 The boundary property (no signer, no key, no co-residency with the session-minter) is unchanged. This ADR decides only the substrate per location.
@@ -43,6 +47,7 @@ The boundary property (no signer, no key, no co-residency with the session-minte
 ## Consequences
 
 - Preview render, when wired in component-08, is a browser-CSP task, not a server-sandbox build: active content (SVG `<script>`, HTML inline JS) defaults to `attachment` disposition.
+- What `allow-scripts` concedes, stated plainly: a renderer bug is now reachable by a hostile artifact. A crafted PDF or spreadsheet that defeats its parser executes in the opaque origin — it reads that artifact's own bytes, which the user opened deliberately, and it can burn CPU or memory in the frame. It cannot read a cookie, a token, another artifact, or anything in the embedder. The residual is a renderer-CVE surface in the browser, which is why each renderer dependency passes the SCA gate before it ships, and why the renderer document carries no `connect-src`.
 - The server keeps zero render-dependency CVE surface for as long as render stays browser-native; the trigger makes that a conscious, ADR-gated step rather than a silent dependency creep.
 - Four hardening requirements land as NFR-SEC extensions (XXE-off default; renderer egress-block; entity-expansion limits; active-content disposition), each with a falsifiable CI check, mapped to P4-artifact-I3/E3. They gate the *first* render of a format, not running code.
 - A future heavy-parser ADR inherits a clean precondition: the boundary property and the three hardening NFRs already hold, so it adds only the process substrate.
@@ -51,4 +56,5 @@ The boundary property (no signer, no key, no co-residency with the session-minte
 
 - **Process boundary now (for ingest and a presumed future render).** Rejected: it isolates a server-side full-body parser that does not exist, so it mocks a need; it adds an operational substrate (process lifecycle, IPC, resource accounting) for zero current blast-radius reduction. The trigger captures the case where it does become load-bearing.
 - **In-language confinement for body render too (sanitizer-only, e.g. a DOMPurify pass in the SPA origin).** Rejected as the boundary: a sanitizer is a denylist running in the SPA's own origin, so a bypass executes with SPA privileges. A null-origin sandboxed iframe is an allowlist boundary the sanitizer can complement but not replace.
+- **A script-free frame (`sandbox` with neither `allow-scripts` nor `allow-same-origin`).** This ADR's original position, superseded here. Rejected on coverage: a frame that runs no script renders only browser-native formats — image, PDF, media, plain text, static HTML — which is roughly half the formats component-08 must show, and no policy change adds the other half. Markdown, spreadsheets, and the office formats each need a parser, and a parser needs an execution context. The choice was never "scripts or no scripts" but "scripts in an opaque origin, or scripts in ours": the SPA-origin alternative below is strictly worse, and the deferred server tier costs a process substrate we have no other reason to build.
 - **One substrate for all three tiers.** Rejected: ingest, browser render, and a server rasterizer have different execution locations and different blast radii; a single mechanism either over-builds the cheap tiers or under-isolates the heavy one.
