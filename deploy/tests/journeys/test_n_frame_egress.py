@@ -305,3 +305,68 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
         )
     finally:
         sink.stop()
+
+# The read side of the same claim. ADR-0026 says the frame "cannot read a
+# cookie, a token, another artifact, or anything in the embedder" — a different
+# property from "cannot send", and one nothing was checking either. An opaque
+# origin is what closes these: no cookie jar, no storage bucket, no same-origin
+# handle on the parent.
+#
+# Each entry returns a string. A probe passes when the frame CANNOT reach the
+# thing: either the access throws (SecurityError / TypeError) or it yields an
+# empty result. Anything else is a read the ADR says is impossible.
+_READS: list[tuple[str, str]] = [
+    ("document.cookie", "document.cookie"),
+    ("localStorage", "(() => { try { localStorage.setItem('x','1'); return 'READABLE:' + localStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
+    ("sessionStorage", "(() => { try { sessionStorage.setItem('x','1'); return 'READABLE:' + sessionStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
+    ("indexedDB", "(() => { try { const r = indexedDB.open('probe'); return r ? 'OPENED' : 'NO-HANDLE' } catch (e) { return 'THREW:' + e.name } })()"),
+    ("parent DOM", "(() => { try { return 'READ:' + String(parent.document.body.innerHTML).slice(0, 40) } catch (e) { return 'THREW:' + e.name } })()"),
+    ("parent location", "(() => { try { return 'READ:' + parent.location.href } catch (e) { return 'THREW:' + e.name } })()"),
+    ("top location", "(() => { try { return 'READ:' + top.location.href } catch (e) { return 'THREW:' + e.name } })()"),
+    ("own origin", "(() => { try { return 'ORIGIN:' + String(origin) } catch (e) { return 'THREW:' + e.name } })()"),
+]
+
+
+@pytest.mark.parametrize("surface,js", _READS, ids=[s for s, _ in _READS])
+def test_n3_the_render_frame_reads_nothing_it_does_not_own(surface: str, js: str):
+    """No cookie, no storage, no reach into the embedder.
+
+    The opaque origin is what closes these, so this doubles as the check that
+    the frame IS opaque: `origin` reads "null" in an opaque origin and reads the
+    real origin the moment someone adds `allow-same-origin`. That single line is
+    the difference between this whole file testing a sandbox and testing an
+    ordinary same-origin iframe.
+    """
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page()
+            page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
+            frame = _render_frame(page)
+            assert frame is not None, (
+                "no sandboxed render frame under the pane; this probe would "
+                "otherwise run in the SPA origin, where every read below "
+                f"SUCCEEDS by design. Frames seen: {[f.url for f in page.frames]!r}"
+            )
+            result = str(frame.evaluate(f"() => {{ return {js} }}"))
+        finally:
+            browser.close()
+
+    if surface == "own origin":
+        assert result == "ORIGIN:null", (
+            f"the render frame reports origin {result!r}, not an opaque one. "
+            "Every other probe in this file assumes the opaque origin is what "
+            "isolates; with a real origin they are all measuring an ordinary "
+            "same-origin iframe. Check the sandbox attribute did not gain "
+            "`allow-same-origin`."
+        )
+        return
+
+    assert result.startswith("THREW:") or result in ("", "NO-HANDLE"), (
+        f"the render frame reached {surface}: {result!r}. ADR-0026 states it "
+        "cannot read a cookie, a token, another artifact, or anything in the "
+        "embedder — this is that claim failing, not a flaky probe."
+    )
