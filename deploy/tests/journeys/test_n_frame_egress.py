@@ -259,6 +259,11 @@ def test_n0_the_sink_records_a_hit_when_nothing_blocks_it():
     try:
         import urllib.request
 
+        # The URL is built from a port this process just bound on 127.0.0.1;
+        # no part of it comes from outside the test. The rule cannot see that,
+        # and the file:// hazard it warns about needs an attacker-supplied
+        # scheme, which there is no path for here.
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         urllib.request.urlopen(f"{sink.url}/control-marker", timeout=5).read()
         assert sink.saw("control-marker"), (
             "the sink did not record a request it definitely received, so every "
@@ -424,3 +429,79 @@ def test_n3_the_render_frame_reads_nothing_it_does_not_own(surface: str, js: str
         "cannot read a cookie, a token, another artifact, or anything in the "
         "embedder — this is that claim failing, not a flaky probe."
     )
+
+# The leg n1 cannot reach. `frame.evaluate` runs in a CDP isolated world, so it
+# executes even where a page script could not start — n1 therefore measures the
+# network layer given running code, never the earlier refusal. Here the script
+# arrives as BODY CONTENT, the way a hostile artifact would, and the question is
+# whether it runs at all.
+#
+# The substrate is not needed for this: the isolation primitives reproduce
+# standalone. What it does NOT cover is the product's own wiring of them — if
+# the shipped frame carries the CSP or the sandbox attribute wrong, only a probe
+# against that frame catches it. So this closes "the primitives block
+# script-execution egress"; n1's frame lookup closes "our frame is built from
+# those primitives".
+_HOST_PAGE = """<!doctype html><meta charset=utf-8><title>host</title>
+<iframe {sandbox} srcdoc="{body}"></iframe>"""
+
+
+def _script_body(sink_url: str, marker: str) -> str:
+    """A render body whose inline script tries to phone home, HTML-escaped for srcdoc."""
+    js = f"new Image().src = '{sink_url}/{marker}'"
+    return f"&lt;script&gt;{js}&lt;/script&gt;".replace('"', "&quot;")
+
+
+@pytest.mark.parametrize(
+    "label,sandbox_attr,expect_leak",
+    [
+        ("sandboxed, no allow-scripts", 'sandbox=""', False),
+        ("unsandboxed (control)", "", True),
+    ],
+    ids=["blocked", "control"],
+)
+def test_n4_an_inline_script_in_the_body_never_runs(label, sandbox_attr, expect_leak):
+    """A hostile body's own script does not execute in the sandboxed frame.
+
+    The control is the same body in an unsandboxed frame: it MUST leak. Without
+    it a green here could mean the payload never worked, the sink was deaf, or
+    srcdoc escaping mangled the script — all indistinguishable from "the sandbox
+    held".
+    """
+    _require_browser()
+    from playwright.sync_api import sync_playwright
+
+    marker = "inline-" + ("blocked" if not expect_leak else "control")
+    sink = _Sink()
+    sink.start()
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.goto(f"{sink.url}/__control__")
+                page.set_content(
+                    _HOST_PAGE.format(
+                        sandbox=sandbox_attr,
+                        body=_script_body(sink.url, marker),
+                    )
+                )
+                _await_hit(page, sink, marker)
+            finally:
+                browser.close()
+
+        if expect_leak:
+            assert sink.saw(marker), (
+                "the control body did NOT leak from an unsandboxed frame, so the "
+                "blocked case proves nothing: the payload, the srcdoc escaping "
+                f"or the sink is what stopped it. Sink saw: {sink.hits!r}"
+            )
+        else:
+            assert not sink.saw(marker), (
+                f"an inline script in the body RAN and reached the sink ({label}): "
+                f"{sink.hits!r}. A sandbox without `allow-scripts` must refuse to "
+                "execute page script at all — this is the leg n1 cannot see, "
+                "failing."
+            )
+    finally:
+        sink.stop()
