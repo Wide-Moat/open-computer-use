@@ -62,6 +62,11 @@ PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or PUBLIC_BASE_URL_DEFAULT).rstr
 CONTAINER_IDLE_TIMEOUT = int(os.getenv("CONTAINER_IDLE_TIMEOUT", "600"))
 DEBUG_LOGGING = os.getenv("DEBUG_LOGGING", "false").lower() == "true"
 ORCHESTRATOR_CONTAINER_NAME = os.getenv("ORCHESTRATOR_CONTAINER_NAME", "computer-use-server")
+# Service ports INSIDE the sandbox. Fixed by the workspace image; only the host side of each
+# mapping varies, and the container engine assigns that.
+CDP_PORT = int(os.getenv("CDP_PORT", "9222"))    # Chrome DevTools
+TTYD_PORT = int(os.getenv("TTYD_PORT", "7681"))  # web terminal
+SANDBOX_PUBLISHED_PORTS = (CDP_PORT, TTYD_PORT)
 BASE_DATA_DIR = Path(os.getenv("BASE_DATA_DIR", "/data"))
 
 # MCP Tokens Wrapper for GitLab token fetching
@@ -418,8 +423,40 @@ def _get_compose_network_name(force_refresh: bool = False) -> Optional[str]:
     return None
 
 
-def get_container_cdp_address(chat_id: str) -> Optional[str]:
-    """Get the IP address of a chat's container on the compose network (for CDP proxy).
+def _published_address(container, container_port: int) -> Optional[str]:
+    """Host-side address of a published container port, if it has one.
+
+    Works identically on Docker and Podman: both report the mapping under
+    NetworkSettings.Ports as {"9222/tcp": [{"HostIp": ..., "HostPort": ...}]}. Returns None when
+    the port is not published, which is the case for containers created before this was introduced.
+
+    An empty or 0.0.0.0 HostIp is normalised to 127.0.0.1 — the orchestrator shares a network
+    namespace with the engine, so loopback is both correct and the narrower target.
+    """
+    ports = (container.attrs.get("NetworkSettings") or {}).get("Ports") or {}
+    for binding in ports.get(f"{container_port}/tcp") or []:
+        host_port = binding.get("HostPort")
+        if not host_port:
+            continue
+        host_ip = binding.get("HostIp") or "127.0.0.1"
+        if host_ip in ("0.0.0.0", "::", ""):
+            host_ip = "127.0.0.1"
+        return f"{host_ip}:{host_port}"
+    return None
+
+
+def get_container_service_address(chat_id: str, container_port: int) -> Optional[str]:
+    """Address to reach one of a chat container's services, as "host:port".
+
+    Two strategies, in order:
+
+    1. The published host port (NetworkSettings.Ports). This is the only one that works on rootless
+       Podman, where containers have no routable per-container IP, and it works on Docker too.
+       Note the host port is NOT the container port — the engine assigns it — so callers must use
+       the returned string whole rather than appending a port of their own.
+    2. The container's IP on the shared network, with `container_port` appended. Used for
+       containers created before ports were published, so an upgrade does not strand sandboxes
+       that are already running.
 
     After deploy (docker-compose down/up), running containers may still be on the
     old compose network with an unreachable IP. This function detects the mismatch
@@ -435,14 +472,21 @@ def get_container_cdp_address(chat_id: str) -> Optional[str]:
         if c.status != "running":
             return None
 
+        published = _published_address(c, container_port)
+        if published:
+            return published
+
         compose_net = _get_compose_network_name()
         networks = c.attrs["NetworkSettings"]["Networks"]
 
+        # Legacy path: reach the container by IP on the shared network. Each branch appends the
+        # port itself, because this function's contract is "host:port" — a bare IP here would
+        # silently produce a URL with no port at the call sites.
         # If container is on the current compose network, use that IP
         if compose_net and compose_net in networks:
             ip = networks[compose_net].get("IPAddress")
             if ip:
-                return ip
+                return f"{ip}:{container_port}"
 
         # Container running but NOT on compose network → fix and retry
         if compose_net and compose_net not in networks:
@@ -453,16 +497,26 @@ def get_container_cdp_address(chat_id: str) -> Optional[str]:
             if compose_net in networks:
                 ip = networks[compose_net].get("IPAddress")
                 if ip:
-                    return ip
+                    return f"{ip}:{container_port}"
 
         # Fallback: first non-bridge IP
         for net_name, net_data in networks.items():
             if net_name != "bridge" and net_data.get("IPAddress"):
-                return net_data["IPAddress"]
+                return f"{net_data['IPAddress']}:{container_port}"
         ip = c.attrs["NetworkSettings"]["IPAddress"]
-        return ip if ip else None
+        return f"{ip}:{container_port}" if ip else None
     except Exception:
         return None
+
+
+def get_container_cdp_address(chat_id: str) -> Optional[str]:
+    """Deprecated: use get_container_service_address(chat_id, CDP_PORT).
+
+    Kept because the old name was importable and the behaviour is unchanged for CDP. Note the
+    return value is now "host:port" rather than a bare host — callers that appended ":9222"
+    themselves must stop doing so.
+    """
+    return get_container_service_address(chat_id, CDP_PORT)
 
 
 def _fix_dead_networks(client, container):
@@ -667,6 +721,18 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
 
     if not ENABLE_NETWORK:
         config["network_disabled"] = True
+    else:
+        # Publish the sandbox's service ports on engine-assigned host ports.
+        #
+        # The orchestrator proxies Chrome DevTools and the web terminal to the browser. Historically
+        # it reached the container by IP on a shared bridge network, which only exists when every
+        # sandbox lives in one network namespace — true for Docker-in-Docker, not for rootless
+        # Podman, where containers get no routable per-container address.
+        #
+        # Publishing works on both engines and needs no bookkeeping here: passing None lets the
+        # engine pick a free host port, read back from NetworkSettings.Ports when an address is
+        # resolved. The engine is the ledger.
+        config["ports"] = {f"{port}/tcp": None for port in SANDBOX_PUBLISHED_PORTS}
 
     try:
         container = client.containers.create(**config)
