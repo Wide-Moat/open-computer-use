@@ -660,17 +660,27 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
     uploads_path = os.path.join(chat_data_path, "uploads")
     outputs_path = os.path.join(chat_data_path, "outputs")
 
-    # Create directories on Docker host with correct permissions
+    # Create the per-chat upload/output directories.
+    #
+    # Done in-process. This used to spawn a throwaway root container to mkdir and chmod 777 on the
+    # engine host, which cannot work under rootless Podman: the engine has no root to give, and the
+    # attempt fails with "permission denied" — taking container creation down with it, because the
+    # bind mount then points at a path that does not exist.
+    #
+    # The orchestrator mounts this same volume at the same path, so it can simply create them. The
+    # 0o777 mode is preserved: the sandbox runs as a different user (assistant) and has to write
+    # here. os.chmod is used explicitly because mkdir's mode argument is masked by umask.
     try:
         print(f"[MCP] Creating directories: {uploads_path}, {outputs_path}")
-        client.containers.run(
-            image=DOCKER_IMAGE,
-            command=f"bash -c 'mkdir -p {shlex.quote(uploads_path)} {shlex.quote(outputs_path)} && chmod -R 777 {shlex.quote(chat_data_path)}'",
-            volumes={"/tmp": {"bind": "/tmp", "mode": "rw"}},
-            remove=True,
-            detach=False,
-            user="root"
-        )
+        for path in (chat_data_path, uploads_path, outputs_path):
+            os.makedirs(path, exist_ok=True)
+            try:
+                os.chmod(path, 0o777)
+            except PermissionError:
+                # Pre-existing directory owned by another uid — tolerable if it is already
+                # writable, which is the case when a previous run created it.
+                if not os.access(path, os.W_OK):
+                    raise
     except Exception as e:
         print(f"[MCP] Warning: Failed to create directories: {e}")
 

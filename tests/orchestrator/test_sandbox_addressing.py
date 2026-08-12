@@ -151,3 +151,41 @@ class ServiceAddressTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UserDataDirectoryTests(unittest.TestCase):
+    """Per-chat directories are created in-process, not by a root container.
+
+    The old implementation ran a throwaway container as root to mkdir and chmod. Rootless Podman
+    has no root to give, so that call failed and took container creation with it — the bind mount
+    then pointed at a path that did not exist. The orchestrator mounts the same volume, so it can
+    create them directly.
+    """
+
+    def test_directories_are_created_without_spawning_a_container(self):
+        import tempfile
+        import docker_manager as dm
+
+        import docker as docker_sdk
+        client = MagicMock()
+        # A brand-new chat: no container exists yet, which is the path that prepares directories.
+        client.containers.get.side_effect = docker_sdk.errors.NotFound("absent")
+        with tempfile.TemporaryDirectory() as base:
+            with patch.object(dm, "USER_DATA_BASE_PATH", base), \
+                 patch.object(dm, "get_docker_client", return_value=client), \
+                 patch.object(dm, "skill_manager", MagicMock(get_skill_mounts=lambda *a, **k: {})):
+                try:
+                    dm._get_or_create_container("chat-xyz")
+                except Exception:
+                    # Container creation itself is mocked out and may fail further down; the
+                    # directories must exist regardless, and no root container may have been run.
+                    pass
+
+            chat_dir = os.path.join(base, "chat-xyz")
+            self.assertTrue(os.path.isdir(os.path.join(chat_dir, "uploads")))
+            self.assertTrue(os.path.isdir(os.path.join(chat_dir, "outputs")))
+
+        # The root-container helper is the thing that cannot work rootless.
+        for call in client.containers.run.call_args_list:
+            self.assertNotEqual(call.kwargs.get("user"), "root",
+                                "must not spawn a root container to prepare directories")
