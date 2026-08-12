@@ -74,6 +74,15 @@ class PublishedAddressTests(unittest.TestCase):
         self.assertEqual(_published_address(c, CDP_PORT), "127.0.0.1:49153")
         self.assertEqual(_published_address(c, TTYD_PORT), "127.0.0.1:49154")
 
+    def test_host_networking_uses_the_container_port_on_loopback(self):
+        """Host netns: the port IS loopback, and Ports is empty — that is not "unpublished"."""
+        c = _container({
+            "HostConfig": {"NetworkMode": "host"},
+            "NetworkSettings": {"Ports": {}},
+        })
+        self.assertEqual(_published_address(c, 9222), "127.0.0.1:9222")
+        self.assertEqual(_published_address(c, 7681), "127.0.0.1:7681")
+
     def test_returns_none_when_not_published(self):
         for ports in ({}, {"9222/tcp": None}, {"9222/tcp": []}):
             c = _container({"NetworkSettings": {"Ports": ports}})
