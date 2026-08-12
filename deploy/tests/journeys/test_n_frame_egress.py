@@ -172,10 +172,28 @@ def _attempt(context, payload: str) -> None:
             raise
 
 
+# The render frame is a CHILD of the pane, not the pane. The pane is the SPA
+# origin at :3000; the sandboxed renderer is nested inside it and is opaque, so
+# Playwright reports its URL as the renderer-document route (or about:srcdoc /
+# blob: depending on how it is served). Matching on the pane URL would hand the
+# probes the SPA origin and quietly assert the wrong thing.
+_RENDER_FRAME_MARKERS = ("/render", "about:srcdoc", "blob:")
+
+
 def _render_frame(page):
-    """The frame the artifact renders in, or None when it is not present yet."""
-    for frame in page.frames:
-        if PANE_FRAME_URL in (frame.url or ""):
+    """The sandboxed render frame, or None when the page has no such child.
+
+    Deliberately NOT the pane. A probe that runs in the pane measures the SPA
+    origin's policy, and the SPA origin may well refuse these channels — which
+    would make every probe green while proving nothing about the sandbox this
+    file exists to test.
+    """
+    pane = next((f for f in page.frames if PANE_FRAME_URL in (f.url or "")), None)
+    if pane is None:
+        return None
+    for frame in pane.child_frames:
+        url = frame.url or ""
+        if any(marker in url for marker in _RENDER_FRAME_MARKERS):
             return frame
     return None
 
@@ -222,9 +240,12 @@ def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
                 page.goto(PORTAL_URL, wait_until="networkidle", timeout=30000)
                 frame = _render_frame(page)
                 assert frame is not None, (
-                    f"pane iframe ({PANE_FRAME_URL}) not found in the portal, so "
-                    "this probe would pass without ever running in the frame it "
-                    "claims to test"
+                    "no sandboxed render frame under the pane, so this probe "
+                    "would run nowhere or — worse — in the pane's own SPA "
+                    "origin and pass while proving nothing about the sandbox. "
+                    "The render frame ships with the ADR-0026 substrate; until "
+                    "then this FAILS rather than passing vacuously. Frames "
+                    f"seen: {[f.url for f in page.frames]!r}"
                 )
                 payload = js.replace("SINK", repr(sink.url)).replace("MARKER", marker)
                 _attempt(frame, payload)
