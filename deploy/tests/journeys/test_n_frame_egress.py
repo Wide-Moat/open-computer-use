@@ -301,7 +301,7 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
             f"these channels never reached the sink even unpoliced: {dead}. Their "
             "n1 probes are vacuous — they would pass against a frame with no "
             "policy at all. Fix the payload or drop the channel; do not leave a "
-            "green that measures nothing."
+            f"green that measures nothing. What the sink DID record: {sink.hits!r}"
         )
     finally:
         sink.stop()
