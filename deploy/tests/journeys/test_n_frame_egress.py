@@ -400,7 +400,12 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
 # thing: either the access throws (SecurityError / TypeError) or it yields an
 # empty result. Anything else is a read the ADR says is impossible.
 _READS: list[tuple[str, str]] = [
-    ("document.cookie", "document.cookie"),
+    # Wrapped like every other entry, and it must be: in an opaque origin
+    # `document.cookie` RAISES SecurityError, it does not return "". Bare, the
+    # probe errored on a correct frame and PASSED on one carrying
+    # allow-same-origin — where cookie access succeeds and returns "" — which
+    # is the exact regression this file exists to catch, scored backwards.
+    ("document.cookie", "(() => { try { return 'READ:' + document.cookie } catch (e) { return 'THREW:' + e.name } })()"),
     ("localStorage", "(() => { try { localStorage.setItem('x','1'); return 'READABLE:' + localStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
     ("sessionStorage", "(() => { try { sessionStorage.setItem('x','1'); return 'READABLE:' + sessionStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
     ("indexedDB", "(() => { try { const r = indexedDB.open('probe'); return r ? 'OPENED' : 'NO-HANDLE' } catch (e) { return 'THREW:' + e.name } })()"),
