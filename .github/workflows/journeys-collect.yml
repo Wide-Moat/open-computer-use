@@ -16,6 +16,14 @@ on:
     paths:
       - "deploy/**"
       - ".github/workflows/journeys-collect.yml"
+  # The browser probes install chromium at run time, so they can rot from
+  # upstream drift with no repo change at all — and that rot would then surface
+  # as a red on some unrelated future deploy PR. A weekly run finds it on its
+  # own schedule instead. Per-PR alone was still "proven the day it merged",
+  # only with a longer day.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -99,11 +107,15 @@ jobs:
   # ---------------------------------------------------------------------------
   # The N group's browser-only probes.
   #
-  # Twelve of the twenty-two need a live stand (a pane, a portal, a render frame)
-  # and stay opt-in. Four do not: the sink control, the unpoliced-channel
-  # control, and both halves of the script-execution probe reproduce the
-  # isolation primitives standalone. Without this job they only ever ran by
-  # hand, and "proven by running probes" decays to "proven the day it merged".
+  # Four of the twenty-two test ids need no stand: the sink control, the
+  # unpoliced-channel control, and both halves of the script-execution probe
+  # reproduce the isolation primitives standalone. Without this job they only
+  # ever ran by hand, and "proven by running probes" decays to "proven the day
+  # it merged".
+  #
+  # This job covers 4 of 22 — the controls and the script-execution primitive.
+  # It is NOT "the N group covered": the other eighteen need a live pane, portal
+  # and render frame, and they are the tier-2 gate against a real stand.
   #
   # OCU_BROWSER_E2E is SET here on purpose: with the gate set and no chromium,
   # `_require_browser` FAILS rather than skipping, so a broken install cannot
@@ -117,14 +129,21 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install playwright + chromium
+        # Pinned, like the sibling job's requirements file. A floating
+        # playwright changes what the probe MEANS between runs: the same green
+        # would be measuring a different browser contract each week.
         run: |
-          python -m pip install --upgrade pip playwright pytest
+          python -m pip install --upgrade pip
+          python -m pip install "playwright==1.62.0" "pytest==9.1.1"
           python -m playwright install --with-deps chromium
       - name: Run the standalone probes
         env:
           OCU_BROWSER_E2E: "1"
-        # -k selects the four that need no stand. The stand-bound twelve are not
-        # deselected silently: they SKIP with their own reason, visible in -rs.
+        # -k selects the four that need no stand and DESELECTS the other
+        # eighteen. Deselected is not skipped: they never run, never reach -rs,
+        # and never enter the junit — measured, `-rs` reports zero SKIPPED lines
+        # here. Their absence is detectable only through the equality guard
+        # below, which is why that guard is the load-bearing half of this job.
         run: |
           pytest -rs -o xfail_strict=true --strict-markers \
             --junit-xml=n-group-report.xml \
