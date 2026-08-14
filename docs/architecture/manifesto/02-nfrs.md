@@ -229,9 +229,9 @@ property of a branch, not of the system, so it does not count. The script exits
 0 only when all three hold on what is shipped, 1 when any does not, and 2 when a
 component cannot be read — unreadable is reported as unreadable, never as unmet.
 
-Running it today reports **0 of 3**: every leg is built and gated, and all three
-sit in open pull requests awaiting a review approval. The claim is therefore not
-yet held, and the number is the honest form of that answer.
+The number itself lives in the run log, not here. A count written into canon is
+stale the day a branch merges, and this section states the mechanism and the
+exit-code contract precisely so the answer is fetched rather than quoted.
 
 ## 6. Maintainability
 

@@ -535,10 +535,17 @@ def main() -> int:
     # function was stricter than the deployed pipeline, which is the shape a
     # unit test cannot catch on its own.
     bypass: list[dict] = []
+    unreadable_rulesets: list[str] = []
     for rid in sorted({r.get("ruleset_id") for r in effective if r.get("ruleset_id")}):
         rs = _api(f"repos/{args.repo}/rulesets/{rid}", optional=True)
         if isinstance(rs, dict):
             bypass += rs.get("bypass_actors") or []
+        else:
+            # Defaulting to bypass-free here would be the same defect the
+            # protection leg was just fixed for, on the leg that carries the
+            # verdict in CI — and it errs the unsafe way: a token that cannot
+            # read the ruleset would report a bypassable branch as enforced.
+            unreadable_rulesets.append(str(rid))
 
     rulesets = synthesise_ruleset(effective, bypass)
 
@@ -547,6 +554,12 @@ def main() -> int:
         rulesets,
         protection_readable=protection_readable,
     )
+    for rid in unreadable_rulesets:
+        problems.append(
+            f"cannot establish the bypass posture for ruleset {rid}: it is "
+            "unreadable with this token, and a ruleset whose bypass actors "
+            "cannot be read must not be assumed to have none"
+        )
     if problems:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:

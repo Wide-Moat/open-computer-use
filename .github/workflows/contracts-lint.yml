@@ -106,7 +106,13 @@ jobs:
       #   1. Enforce via a RULESET, not classic branch protection. The
       #      protection endpoint answers 403 to the Actions token
       #      (administration:read cannot be granted there), so CI can only
-      #      observe rulesets.
+      #      observe rulesets. Note this cuts against scripts/apply-layer0-
+      #      protection.sh, which writes CLASSIC protection: flipping with that
+      #      tool leaves this step permanently red on the cannot-establish
+      #      message, correct protection notwithstanding, unless the step is
+      #      given an admin-scoped PAT. Flipping via a ruleset keeps
+      #      GITHUB_TOKEN sufficient. The applier's REQUIRED list also gains the
+      #      codeql context once item 2 lands, or its own verdict reds.
       #   2. Extend codeql.yml's triggers to this branch. It fires on main and
       #      cron only, so no codeql context reports on a next/v1 PR today —
       #      requiring one would block every PR forever on a check that never

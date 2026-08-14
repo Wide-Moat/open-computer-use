@@ -12,8 +12,7 @@ shipped.
 That distinction is the whole point. A leg living in an unmerged pull request is
 not a property of the system; it is a property of a branch. This script reads
 the DEFAULT branch of each component, so a leg counts only once it is merged —
-which is why running it today reports the claim as not yet held, with the four
-open pull requests named.
+so the number moves only when work merges.
 
     python3 scripts/check-readiness-claim.py            # human summary
     python3 scripts/check-readiness-claim.py --json     # machine-readable
@@ -21,6 +20,14 @@ open pull requests named.
 Exit 0 when all three legs hold on the shipped branches, 1 when any does not,
 2 when a component cannot be read — unreadable is not the same as unmet, and
 reporting it as unmet would be the same defect this script exists to catch.
+
+The three-way split is what makes the visibility of the components a
+non-question. Reading a sibling works today because those repositories are
+public; if one became private, or a token lost access, the affected leg reports
+as unreadable and the run exits 2. Verified by pointing a leg at a repository
+this token cannot see: the result is "cannot read <leg>", not "<leg> does not
+hold". A compliance check that answered "the property is missing" when it merely
+could not look would be worse than no check.
 """
 
 from __future__ import annotations
@@ -31,10 +38,24 @@ import subprocess
 import sys
 import time
 
-# Each leg names the component, the branch that ships it, and a symbol whose
-# presence on that branch is the evidence. A symbol rather than a file: files
-# get moved and renamed, and a grep for one that no longer exists reports a
-# missing property rather than a missing file.
+# WHAT THIS PROVES, AND WHAT IT DOES NOT. Symbol presence establishes that the
+# leg's code is on the shipping branch. It does not establish that the code runs,
+# that its gate is green, or that a later commit did not neuter it. The error
+# directions are not symmetric, which is what makes the proxy usable: a rename
+# yields a false NOT-YET (safe — it understates), while dead code or a reverted
+# call site would yield a false HOLDS (unsafe — it overstates). The call-site
+# evidence below narrows the unsafe direction; it does not close it.
+#
+# Each leg names the component, the branch that ships it, and TWO pieces of
+# evidence: the function that decides the property, and the call that puts it on
+# the path a session actually takes. Both, because the first alone overstates.
+#
+# That is not a hypothetical. E1's first version had the verdict function, the
+# tests, and no production caller at all — the property held on the CI runner and
+# nowhere else, and a check looking only for `func AdmitUIDMap` would have called
+# the leg shipped. A symbol rather than a file for the usual reason: files move,
+# and a grep for a path that no longer exists reports a missing property when
+# what moved was a file.
 LEGS = (
     {
         "leg": "proven isolation",
@@ -42,6 +63,8 @@ LEGS = (
         "branch": "main",
         "evidence": "func AdmitUIDMap",
         "path": "host/exec/runtime/userns.go",
+        "wired": "m.admitUserns(ctx",
+        "wired_path": "host/exec/manager/manager.go",
         "means": (
             "the control plane refuses a session whose container root is host "
             "root, judged on the mapping the kernel reports"
@@ -53,6 +76,8 @@ LEGS = (
         "branch": "main",
         "evidence": "func AdmitImageRef",
         "path": "host/exec/manager/imageref.go",
+        "wired": "AdmitImageRef(spec.Image)",
+        "wired_path": "host/exec/manager/manager.go",
         "means": (
             "a session cannot start from a re-pointable image tag; the release "
             "path verifies its own signature before applying consumer tags"
@@ -64,6 +89,11 @@ LEGS = (
         "branch": "main",
         "evidence": "func TestEveryDecisionNamesAGuardThatExists",
         "path": "host/internal/doctruth/decision_guards_test.go",
+        # A test needs no call site: `go test ./...` is its caller, and the go
+        # job runs it as a required context. Naming a second symbol here would
+        # be ceremony rather than evidence.
+        "wired": None,
+        "wired_path": None,
         "means": (
             "every recorded decision names a guard test, and every named guard "
             "is verified to exist"
@@ -126,13 +156,37 @@ def leg_holds(leg: dict) -> bool:
             return False
         raise Unreadable(f"{leg['repo']}@{leg['branch']}: {err.strip()[:120]}")
 
+    if leg["evidence"] not in _fetch(leg, leg["path"], out):
+        return False
+
+    # The call site, when the leg has one. Declaring these fields and never
+    # reading them would repeat the defect this evidence exists to catch: a
+    # verdict function present, tested, and called from nowhere.
+    if not leg.get("wired"):
+        return True
+    code2, out2, err2 = _run(
+        [
+            "gh",
+            "api",
+            f"repos/{leg['repo']}/contents/{leg['wired_path']}?ref={leg['branch']}",
+            "--jq",
+            ".content",
+        ]
+    )
+    if code2 != 0:
+        if "404" in err2 or "Not Found" in err2:
+            return False
+        raise Unreadable(f"{leg['repo']}@{leg['branch']}: {err2.strip()[:120]}")
+    return leg["wired"] in _fetch(leg, leg["wired_path"], out2)
+
+
+def _fetch(leg: dict, path: str, encoded: str) -> str:
     import base64
 
     try:
-        body = base64.b64decode(out).decode("utf-8", "replace")
+        return base64.b64decode(encoded).decode("utf-8", "replace")
     except Exception as exc:  # pragma: no cover - defensive
-        raise Unreadable(f"{leg['repo']}: undecodable content: {exc}") from exc
-    return leg["evidence"] in body
+        raise Unreadable(f"{leg['repo']}:{path}: undecodable content: {exc}") from exc
 
 
 def main() -> int:
@@ -162,7 +216,7 @@ def main() -> int:
         if held == len(results):
             print(
                 "The deployment-readiness claim holds on the shipped branches: "
-                "all three legs are merged and each carries its own gate."
+                "all three legs are merged. Whether each gate is GREEN is a separate question this script does not ask."
             )
         else:
             print(
