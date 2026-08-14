@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import subprocess
 import time
 import sys
@@ -410,6 +411,29 @@ def self_test() -> int:
     # every unit assertion stayed green while the deployed pipeline admitted it.
     # Assert the wrapper here, since no shape driven through verdict() alone can
     # see it.
+    # Every field verdict() filters on must be one synthesise_ruleset supplies,
+    # or the filter is dead on the live path — which is how bypass_actors was
+    # missed. Derived from the source rather than listed by hand: a hand-kept
+    # list is one more thing to forget when a filter is added.
+    import re
+
+    src = pathlib.Path(__file__).read_text(encoding="utf-8")
+    fn = src[src.index("def synthesise_ruleset") :]
+    fn = fn[: fn.index("\ndef ", 10)]
+    provided = set(re.findall(r'"([a-z_]+)":', fn))
+    filtered = set(re.findall(r'r\.get\("([a-z_]+)"', src))
+    # `name` feeds a message only; `ruleset_id` is read off the rules, not the
+    # ruleset, so neither is the wrapper's to supply.
+    unfed = filtered - provided - {"name", "ruleset_id"}
+    if unfed:
+        print(
+            "SELF-TEST FAIL: verdict() filters on "
+            f"{sorted(unfed)} which the live wrapper never supplies"
+        )
+        failures += 1
+    else:
+        print("  ok: every filtered field is one the live wrapper supplies")
+
     gates = [
         {"context": c}
         for c in ("gitleaks", "trufflehog", "sast-semgrep", "Analyze (go)", "trivy")
