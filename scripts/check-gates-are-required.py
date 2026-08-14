@@ -33,13 +33,20 @@ import sys
 # supply-chain leg. A required-context list that misses one of these is the
 # finding; the names are matched as substrings because the display name carries
 # decoration ("SAST — semgrep").
-EXPECTED_GATES = (
-    "gitleaks",
-    "trufflehog",
-    "semgrep",
-    "codeql",
-    "trivy",
-)
+# Each gate lists the substrings that count as covering it, because a context's
+# display name is chosen by whatever publishes it. CodeQL is the case that
+# forced this: GitHub's default setup publishes one context per language
+# ("Analyze (go)"), and the string "codeql" appears in none of them — so a
+# repository with all four required was reported as missing CodeQL entirely.
+# A check that reds a correctly configured branch gets ignored, which costs more
+# than the miss it was guarding against.
+EXPECTED_GATES = {
+    "gitleaks": ("gitleaks",),
+    "trufflehog": ("trufflehog",),
+    "semgrep": ("semgrep",),
+    "codeql": ("codeql", "analyze ("),
+    "trivy": ("trivy",),
+}
 
 
 def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
@@ -78,8 +85,11 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
                 "the gates run and nothing waits for them"
             )
         else:
+            lowered = [c.lower() for c in contexts]
             missing = [
-                g for g in EXPECTED_GATES if not any(g in c for c in contexts)
+                name
+                for name, aliases in EXPECTED_GATES.items()
+                if not any(a in c for a in aliases for c in lowered)
             ]
             if missing:
                 problems.append(
