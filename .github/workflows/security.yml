@@ -193,7 +193,12 @@ jobs:
         # against the rule that actually fired, so a finding raised for the
         # wrong reason fails here rather than passing as coverage. A rule whose
         # own fixture does not hold should not be allowed to gate anything.
-        run: semgrep --metrics=off --test --config .semgrep/ .semgrep/
+        # `semgrep test <dir>` and NOT `--test --config <dir> <dir>`: passing the
+        # directory as both config and target makes semgrep read it as a
+        # rules/tests split and abort with "the split of tests/ and rules/ is not
+        # supported yet", which reported "No unit tests found" and failed the
+        # gate — a rule self-test that never ran, reading as a rule that has none.
+        run: semgrep test .semgrep/
 
       - name: Semgrep CI (community rules)
         env:
