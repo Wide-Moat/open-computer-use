@@ -25,9 +25,12 @@ the ones that must FAIL, so the check cannot quietly stop discriminating.
 from __future__ import annotations
 
 import argparse
+import glob
+import os
 import json
 import pathlib
 import subprocess
+import yaml
 import time
 import sys
 
@@ -200,6 +203,54 @@ def synthesise_ruleset(
             "bypass_actors": bypass_actors,
         }
     ]
+
+
+def _local_repo_slug() -> str:
+    """Return owner/name of the checkout this script is running in, lowercased.
+
+    Empty when it cannot be determined, which disables the workflow-file check
+    rather than letting it read the wrong repository's files.
+    """
+    proc = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if proc.returncode != 0:
+        return ""
+    url = proc.stdout.strip()
+    for prefix in ("git@github.com:", "https://github.com/"):
+        if url.startswith(prefix):
+            return url[len(prefix):].removesuffix(".git").lower()
+    return ""
+
+
+def non_blocking_jobs(workflow_dir: str = ".github/workflows") -> list[str]:
+    """Name jobs that carry continue-on-error, so they cannot fail a merge.
+
+    A required context whose job is continue-on-error is green whatever the tool
+    finds — the NFR's own sentence ("a merge cannot reach a protected branch
+    while a gate is failing") is unsatisfiable for it, because it is never
+    failing. Branch protection cannot see this: the API reports the context as
+    required and the run reports success.
+
+    Read from the workflow files rather than the API for the same reason the
+    verdict reads rules rather than settings — this is a property of what runs,
+    not of what is configured.
+    """
+    found: list[str] = []
+    for path in sorted(glob.glob(os.path.join(workflow_dir, "*.yml"))):
+        try:
+            doc = yaml.safe_load(open(path, encoding="utf-8"))
+        except Exception:
+            continue
+        for name, job in (doc.get("jobs") or {}).items():
+            if not isinstance(job, dict):
+                continue
+            if job.get("continue-on-error") is True:
+                found.append(f"{os.path.basename(path)}:{name}")
+    return found
 
 
 def _probe_readable(path: str) -> bool:
@@ -434,6 +485,25 @@ def self_test() -> int:
     else:
         print("  ok: every filtered field is one the live wrapper supplies")
 
+    # The continue-on-error scan reads workflow files, so drive it against a
+    # temporary directory rather than the repo's own: asserting on this checkout
+    # would make the test's verdict depend on which repository it runs in.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        io_open = open
+        with io_open(os.path.join(td, "a.yml"), "w", encoding="utf-8") as fh:
+            fh.write("jobs:\n  gating:\n    runs-on: x\n  lax:\n    continue-on-error: true\n    runs-on: x\n")
+        found = non_blocking_jobs(td)
+    if found != ["a.yml:lax"]:
+        print(
+            "SELF-TEST FAIL: the continue-on-error scan should report exactly "
+            f"the lax job, got {found!r}"
+        )
+        failures += 1
+    else:
+        print("  ok: a job that cannot fail is reported, one that can is not")
+
     gates = [
         {"context": c}
         for c in ("gitleaks", "trufflehog", "sast-semgrep", "Analyze (go)", "trivy")
@@ -554,6 +624,46 @@ def main() -> int:
         rulesets,
         protection_readable=protection_readable,
     )
+    # A job that cannot fail cannot gate, whatever protection says about it.
+    # Only REQUIRED contexts are judged: a reporting-only job carrying
+    # continue-on-error is doing what it was built to do, and calling that a
+    # violation would red every repository that has one.
+    #
+    # Consequence worth naming: on a branch with no protection this finds
+    # nothing, because there are no required contexts to compare against. That
+    # is not a miss — such a branch already reports the larger violation above.
+    # It does mean the check first bites at flip time, which is exactly when a
+    # continue-on-error gate would otherwise be marked required and enforce
+    # nothing.
+    required_names = set()
+    if isinstance(protection, dict):
+        rsc = protection.get("required_status_checks") or {}
+        required_names |= {str(c).lower() for c in rsc.get("contexts") or []}
+        required_names |= {
+            str(c.get("context", "")).lower() for c in rsc.get("checks") or []
+        }
+    # Only meaningful when the checkout IS the repository being judged. Reading
+    # the local .github/workflows while --repo names a different repository
+    # would report that repository's gates using this one's files — measured, and
+    # it produced two findings that belonged to the wrong repo.
+    local_repo = _local_repo_slug()
+    jobs = non_blocking_jobs() if local_repo == args.repo.lower() else []
+    if local_repo and local_repo != args.repo.lower():
+        print(
+            f"note: skipping the continue-on-error check — this checkout is "
+            f"{local_repo}, not {args.repo}",
+            file=sys.stderr,
+        )
+    for job in jobs:
+        jobname = job.split(":", 1)[1].lower()
+        if jobname not in required_names:
+            continue
+        problems.append(
+            f"{job} carries continue-on-error, so it reports success whatever it "
+            "finds — a required context that cannot fail is presence, not "
+            "enforcement"
+        )
+
     for rid in unreadable_rulesets:
         problems.append(
             f"cannot establish the bypass posture for ruleset {rid}: it is "
