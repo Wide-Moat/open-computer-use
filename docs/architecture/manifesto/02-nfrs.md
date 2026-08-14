@@ -210,6 +210,29 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 | NFR-SEC-88 | Authentication trail at the control plane — every authentication act emits an OCSF Authentication (3002) event into the hash-chained pipeline (NFR-SEC-03): one logon per accepted connection (the TLS handshake / `SO_PEERCRED` attestation is the act; per-request identity reads are not authentications), every failed attempt with its cause, and one authentication-ticket event per Storage-JWT mint. Logon emission is a producer path: fail-open with counted loss, per the NFR-SEC-79 pattern — a downstream failure neither blocks nor denies, a dropped record is counted, never silently lost. The ticket event alone is fail-closed inside the create pipeline: it records the plane issuing a credential (NFR-SEC-72), and a credential whose issuance the trail does not hold refuses the create | Spoofing, Repudiation | a failed logon record never denies the request and the loss is counted; a second request on one connection adds no second logon; a refused ticket record refuses the create before any mount-config reaches the bind; a socket-peer logon carries no certificate | decorator unit tests (once-per-connection latch, fail-open counted loss, no-latch-on-failed-emit); lifecycle test (refused ticket record refuses the create); conformance test (3002 carries user + service, protocol discriminators distinct) | extends NFR-SEC-09; pattern NFR-SEC-79; ticket family NFR-SEC-72; DORA Art.10, NYDFS §500.06 |
 | NFR-SEC-89 | Every security gate is REQUIRED, not merely present — a merge cannot reach a protected branch while a gate is failing, absent, or skipped, and no role may bypass that. Presence is not enforcement: a repository can run gitleaks, trufflehog, semgrep, CodeQL, Trivy, syft and cosign on every PR and still merge past all of them | Tampering, Elevation of Privilege (unreviewed or unscanned code reaching a release branch) | branch protection or a ruleset with `enforcement: active` exists on every release branch; the required-context list names each blocking gate; admins are not exempt; a PR with a failing gate cannot be merged and a PR whose gate never reported cannot be merged either — an ABSENT context blocks exactly as a red one does | a fixture querying the branch-protection and rulesets APIs, asserting protection exists, `enforcement` is active rather than disabled, and the required-context set covers the gate list — asserted against the API rather than inferred from the workflow files, because a workflow that runs proves the gate exists and proves nothing about whether it blocks | OUR-DESIGN (gate enforcement); pairs NFR-SEC-83; SOC2-CC8.1, ISO27001-A.8.32, DORA Art.9 |
 
+### Deployment-readiness claim
+
+The three properties this architecture exists to establish — proven isolation,
+an auditable supply chain, and a canon where every decision is recorded and
+checkable — are each covered by the NFRs above and each carry their own gate.
+The claim that they hold TOGETHER is answered by measurement rather than by this
+paragraph:
+
+```sh
+python3 scripts/check-gates-are-required.py --repo <owner>/<repo> --branch <b>
+python3 scripts/check-readiness-claim.py
+```
+
+`check-readiness-claim.py` reads the DEFAULT branch of each component and looks
+for the symbol that carries each leg. A leg in an unmerged pull request is a
+property of a branch, not of the system, so it does not count. The script exits
+0 only when all three hold on what is shipped, 1 when any does not, and 2 when a
+component cannot be read — unreadable is reported as unreadable, never as unmet.
+
+Running it today reports **0 of 3**: every leg is built and gated, and all three
+sit in open pull requests awaiting a review approval. The claim is therefore not
+yet held, and the number is the honest form of that answer.
+
 ## 6. Maintainability
 
 | ID | Scenario | Target | Verification | Source |
