@@ -80,10 +80,18 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
         return problems
 
     if protection is None and active_rulesets:
-        # No branch protection: the rulesets are the whole claim, so they must
-        # carry the required checks themselves. A ruleset that enforces
+        # No READABLE branch protection: the rules are the whole claim, so they
+        # must carry the required checks themselves. A ruleset that enforces
         # something else (linear history, signed commits) leaves every gate
         # merge-past-able while reading as active.
+        #
+        # Measured caveat, stated because it bounds what this leg can prove: the
+        # branch-scoped rules endpoint LAGS the protection settings. On a branch
+        # with 31 required contexts it reported 19 — a strict subset, missing the
+        # most recently added ones. So a gate it does not list may still be
+        # required, and this leg can produce a false finding on a freshly
+        # configured branch. It never produces a false PASS, which is the
+        # direction that matters: the set it reports is real, just incomplete.
         covered: list[str] = []
         for r in active_rulesets:
             for rule in r.get("rules") or []:
@@ -118,7 +126,15 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
 
     if protection is not None:
         checks = protection.get("required_status_checks") or {}
-        contexts = [str(c).lower() for c in checks.get("contexts", [])]
+        # The API returns the same set twice: `contexts` (legacy, plain strings)
+        # and `checks` (objects carrying the app id). Reading only one is
+        # fragile — GitHub has deprecated `contexts` — so take the union and let
+        # either shape answer.
+        contexts = [str(c).lower() for c in checks.get("contexts") or []]
+        contexts += [
+            str(c.get("context", "")).lower() for c in checks.get("checks") or []
+        ]
+        contexts = [c for c in contexts if c]
         if not contexts:
             problems.append(
                 "branch protection exists but requires zero status checks: "
@@ -204,6 +220,27 @@ def self_test() -> int:
     cases: list[tuple[str, dict | None, list[dict], bool]] = [
         # (label, protection, rulesets, expect_clean)
         ("fully enforced", good_protection, [], True),
+        # The same protection expressed only through the modern `checks` array.
+        # GitHub has deprecated the flat `contexts` list, so a repo will
+        # eventually report this shape alone; reading one field would call a
+        # fully protected branch "zero status checks". Measured before the fix.
+        (
+            "protection using checks[] rather than contexts[]",
+            {
+                "required_status_checks": {
+                    "checks": [
+                        {"context": "secrets — gitleaks"},
+                        {"context": "secrets — trufflehog"},
+                        {"context": "SAST — semgrep"},
+                        {"context": "Analyze (go)"},
+                        {"context": "SCA — trivy (filesystem)"},
+                    ]
+                },
+                "enforce_admins": {"enabled": True},
+            },
+            [],
+            True,
+        ),
         ("nothing at all", None, [], False),
         # The shapes that made the ruleset leg fail open one level deeper than
         # the disabled-ruleset trap. Each reads as enforcement and binds nothing.
