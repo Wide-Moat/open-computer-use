@@ -50,7 +50,11 @@ EXPECTED_GATES = {
 }
 
 
-def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
+def verdict(
+    protection: dict | None,
+    rulesets: list[dict],
+    protection_readable: bool = True,
+) -> list[str]:
     """Return the reasons this branch is unprotected. Empty means enforced.
 
     Split from the API calls so --self-test can drive it with constructed
@@ -73,10 +77,23 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
     ]
 
     if protection is None and not active_rulesets:
-        problems.append(
-            "no branch protection and no ruleset with enforcement=active: "
-            "every gate can be merged past"
-        )
+        if protection_readable:
+            problems.append(
+                "no branch protection and no ruleset with enforcement=active: "
+                "every gate can be merged past"
+            )
+        else:
+            # Unreadable is not absent, and saying "no branch protection" when
+            # the endpoint answered 403 is a factually wrong finding. The
+            # branch-scoped rules endpoint reports ruleset-derived rules ONLY,
+            # so a classically protected branch is invisible to it — from CI
+            # that reads as nothing at all. Say what is known instead.
+            problems.append(
+                "cannot establish enforcement from here: the protection endpoint "
+                "is unreadable with this token and no branch-scoped ruleset rules "
+                "apply. Enforce via a ruleset, which CI can observe, or run this "
+                "with a token carrying administration:read"
+            )
         return problems
 
     if protection is None and active_rulesets:
@@ -160,6 +177,43 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
             )
 
     return problems
+
+
+def synthesise_ruleset(
+    effective: list[dict], bypass_actors: list[dict]
+) -> list[dict]:
+    """Wrap branch-scoped effective rules in the shape verdict() reasons about.
+
+    Separate from main() so the self-test can drive it. It has to be: the bypass
+    filter in verdict() was real and mutation-proven, and still dead on the live
+    path, because this wrapper was built without the field it filters on. A
+    filter is only as good as the record handed to it.
+    """
+    if not effective:
+        return []
+    return [
+        {
+            "enforcement": "active",
+            "target": "branch",
+            "rules": effective,
+            "bypass_actors": bypass_actors,
+        }
+    ]
+
+
+def _probe_readable(path: str) -> bool:
+    """Report whether a 404 (absent) rather than a 403 (unreadable) came back.
+
+    _api collapses both to None, and the difference decides whether the verdict
+    may say "no branch protection" — a claim that is simply false when the
+    endpoint refused to answer.
+    """
+    proc = subprocess.run(
+        ["gh", "api", path], capture_output=True, text=True, timeout=30
+    )
+    if proc.returncode == 0:
+        return True
+    return "Not Found" in proc.stderr or "404" in proc.stderr
 
 
 def _api(path: str, optional: bool = False) -> object | None:
@@ -349,6 +403,50 @@ def self_test() -> int:
     ]
 
     failures = 0
+    # The live path SYNTHESISES a ruleset from the effective-rules response, and
+    # a filter verdict() enforces is only real if that synthesis carries the
+    # field it filters on. Bypass was invisible exactly this way: verdict()
+    # rejected bypass-laden rulesets, main() built one without the field, and
+    # every unit assertion stayed green while the deployed pipeline admitted it.
+    # Assert the wrapper here, since no shape driven through verdict() alone can
+    # see it.
+    gates = [
+        {"context": c}
+        for c in ("gitleaks", "trufflehog", "sast-semgrep", "Analyze (go)", "trivy")
+    ]
+    live_rules = [
+        {
+            "type": "required_status_checks",
+            "ruleset_id": 1,
+            "parameters": {"required_status_checks": gates},
+        }
+    ]
+    live = verdict(None, synthesise_ruleset(live_rules, [{"actor_id": 1}]))
+    if not live:
+        print(
+            "SELF-TEST FAIL: a bypass-laden ruleset reads clean through the live "
+            "wrapper, so the bypass filter never fires where it matters"
+        )
+        failures += 1
+    else:
+        print("  ok: the live wrapper carries bypass through to the filter")
+
+    # The unreadable-protection branch is not one of the shapes above: it turns
+    # on HOW the answer was obtained, not on what it said. Assert its wording,
+    # because the whole point is that it must NOT claim protection is absent.
+    unreadable = verdict(None, [], protection_readable=False)
+    if not unreadable or "cannot establish enforcement" not in unreadable[0]:
+        print(
+            "SELF-TEST FAIL: an unreadable protection endpoint must say so, "
+            f"got {unreadable!r}"
+        )
+        failures += 1
+    elif "no branch protection" in unreadable[0]:
+        print("SELF-TEST FAIL: unreadable was reported as absent")
+        failures += 1
+    else:
+        print("  ok: unreadable protection -> reported as unreadable, not absent")
+
     for label, prot, rules, expect_clean in cases:
         problems = verdict(prot, rules)
         clean = not problems
@@ -387,6 +485,13 @@ def main() -> int:
     protection = _api(
         f"repos/{args.repo}/branches/{args.branch}/protection", optional=True
     )
+    # _api returns None for BOTH "404, no protection" and "403, cannot read it".
+    # The verdict has to tell them apart, so ask again without the optional
+    # escape: a genuine 404 still yields None, while a 403 exits non-zero — so
+    # reaching here with None twice means absent, not unreadable.
+    protection_readable = protection is not None or _probe_readable(
+        f"repos/{args.repo}/branches/{args.branch}/protection"
+    )
     # Branch-SCOPED effective rules, not the repository's ruleset list. The list
     # says a ruleset exists; it does not say it binds THIS branch, so a ruleset
     # targeting main read as protection for next/v1. This endpoint answers the
@@ -399,13 +504,25 @@ def main() -> int:
     # Present the effective rules in the shape verdict() already reasons about:
     # one synthetic active branch ruleset carrying them, since the endpoint has
     # resolved targeting and returns only what applies here.
-    rulesets = (
-        [{"enforcement": "active", "target": "branch", "rules": effective}]
-        if effective
-        else []
-    )
+    # Resolve bypass actors, which the effective-rules response does not carry:
+    # bypass is a property of the RULESET, not of a rule. Without this the
+    # bypass filter in verdict() is dead on the live path — the synthetic
+    # ruleset was built without the field, so it always passed. The tested
+    # function was stricter than the deployed pipeline, which is the shape a
+    # unit test cannot catch on its own.
+    bypass: list[dict] = []
+    for rid in sorted({r.get("ruleset_id") for r in effective if r.get("ruleset_id")}):
+        rs = _api(f"repos/{args.repo}/rulesets/{rid}", optional=True)
+        if isinstance(rs, dict):
+            bypass += rs.get("bypass_actors") or []
 
-    problems = verdict(protection if isinstance(protection, dict) else None, rulesets)
+    rulesets = synthesise_ruleset(effective, bypass)
+
+    problems = verdict(
+        protection if isinstance(protection, dict) else None,
+        rulesets,
+        protection_readable=protection_readable,
+    )
     if problems:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:
