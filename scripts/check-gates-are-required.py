@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 import sys
 
 # The gates CLAUDE.md calls the first three an auditor opens, plus the
@@ -145,16 +146,40 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
     return problems
 
 
-def _api(path: str) -> object | None:
+def _api(path: str, optional: bool = False) -> object | None:
     """Query the GitHub API, returning None on a 404 rather than raising."""
-    proc = subprocess.run(
-        ["gh", "api", path],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    # Retry the transport, never the verdict. A TLS handshake timeout is not a
+    # finding, and letting one decide the gate would make an enforcement check
+    # flake — measured: back-to-back runs against the same branch alternated
+    # between the real answer and a network error.
+    for attempt in range(3):
+        proc = subprocess.run(
+            ["gh", "api", path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            break
+        transient = any(
+            m in proc.stderr.lower()
+            for m in ("timeout", "connection reset", "temporary failure", "eof")
+        )
+        if not transient or attempt == 2:
+            break
+        time.sleep(2 * (attempt + 1))
     if proc.returncode != 0:
         if "Not Found" in proc.stderr or "404" in proc.stderr:
+            return None
+        if optional and ("403" in proc.stderr or "not accessible" in proc.stderr.lower()):
+            # Unreadable is not absent. Say so and let the caller decide; the
+            # alternative is a 403 masquerading as "no protection", which turns
+            # an access limit into a false finding.
+            print(
+                f"note: {path} is not readable with this token; "
+                "relying on the branch-scoped rules instead",
+                file=sys.stderr,
+            )
             return None
         print(f"api {path} failed: {proc.stderr.strip()[:200]}", file=sys.stderr)
         sys.exit(2)
@@ -317,7 +342,14 @@ def main() -> int:
     if not args.repo:
         ap.error("--repo is required unless --self-test is given")
 
-    protection = _api(f"repos/{args.repo}/branches/{args.branch}/protection")
+    # The protection endpoint needs `administration: read`, which the Actions
+    # token cannot be granted — from CI it answers 403, not 404. Treating that
+    # as "unprotected" would report a violation for a branch that is protected,
+    # so the classic protection leg is consulted only when it is readable; in
+    # CI the branch-scoped rules below carry the verdict alone.
+    protection = _api(
+        f"repos/{args.repo}/branches/{args.branch}/protection", optional=True
+    )
     # Branch-SCOPED effective rules, not the repository's ruleset list. The list
     # says a ruleset exists; it does not say it binds THIS branch, so a ruleset
     # targeting main read as protection for next/v1. This endpoint answers the
