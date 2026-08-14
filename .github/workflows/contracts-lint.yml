@@ -114,6 +114,23 @@ jobs:
       #   3. Remove `continue-on-error: true` from sast-semgrep in
       #      security.yml. A required context that cannot fail is green whatever
       #      it finds, which is the exact shape this NFR exists to name.
+      # The readiness claim is worth nothing if it is only ever answered when
+      # somebody remembers to ask. Report-only for the same reason as the check
+      # below: it reports 0 of 3 today because the legs sit in open pull
+      # requests, and no PR can fix that — merging them is a review action.
+      # What this buys is that the number is on every run, so the day it becomes
+      # 3 of 3 nobody has to take that on trust, and the day it regresses the
+      # log says so.
+      - name: deployment-readiness claim (report-only, see NFR §Deployment-readiness)
+        # Reads a sibling component's default branch through the contents API.
+        # That works from here because the components are public; were one made
+        # private, this step would report its leg as unreadable — exit 2, which
+        # the script distinguishes from unmet — rather than silently calling the
+        # property missing.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-readiness-claim.py || true
+
       - name: gate enforcement on this branch (report-only until protection is on)
         # The github context reaches the script through env, never by
         # interpolation inside the run block. A branch name is
