@@ -102,10 +102,18 @@ jobs:
       # instead of living in a report nobody opens. Drop the `|| true` in the
       # same commit that turns protection on.
       - name: gate enforcement on this branch (report-only until protection is on)
+        # The github context reaches the script through env, never by
+        # interpolation inside the run block. A branch name is
+        # attacker-controllable on a fork PR, so interpolating it into the shell
+        # would let it close the quote and run its own command on the runner.
+        # The SAST gate flags exactly this, and it flagged it here.
+        env:
+          TARGET_REPO: ${{ github.repository }}
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           python3 scripts/check-gates-are-required.py \
-            --repo "${{ github.repository }}" \
-            --branch "${{ github.base_ref || github.ref_name }}" || true
+            --repo "$TARGET_REPO" \
+            --branch "$TARGET_BRANCH" || true
 
   openapi:
     runs-on: ubuntu-latest
