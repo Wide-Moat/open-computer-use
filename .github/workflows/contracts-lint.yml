@@ -89,6 +89,72 @@ jobs:
         run: python3 scripts/check-ocsf-class-identity.py --self-test
       - name: OCSF class identity (message title uid == vendored class uid)
         run: python3 scripts/check-ocsf-class-identity.py
+      # NFR-SEC-89. The self-test is the gate; it drives the verdict against
+      # constructed API shapes including the ones that must FAIL, so the check
+      # cannot quietly stop discriminating.
+      - name: gate-enforcement red-probe (six shapes, one clean)
+        run: python3 scripts/check-gates-are-required.py --self-test
+      # The live query is REPORT-ONLY today, and deliberately so: it currently
+      # reds, because next/v1 has no branch protection and the one ruleset
+      # carries enforcement=disabled. Making it blocking now would red every PR
+      # for a condition no PR can fix -- enabling protection is an owner action.
+      # It is here rather than absent so the violation is visible on every run
+      # instead of living in a report nobody opens.
+      #
+      # The commit that turns enforcement on drops the `|| true` AND must carry
+      # three things, or it deadlocks or lies:
+      #   1. Enforce via a RULESET, not classic branch protection. The
+      #      protection endpoint answers 403 to the Actions token
+      #      (administration:read cannot be granted there), so CI can only
+      #      observe rulesets. Note this cuts against scripts/apply-layer0-
+      #      protection.sh, which writes CLASSIC protection: flipping with that
+      #      tool leaves this step permanently red on the cannot-establish
+      #      message, correct protection notwithstanding, unless the step is
+      #      given an admin-scoped PAT. Flipping via a ruleset keeps
+      #      GITHUB_TOKEN sufficient. The applier's REQUIRED list also gains the
+      #      codeql context once item 2 lands, or its own verdict reds.
+      #   2. Extend codeql.yml's triggers to this branch. It fires on main and
+      #      cron only, so no codeql context reports on a next/v1 PR today —
+      #      requiring one would block every PR forever on a check that never
+      #      arrives.
+      #   3. Remove `continue-on-error: true` from sast-semgrep in
+      #      security.yml. A required context that cannot fail is green whatever
+      #      it finds, which is the exact shape this NFR exists to name.
+      # The readiness claim is worth nothing if it is only ever answered when
+      # somebody remembers to ask. Report-only for the same reason as the check
+      # below: it reports 0 of 3 today because the legs sit in open pull
+      # requests, and no PR can fix that — merging them is a review action.
+      # What this buys is that the number is on every run, so the day it becomes
+      # 3 of 3 nobody has to take that on trust, and the day it regresses the
+      # log says so.
+      - name: deployment-readiness claim (report-only, see NFR §Deployment-readiness)
+        # Reads a sibling component's default branch through the contents API.
+        # That works from here because the components are public; were one made
+        # private, this step would report its leg as unreadable — exit 2, which
+        # the script distinguishes from unmet — rather than silently calling the
+        # property missing.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-readiness-claim.py || true
+
+      - name: gate enforcement on this branch (report-only until protection is on)
+        # The github context reaches the script through env, never by
+        # interpolation inside the run block. A branch name is
+        # attacker-controllable on a fork PR, so interpolating it into the shell
+        # would let it close the quote and run its own command on the runner.
+        # The SAST gate flags exactly this, and it flagged it here.
+        env:
+          TARGET_REPO: ${{ github.repository }}
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          # Without a token `gh` refuses to run inside Actions at all, and the
+          # `|| true` below swallowed the refusal — so this step reported an auth
+          # error every run and nobody saw it. A report-only step that cannot
+          # execute is the theatre this NFR exists to name.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/check-gates-are-required.py \
+            --repo "$TARGET_REPO" \
+            --branch "$TARGET_BRANCH" || true
 
   openapi:
     runs-on: ubuntu-latest
