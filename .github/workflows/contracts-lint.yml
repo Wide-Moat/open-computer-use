@@ -89,6 +89,23 @@ jobs:
         run: python3 scripts/check-ocsf-class-identity.py --self-test
       - name: OCSF class identity (message title uid == vendored class uid)
         run: python3 scripts/check-ocsf-class-identity.py
+      # NFR-SEC-89. The self-test is the gate; it drives the verdict against
+      # constructed API shapes including the ones that must FAIL, so the check
+      # cannot quietly stop discriminating.
+      - name: gate-enforcement red-probe (six shapes, one clean)
+        run: python3 scripts/check-gates-are-required.py --self-test
+      # The live query is REPORT-ONLY today, and deliberately so: it currently
+      # reds, because next/v1 has no branch protection and the one ruleset
+      # carries enforcement=disabled. Making it blocking now would red every PR
+      # for a condition no PR can fix -- enabling protection is an owner action.
+      # It is here rather than absent so the violation is visible on every run
+      # instead of living in a report nobody opens. Drop the `|| true` in the
+      # same commit that turns protection on.
+      - name: gate enforcement on this branch (report-only until protection is on)
+        run: |
+          python3 scripts/check-gates-are-required.py \
+            --repo "${{ github.repository }}" \
+            --branch "${{ github.base_ref || github.ref_name }}" || true
 
   openapi:
     runs-on: ubuntu-latest
