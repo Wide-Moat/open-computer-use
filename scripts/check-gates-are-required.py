@@ -58,8 +58,17 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
     """
     problems: list[str] = []
 
+    # An active ruleset only counts if it BINDS this branch and CARRIES gates.
+    # Checking the word "active" alone failed open one level deeper than the
+    # disabled-ruleset trap this script was written for: a tag-targeted ruleset,
+    # one scoped to another branch, or one every actor can bypass all read as
+    # enforcement while requiring nothing.
     active_rulesets = [
-        r for r in rulesets if str(r.get("enforcement", "")).lower() == "active"
+        r
+        for r in rulesets
+        if str(r.get("enforcement", "")).lower() == "active"
+        and str(r.get("target", "branch")).lower() == "branch"
+        and not r.get("bypass_actors")
     ]
 
     if protection is None and not active_rulesets:
@@ -68,6 +77,36 @@ def verdict(protection: dict | None, rulesets: list[dict]) -> list[str]:
             "every gate can be merged past"
         )
         return problems
+
+    if protection is None and active_rulesets:
+        # No branch protection: the rulesets are the whole claim, so they must
+        # carry the required checks themselves. A ruleset that enforces
+        # something else (linear history, signed commits) leaves every gate
+        # merge-past-able while reading as active.
+        covered: list[str] = []
+        for r in active_rulesets:
+            for rule in r.get("rules") or []:
+                if str(rule.get("type", "")).lower() != "required_status_checks":
+                    continue
+                params = rule.get("parameters") or {}
+                for c in params.get("required_status_checks") or []:
+                    covered.append(str(c.get("context", "")).lower())
+        if not covered:
+            problems.append(
+                "the active ruleset requires no status checks: "
+                "enforcement without gates binds nothing"
+            )
+        else:
+            missing = [
+                name
+                for name, aliases in EXPECTED_GATES.items()
+                if not any(a in c for a in aliases for c in covered)
+            ]
+            if missing:
+                problems.append(
+                    "the active ruleset's required checks do not cover: "
+                    + ", ".join(missing)
+                )
 
     if rulesets and not active_rulesets:
         names = ", ".join(str(r.get("name")) for r in rulesets)
@@ -141,6 +180,81 @@ def self_test() -> int:
         # (label, protection, rulesets, expect_clean)
         ("fully enforced", good_protection, [], True),
         ("nothing at all", None, [], False),
+        # The shapes that made the ruleset leg fail open one level deeper than
+        # the disabled-ruleset trap. Each reads as enforcement and binds nothing.
+        (
+            "active ruleset that requires no checks",
+            None,
+            [{"name": "empty", "enforcement": "active", "target": "branch", "rules": []}],
+            False,
+        ),
+        (
+            "active ruleset that enforces something other than checks",
+            None,
+            [
+                {
+                    "name": "linear-only",
+                    "enforcement": "active",
+                    "target": "branch",
+                    "rules": [{"type": "non_fast_forward"}],
+                }
+            ],
+            False,
+        ),
+        (
+            "active ruleset whose checks miss a gate",
+            None,
+            [
+                {
+                    "name": "partial",
+                    "enforcement": "active",
+                    "target": "branch",
+                    "rules": [
+                        {
+                            "type": "required_status_checks",
+                            "parameters": {
+                                "required_status_checks": [
+                                    {"context": "gitleaks"},
+                                    {"context": "trivy"},
+                                ]
+                            },
+                        }
+                    ],
+                }
+            ],
+            False,
+        ),
+        (
+            "active ruleset every actor can bypass",
+            None,
+            [
+                {
+                    "name": "bypassable",
+                    "enforcement": "active",
+                    "target": "branch",
+                    "bypass_actors": [{"actor_id": 1}],
+                    # Carries the FULL gate set on purpose: only the bypass
+                    # filter can reject this, so removing that filter reds
+                    # here rather than being masked by the coverage check.
+                    "rules": [{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "gitleaks"}, {"context": "trufflehog"}, {"context": "sast-semgrep"}, {"context": "Analyze (go)"}, {"context": "trivy"}]}}],
+                }
+            ],
+            False,
+        ),
+        (
+            "active ruleset targeting tags, not branches",
+            None,
+            # Full gate set again, so only the branch-target filter decides.
+            [
+                {
+                    "name": "tags",
+                    "enforcement": "active",
+                    "target": "tag",
+                    "rules": [{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": "gitleaks"}, {"context": "trufflehog"}, {"context": "sast-semgrep"}, {"context": "Analyze (go)"}, {"context": "trivy"}]}}],
+                }
+            ],
+            False,
+        ),
         (
             "ruleset present but disabled",
             None,
@@ -204,9 +318,23 @@ def main() -> int:
         ap.error("--repo is required unless --self-test is given")
 
     protection = _api(f"repos/{args.repo}/branches/{args.branch}/protection")
-    rulesets = _api(f"repos/{args.repo}/rulesets") or []
-    if not isinstance(rulesets, list):
-        rulesets = []
+    # Branch-SCOPED effective rules, not the repository's ruleset list. The list
+    # says a ruleset exists; it does not say it binds THIS branch, so a ruleset
+    # targeting main read as protection for next/v1. This endpoint answers the
+    # question actually being asked and needs no admin scope, which the
+    # protection endpoint does.
+    branch_path = args.branch.replace("/", "%2F")
+    effective = _api(f"repos/{args.repo}/rules/branches/{branch_path}") or []
+    if not isinstance(effective, list):
+        effective = []
+    # Present the effective rules in the shape verdict() already reasons about:
+    # one synthetic active branch ruleset carrying them, since the endpoint has
+    # resolved targeting and returns only what applies here.
+    rulesets = (
+        [{"enforcement": "active", "target": "branch", "rules": effective}]
+        if effective
+        else []
+    )
 
     problems = verdict(protection if isinstance(protection, dict) else None, rulesets)
     if problems:

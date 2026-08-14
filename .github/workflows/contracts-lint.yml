@@ -110,6 +110,11 @@ jobs:
         env:
           TARGET_REPO: ${{ github.repository }}
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          # Without a token `gh` refuses to run inside Actions at all, and the
+          # `|| true` below swallowed the refusal — so this step reported an auth
+          # error every run and nobody saw it. A report-only step that cannot
+          # execute is the theatre this NFR exists to name.
+          GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/check-gates-are-required.py \
             --repo "$TARGET_REPO" \
