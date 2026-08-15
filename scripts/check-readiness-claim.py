@@ -95,8 +95,19 @@ LEGS = (
         "delivered_by": 116,
         "repo": "Wide-Moat/ocu-sandbox",
         "branch": "main",
-        "evidence": "certificate-identity-regexp",
+        # The anchored TAIL, not the flag name. `certificate-identity-regexp`
+        # survives loosening the pin to ".*", so it measures that a flag is
+        # present rather than that an identity is pinned. What this still cannot
+        # see: a verify step that gains continue-on-error, or one that moves
+        # after the consumer tags are applied. Both are out of grep's reach.
+        "evidence": "ghcr-guest\\.yml@refs/heads/main$",
         "path": ".github/workflows/ghcr-guest.yml",
+        # The call site: promote applies the consumer tags, so it must DEPEND on
+        # the signing job. Verification that exists but does not gate promotion
+        # is the dead-code failure this field exists to catch -- the same shape
+        # as a verdict function with no production caller.
+        "wired": "needs: [image, sign-image]",
+        "wired_path": ".github/workflows/ghcr-guest.yml",
         "means": (
             "the release path verifies its own signature against a pinned "
             "identity before applying consumer tags"
