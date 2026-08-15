@@ -911,6 +911,17 @@ def main() -> int:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:
             print(f"  - {p}")
+        # Annotate, so the finding survives the log. The CI step is report-only
+        # by design -- enabling protection is an owner action, and blocking here
+        # would red every PR for a condition no PR can fix -- but report-only
+        # printed into a log nobody opens is the theatre this NFR names. A
+        # warning annotation appears on the PR without failing the run.
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            summary = "; ".join(problems)
+            print(
+                f"::warning title=NFR-SEC-89: gates are not enforced on "
+                f"{args.branch}::{summary}"
+            )
         print(
             "\nEvery gate can be green and every one of them merged past. "
             "Presence is not enforcement."
