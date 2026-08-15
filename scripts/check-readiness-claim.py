@@ -512,6 +512,22 @@ def _self_test() -> int:
         git("add", "-A")
         git("commit", "-qm", "carries the leg and reds the gate")
         git("checkout", "-q", "main")
+        # A decoy the remote HEAD points at, carrying NO leg symbols. Without it
+        # the fixture cannot catch a base that names an alias: a clone's
+        # origin/HEAD follows origin/main, so composing from origin/HEAD looks
+        # identical to composing from origin/main. That mutant survived every
+        # check here and got committed green. Now the alias and the branch
+        # disagree, so only a base naming the branch can hold the legs.
+        git("checkout", "-q", "-b", "decoy")
+        # The decoy must DIFFER from main, or composing from either gives the
+        # same tree and the alias stays invisible -- the colliding pair has to
+        # actually collide. Remove the gate here.
+        _sp.run(["rm", "-rf", f"{d}/host/internal/doctruth"], capture_output=True)
+        git("add", "-A")
+        git("commit", "-qm", "decoy without the gate")
+        git("checkout", "-q", "main")
+        _sp.run(["git", "-C", d, "symbolic-ref", "HEAD", "refs/heads/decoy"],
+                capture_output=True)
 
         compose_cases = [
             ("a branch carrying the leg makes it hold", ["carries"], 1),
@@ -745,7 +761,7 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     if code != 0:
         return -1, [f"cannot fetch {base_remote} in {repo_dir}: {err.strip()[:80]}"]
     code, _, err = _run(
-        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, "origin/HEAD"]
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, COMPOSE_BASE]
     )
     if code != 0:
         return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
