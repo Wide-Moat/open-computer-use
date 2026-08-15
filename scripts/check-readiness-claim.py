@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -559,6 +560,94 @@ def _self_test() -> int:
             else:
                 print(f"  ok: {label}")
 
+    # main()'s compose path must map an unexpected exception to 2, not 1. The CI
+    # step tolerates 1 by design, so a wedged build routed there would stay
+    # green over a check that never ran -- the theatre the exit split exists to
+    # close, one layer under it.
+    _real_cv = composed_verdict
+    for label, exc in (
+        ("a build timeout is cannot-judge", subprocess.TimeoutExpired(cmd=["go"], timeout=1)),
+        ("a missing binary is cannot-judge", FileNotFoundError("go: not found")),
+    ):
+        def _raise(*_a, _e=exc, **_k):
+            raise _e
+
+        # Stub the gh resolution too. The CI self-test step carries no GH_TOKEN,
+        # so without this main() returns 2 at "cannot resolve the head branch"
+        # before ever reaching the containment -- the case would assert 2 and
+        # pass with the containment deleted, which is exactly what it exists to
+        # catch. Measured: narrowing the containment with gh auth broken left
+        # this suite green.
+        _real_run = _run
+        def _stub_run(args, cwd=None):
+            if args[:2] == ["gh", "pr"]:
+                return 0, "stub-branch", ""
+            return _real_run(args, cwd=cwd)
+
+        globals()["_run"] = _stub_run
+        globals()["composed_verdict"] = _raise
+        buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = main(["--compose", "/nonexistent-for-self-test"])
+        except BaseException as esc:  # noqa: BLE001 - an escape IS the finding
+            # Narrowing the containment lets the exception escape instead of
+            # returning 2. Name it rather than tracebacking, so the failure says
+            # which property broke.
+            code = -99
+            failures.append(f"{label}: escaped as {type(esc).__name__}")
+        finally:
+            globals()["composed_verdict"] = _real_cv
+            globals()["_run"] = _real_run
+        # Bind the OUTPUT, not just the code: the gh-failure path also returns 2
+        # and cannot print this line.
+        if code == 2 and "cannot judge the composition: " not in buf.getvalue():
+            failures.append(f"{label}: returned 2 without naming the exception")
+            continue
+        if code == -99:
+            continue
+        if code != 2:
+            failures.append(f"{label}: main() returned {code}, want 2")
+        else:
+            print(f"  ok: {label}")
+
+    # A real conflict must stay in the TOLERATED bucket while an environmental
+    # merge failure must not. Every non-zero git merge used to return 0, which
+    # is how the identity failure reported a green job over one branch of four.
+    with _tf.TemporaryDirectory() as dc:
+        def gc(*a):
+            return _sp.run(
+                ["git", "-C", dc, "-c", "user.email=t@x", "-c", "user.name=t", *a],
+                capture_output=True, text=True,
+            )
+
+        gc("init", "-q", "-b", "main")
+        _io.open(f"{dc}/f", "w", encoding="utf-8").write("base\n")
+        gc("add", "-A")
+        gc("commit", "-qm", "base")
+        for nm, txt in (("left", "LEFT\n"), ("right", "RIGHT\n")):
+            gc("checkout", "-q", "main")
+            gc("checkout", "-q", "-b", nm)
+            _io.open(f"{dc}/f", "w", encoding="utf-8").write(txt)
+            gc("add", "-A")
+            gc("commit", "-qm", nm)
+        gc("checkout", "-q", "main")
+        wc = _tf.mkdtemp(prefix="ocu-conflict-")
+        try:
+            _sp.run(["git", "clone", "-q", dc, wc], capture_output=True)
+            held_c, notes_c = composed_verdict(wc, ["origin/left", "origin/right"])
+        finally:
+            import shutil as _sh2
+
+            _sh2.rmtree(wc, ignore_errors=True)
+        if held_c != 0 or not any("conflicts:" in n for n in notes_c):
+            failures.append(
+                f"a real conflict must hold=0 and say conflicts: got {held_c}, "
+                + (notes_c[-1][:50] if notes_c else "no notes")
+            )
+        else:
+            print("  ok: a real conflict is tolerated, not cannot-judge")
+
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
     declared = set(MERGE_ORDER)
@@ -643,10 +732,36 @@ def _compose_in(
         if code != 0:
             notes.append(f"{branch} does not resolve -- fetch, or it was deleted")
             return -1, notes
-        code, out, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        # NOT covered by the self-test, deliberately: git on a developer
+        # machine auto-derives an identity from the OS user and commits happily
+        # with no config at all (measured, rc 0), so a case stripping
+        # GIT_CONFIG_* cannot fail here even with this fix removed. The CI log
+        # is the evidence -- run 31870669835 composed one branch of four.
+        #
+        # Identity on the merge itself, not on the caller's clone: a runner has
+        # none, the first merge fast-forwards and needs no commit, and the
+        # second dies "Committer identity unknown" -- reported as "does not
+        # merge cleanly" and tolerated as a normal red. Setting it workflow-side
+        # fixes one caller; every other invocation keeps the silent fake-green.
+        code, out, err = _run(
+            ["git", "-C", repo_dir,
+             "-c", "user.email=composition@invalid",
+             "-c", "user.name=composition check",
+             "merge", "-q", "--no-edit", branch]
+        )
         if code != 0:
-            notes.append(f"{branch} does not merge cleanly: {(out + err).strip()[:80]}")
-            return 0, notes
+            # A CONFLICT is a real "does not hold". Anything else -- no identity,
+            # a broken index, a missing object -- is the environment failing, and
+            # returning 0 for it puts it in the bucket the CI step tolerates.
+            # That is not hypothetical: the identity failure landed exactly here
+            # and a job that composed one branch of four reported success.
+            # git exits 1 on a conflict and 128 on operational refusal.
+            detail = (out + err).strip()
+            if code == 1 and "CONFLICT" in detail.upper():
+                notes.append(f"{branch} conflicts: {detail[:80]}")
+                return 0, notes
+            notes.append(f"{branch} cannot be merged here: {detail[:80]}")
+            return -1, notes
         notes.append(f"merged {branch}")
 
     held = 0
@@ -667,8 +782,6 @@ def _compose_in(
     # not exist leaves every symbol in place and reds the canon gate, so a tree
     # can report every leg present while the gate that proves one of them
     # fails. Run it.
-    import os
-
     # Build both modules first. host/ and host/exec/ are separate modules, so
     # the canon gate never compiles manager.go -- the file BOTH #115 and #118
     # edit, where both wired symbols live. A textually clean but semantically
@@ -708,30 +821,7 @@ def _compose_in(
     return held, notes
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Explicit argv, because _self_test drives main() while sys.argv still says
-    # --self-test. Re-parsing the process argv there sent main() straight back
-    # into the self-test: infinite recursion that appeared only as a subprocess,
-    # since an in-process caller has a clean sys.argv.
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--json", action="store_true", help="machine-readable output")
-    ap.add_argument(
-        "--compose",
-        metavar="DIR",
-        help="a checkout to merge the delivering branches into, then re-run "
-        "every leg against the result: symbol presence plus the canon gate. "
-        "--json has no effect with this mode",
-    )
-    ap.add_argument(
-        "--self-test",
-        action="store_true",
-        help="drive the report over constructed delivery outcomes and exit",
-    )
-    args = ap.parse_args(argv)
-    if getattr(args, "self_test", False):
-        return _self_test()
-
-    if args.compose:
+def _compose_main(args) -> int:
         # Derive the sequence from the legs rather than duplicating it: a leg
         # whose PR is missing from a hand-kept tuple composes silently without
         # it, which is how the release-path property went untracked.
@@ -773,9 +863,55 @@ def main(argv: list[str] | None = None) -> int:
             # Unreadable, not unmet. The distinction is the one this script's
             # header calls the defect it exists to catch.
             print("\ncannot judge the composition: a delivering branch is unreadable")
+            # The exit code already reds the step; this names the CAUSE in the
+            # run summary, where a reader looking at a red job will find it
+            # without opening the log.
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                detail = "; ".join(notes)[-160:].replace("\n", " ").replace("::", ": ")
+                print(f"::warning title=composition unreadable::{detail}")
             return 2
         print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
         return 0 if held == len(LEGS) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Explicit argv, because _self_test drives main() while sys.argv still says
+    # --self-test. Re-parsing the process argv there sent main() straight back
+    # into the self-test: infinite recursion that appeared only as a subprocess,
+    # since an in-process caller has a clean sys.argv.
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--compose",
+        metavar="DIR",
+        help="a checkout to merge the delivering branches into, then re-run "
+        "every leg against the result: symbol presence plus the canon gate. "
+        "--json has no effect with this mode",
+    )
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="drive the report over constructed delivery outcomes and exit",
+    )
+    args = ap.parse_args(argv)
+    if getattr(args, "self_test", False):
+        return _self_test()
+
+    if args.compose:
+        # An unexpected exception here -- a build outrunning _run's timeout, a
+        # git binary gone -- is CANNOT JUDGE, not "composition does not hold".
+        # Without this it tracebacks to exit 1, which the CI step deliberately
+        # tolerates, so a timeout would read as a broken composition.
+        try:
+            return _compose_main(args)
+        except Exception as exc:  # noqa: BLE001 - the class is the point
+            print(f"\ncannot judge the composition: {type(exc).__name__}: {exc}"[:200])
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(
+                    "::warning title=composition unreadable::"
+                    f"{type(exc).__name__} on the compose path"
+                )
+            return 2
 
     results = []
     for leg in LEGS:
