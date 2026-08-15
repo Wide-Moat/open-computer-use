@@ -31,6 +31,12 @@ on:
       # the one thing its own gate did not check.
       - "scripts/**"
       - "helm/**"
+      # One filter, six jobs, no per-job conditions — so they fire together or
+      # not at all. That costs a few irrelevant runs (a helm-only PR runs the
+      # contract linters) and buys the property that matters at flip time: no
+      # context can be required-and-absent, which would deadlock a PR that never
+      # triggered it. Splitting the chart into its own workflow would reverse
+      # that trade.
   push:
     branches:
       - next/v1
