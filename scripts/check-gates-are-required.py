@@ -205,6 +205,27 @@ def synthesise_ruleset(
     ]
 
 
+def unenforceable_required_jobs(
+    jobs: list[tuple[str, set[str]]], required: set[str]
+) -> list[str]:
+    """Name jobs that are required AND cannot fail.
+
+    Separate from main() so the self-test can drive it. It has to be: the
+    bypass_actors incident in this same file was a filter that was real in the
+    tested function and dead on the live path, and a filter living only inside
+    main() repeats it — three mutations to this logic survived a green self-test
+    before it was extracted.
+
+    A job matches on EITHER identity it can publish, since GitHub uses the job's
+    `name:` when set and its key otherwise.
+    """
+    out: list[str] = []
+    for label, identities in jobs:
+        if identities & required:
+            out.append(label)
+    return out
+
+
 def _local_repo_slug() -> str:
     """Return owner/name of the checkout this script is running in, lowercased.
 
@@ -240,9 +261,20 @@ def non_blocking_jobs(
     Read from the workflow files rather than the API for the same reason the
     verdict reads rules rather than settings — this is a property of what runs,
     not of what is configured.
+
+    Scope, stated because every gap here fails OPEN: it reads JOB-level literal
+    `continue-on-error: true` only. A step-level flag on the sole gating step, an
+    expression-valued flag, the string "true", and a reusable workflow called via
+    `uses:` all go unreported. Widening to those means evaluating expressions and
+    following workflow references, which is a different tool; what this catches
+    is the shape both of this repository's disabled gates take.
     """
     found: list[tuple[str, set[str]]] = []
-    for path in sorted(glob.glob(os.path.join(workflow_dir, "*.yml"))):
+    paths = sorted(
+        glob.glob(os.path.join(workflow_dir, "*.yml"))
+        + glob.glob(os.path.join(workflow_dir, "*.yaml"))
+    )
+    for path in paths:
         try:
             doc = yaml.safe_load(open(path, encoding="utf-8"))
         except Exception:
@@ -527,6 +559,25 @@ def self_test() -> int:
     else:
         print("  ok: a job that cannot fail is reported, one that can is not")
 
+    # The required-set filter, driven directly. Living only inside main() it
+    # survived three mutations against a green self-test — the same shape as the
+    # bypass filter this file already records.
+    #
+    # The first case is the one the key-only comparison failed: the workflow
+    # knows the job as `sast-semgrep`, protection requires it as "SAST — semgrep".
+    lax = [("security.yml:sast-semgrep", {"sast-semgrep", "sast — semgrep"})]
+    if unenforceable_required_jobs(lax, {"sast — semgrep"}) != ["security.yml:sast-semgrep"]:
+        print("SELF-TEST FAIL: a required job named by its display name went unreported")
+        failures += 1
+    elif unenforceable_required_jobs(lax, {"sast-semgrep"}) != ["security.yml:sast-semgrep"]:
+        print("SELF-TEST FAIL: a required job named by its key went unreported")
+        failures += 1
+    elif unenforceable_required_jobs(lax, {"something-else"}) != []:
+        print("SELF-TEST FAIL: a job that is NOT required must not be accused")
+        failures += 1
+    else:
+        print("  ok: a required non-blocking job is named by either identity, and only when required")
+
     gates = [
         {"context": c}
         for c in ("gitleaks", "trufflehog", "sast-semgrep", "Analyze (go)", "trivy")
@@ -671,15 +722,19 @@ def main() -> int:
     # it produced two findings that belonged to the wrong repo.
     local_repo = _local_repo_slug()
     jobs = non_blocking_jobs() if local_repo == args.repo.lower() else []
-    if local_repo and local_repo != args.repo.lower():
+    if not local_repo:
+        print(
+            "note: skipping the continue-on-error check — the checkout's own "
+            "repository could not be determined from the git remote",
+            file=sys.stderr,
+        )
+    elif local_repo != args.repo.lower():
         print(
             f"note: skipping the continue-on-error check — this checkout is "
             f"{local_repo}, not {args.repo}",
             file=sys.stderr,
         )
-    for job, identities in jobs:
-        if not (identities & required_names):
-            continue
+    for job in unenforceable_required_jobs(jobs, required_names):
         problems.append(
             f"{job} carries continue-on-error, so it reports success whatever it "
             "finds — a required context that cannot fail is presence, not "
