@@ -291,7 +291,9 @@ def non_blocking_jobs(
     not of what is configured.
 
     Scope, stated because every gap here fails OPEN: it reads JOB-level literal
-    `continue-on-error: true` only. A step-level flag on the sole gating step, an
+    `continue-on-error: true` only, and matches a context by exact identity, so a
+    MATRIX job is missed — codeql's job is keyed `analyze` and publishes
+    `Analyze (go)`, which neither identity equals. A step-level flag on the sole gating step, an
     expression-valued flag, the string "true", and a reusable workflow called via
     `uses:` all go unreported. Widening to those means evaluating expressions and
     following workflow references, which is a different tool; what this catches
@@ -575,10 +577,17 @@ def self_test() -> int:
                 "  lax:\n    name: Lax Display\n"
                 "    continue-on-error: true\n    runs-on: x\n"
             )
+        # A .yaml sibling, because the glob covering only .yml was a real gap and
+        # a scratch probe of it left nothing behind to keep it closed.
+        with io_open(os.path.join(td, "b.yaml"), "w", encoding="utf-8") as fh:
+            fh.write("jobs:\n  yamllax:\n    continue-on-error: true\n    runs-on: x\n")
         found = non_blocking_jobs(td)
-    labels = [f for f, _ in found]
-    identities = found[0][1] if found else set()
-    if labels != ["a.yml:lax"] or identities != {"lax", "Lax Display".lower()}:
+    labels = sorted(f for f, _ in found)
+    identities = dict(found).get("a.yml:lax", set())
+    if labels != ["a.yml:lax", "b.yaml:yamllax"] or identities != {
+        "lax",
+        "lax display",
+    }:
         print(
             "SELF-TEST FAIL: the continue-on-error scan should report exactly "
             f"the lax job, got {found!r}"
@@ -631,6 +640,12 @@ def self_test() -> int:
         failures += 1
     elif unenforceable_required_jobs(lax, {"something-else"}) != []:
         print("SELF-TEST FAIL: a job that is NOT required must not be accused")
+        failures += 1
+    elif unenforceable_required_jobs(lax, set()) != []:
+        # An empty required set means nothing is required — on an unprotected
+        # branch that is the normal state, and accusing every lax job there would
+        # fill the report-only step with findings that are not violations.
+        print("SELF-TEST FAIL: an empty required set must accuse nobody")
         failures += 1
     else:
         print("  ok: a required non-blocking job is named by either identity, and only when required")
