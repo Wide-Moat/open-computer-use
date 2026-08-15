@@ -147,6 +147,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
+      # --compose shipped in #448 and ran in no workflow -- the same shape as
+      # the honesty gate #121 wired, one level up. Report-only for the same
+      # reason as the step above: it reds until the delivering PRs merge, and
+      # no PR here can fix that. What it catches meanwhile is the sequence
+      # ceasing to deliver -- a conflict, a broken build, or a red canon gate
+      # on the composed tree -- which nothing else notices until merge day.
+      - name: composition of the delivering PRs (report-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none \
+            https://github.com/Wide-Moat/ocu-sandbox.git "$RUNNER_TEMP/sandbox"
+          python3 scripts/check-readiness-claim.py --compose "$RUNNER_TEMP/sandbox" || true
+
       - name: gate enforcement on this branch (report-only until protection is on)
         # The github context reaches the script through env, never by
         # interpolation inside the run block. A branch name is
