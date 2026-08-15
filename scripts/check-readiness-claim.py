@@ -56,16 +56,6 @@ import time
 # the leg shipped. A symbol rather than a file for the usual reason: files move,
 # and a grep for a path that no longer exists reports a missing property when
 # what moved was a file.
-# The order the delivering branches must land in. --compose merges them in this
-# sequence; whether the ORDER is load-bearing is a claim about running gates,
-# which --compose does not do -- see composed_verdict for what it measures.
-DELIVERING_BRANCHES = (
-    "feat/e1-userns-admission",
-    "supply-chain/verify-before-promote",
-    "canon/decisions-name-their-guards",
-    "supply-chain/pin-image-by-digest",
-)
-
 LEGS = (
     {
         "leg": "proven isolation",
@@ -91,8 +81,19 @@ LEGS = (
         "wired": "AdmitImageRef(spec.Image)",
         "wired_path": "host/exec/manager/manager.go",
         "means": (
-            "a session cannot start from a re-pointable image tag; the release "
-            "path verifies its own signature before applying consumer tags"
+            "a session cannot start from a re-pointable image tag"
+        ),
+    },
+    {
+        "leg": "verified release path",
+        "delivered_by": 116,
+        "repo": "Wide-Moat/ocu-sandbox",
+        "branch": "main",
+        "evidence": "certificate-identity-regexp",
+        "path": ".github/workflows/ghcr-guest.yml",
+        "means": (
+            "the release path verifies its own signature against a pinned "
+            "identity before applying consumer tags"
         ),
     },
     {
@@ -601,9 +602,20 @@ def main(argv: list[str] | None = None) -> int:
         return _self_test()
 
     if args.compose:
-        held, notes = composed_verdict(
-            args.compose, [f"origin/{b}" for b in DELIVERING_BRANCHES]
-        )
+        # Derive the sequence from the legs rather than duplicating it: a leg
+        # whose PR is missing from a hand-kept tuple composes silently without
+        # it, which is how the release-path property went untracked.
+        branches = []
+        for pr in sorted({leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}):
+            code, out, _ = _run(
+                ["gh", "pr", "view", str(pr), "--repo", LEGS[0]["repo"],
+                 "--json", "headRefName", "--jq", ".headRefName"]
+            )
+            if code != 0 or not out.strip():
+                print(f"  cannot resolve the head branch of #{pr}")
+                return 2
+            branches.append(f"origin/{out.strip()}")
+        held, notes = composed_verdict(args.compose, branches)
         for n in notes:
             print(f"  {n}")
         if held < 0:
