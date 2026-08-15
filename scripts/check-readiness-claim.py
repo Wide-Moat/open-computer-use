@@ -210,6 +210,18 @@ def delivery_intact(leg: dict) -> bool | None:
     pr = leg.get("delivered_by")
     if not pr:
         return None
+    try:
+        return _delivery_intact(leg, pr)
+    except (subprocess.SubprocessError, Unreadable, OSError):
+        # Containment, not laziness. This function is a REPORT decoration on a
+        # verdict main() has already reached. Letting it raise would delete the
+        # whole readiness report -- including the HOLDS/NOT YET lines that are
+        # the reason the step runs at all -- and the caller in CI appends
+        # `|| true`, so the deletion would be silent. Degrade to unreadable.
+        return None
+
+
+def _delivery_intact(leg: dict, pr: int) -> bool | None:
     code, out, _ = _run(
         ["gh", "pr", "view", str(pr), "--repo", leg["repo"],
          "--json", "headRefName,state", "--jq", ".headRefName + \" \" + .state"]
@@ -226,21 +238,161 @@ def delivery_intact(leg: dict) -> bool | None:
                          (leg.get("wired"), leg.get("wired_path"))):
         if not symbol:
             continue
-        code2, out2, _ = _run(
+        code2, out2, _err2 = _run(
             ["gh", "api", f"repos/{leg['repo']}/contents/{path}?ref={ref}",
              "--jq", ".content"]
         )
-        if code2 != 0 or not out2.strip():
+        if code2 != 0:
+            # A 404 means the path is genuinely gone from that branch. Anything
+            # else (transport, auth, rate limit) is a failure to look, and the
+            # docstring promises None for those -- reporting BROKEN on a network
+            # blip is the cry-wolf direction.
+            if "404" in _err2 or "Not Found" in _err2:
+                return False
+            return None
+        if not out2.strip():
             return False
         if symbol not in _fetch(leg, path, out2):
             return False
     return True
 
 
-def main() -> int:
+def _self_test() -> int:
+    """Drive main() over a stubbed _run for every delivery outcome.
+
+    Through main(), not delivery_intact alone. The verdict function being right
+    is not the property that matters -- the property is that the REPORT a reader
+    sees says the right thing, and that a failure inside the decoration cannot
+    take the report with it. A self-test that drove only the function would have
+    passed while the live script died on a slow API call and printed nothing.
+    """
+    import base64
+    import io as _io
+    import contextlib
+
+    global _run
+    real_run = _run
+    real_sleep = time.sleep
+    # The stubs below return transport failures on purpose, which drives _run's
+    # real retry backoff. That is seconds of wall clock per case for a delay
+    # this test is not measuring -- and a self-test slow enough to time out in
+    # CI is a self-test people delete. Neutralise the sleep, not the retry: the
+    # retry LOOP still runs, so a stub that returns a transient error is still
+    # attempted three times exactly as production would.
+    time.sleep = lambda _n: None
+    failures = []
+
+    def stub(script):
+        def _stub(args):
+            return script(args)
+        return _stub
+
+    def encoded(text):
+        return 0, base64.b64encode(text.encode()).decode(), ""
+
+    # Every case pins main()'s printed report AND its exit code.
+    cases = []
+
+    def carries(args):
+        # main branch never has the symbol -> every leg NOT YET; the PR does.
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch OPEN", ""
+        ref = next((a for a in args if "ref=" in a), "")
+        if "ref=main" in ref:
+            return encoded("package x\n")
+        return encoded("func AdmitUIDMap\nm.admitUserns(ctx\nfunc AdmitImageRef\n"
+                       "AdmitImageRef(spec.Image)\nfunc TestEveryDecisionNamesAGuardThatExists\n")
+    cases.append(("intact", carries, "is open and still carries", 1))
+
+    def closed(args):
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch MERGED", ""
+        return encoded("package x\n")
+    cases.append(("closed PR", closed, "DELIVERY BROKEN", 1))
+
+    def rebased_away(args):
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch OPEN", ""
+        return encoded("package x\n")  # PR open but symbol gone
+    cases.append(("rebased away", rebased_away, "DELIVERY BROKEN", 1))
+
+    def unreadable(args):
+        if args[:2] == ["gh", "pr"]:
+            return 1, "", "could not connect"
+        return encoded("package x\n")
+    cases.append(("unreadable PR", unreadable, "could not be read", 1))
+
+    def hangs(args):
+        # THE REGRESSION: a slow API call must not delete the report.
+        if args[:2] == ["gh", "pr"]:
+            raise subprocess.TimeoutExpired(cmd=args, timeout=60)
+        return encoded("package x\n")
+    cases.append(("timeout mid-report", hangs, "could not be read", 1))
+
+    def net_fail_contents(args):
+        # Transport failure fetching the PR's file: unreadable, never BROKEN.
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch OPEN", ""
+        ref = next((a for a in args if "ref=" in a), "")
+        if "ref=main" in ref:
+            return encoded("package x\n")
+        return 1, "", "server error: 502 bad gateway"
+    cases.append(("contents transport failure", net_fail_contents, "could not be read", 1))
+
+    for label, script, expect, want_exit in cases:
+        _run = stub(script)
+        buf = _io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = main([])
+        except BaseException as exc:  # noqa: BLE001 - a crash IS the finding
+            failures.append(f"{label}: main() raised {type(exc).__name__}: {exc}")
+            continue
+        finally:
+            _run = real_run
+        out = buf.getvalue()
+        if not out.strip():
+            failures.append(f"{label}: main() printed NOTHING (report deleted)")
+            continue
+        if expect not in out:
+            failures.append(f"{label}: report missing {expect!r}")
+        if code != want_exit:
+            failures.append(f"{label}: exit {code}, want {want_exit}")
+
+    # A BROKEN delivery must never be reported as intact.
+    _run = stub(closed)
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        main([])
+    _run = real_run
+    if "is open and still carries" in buf.getvalue():
+        failures.append("closed PR reported as intact")
+
+    time.sleep = real_sleep
+    for f in failures:
+        print(f"FAIL {f}")
+    if failures:
+        print(f"\n{len(failures)} self-test failure(s)")
+        return 1
+    print(f"delivery reporting: {len(cases)} cases through main(), all as specified")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Explicit argv, because _self_test drives main() while sys.argv still says
+    # --self-test. Re-parsing the process argv there sent main() straight back
+    # into the self-test: infinite recursion that appeared only as a subprocess,
+    # since an in-process caller has a clean sys.argv.
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
-    args = ap.parse_args()
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="drive the report over constructed delivery outcomes and exit",
+    )
+    args = ap.parse_args(argv)
+    if getattr(args, "self_test", False):
+        return _self_test()
 
     results = []
     for leg in LEGS:
