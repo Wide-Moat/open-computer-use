@@ -3,10 +3,11 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 """Answer the deployment-readiness claim by measuring it, not by asserting it.
 
-The claim has three legs — proven isolation, an auditable supply chain, and a
-canon where every decision is recorded and checkable. Each leg has been built
+The claim has four legs — proven isolation, an auditable supply chain, a
+verified release path, and a canon where every decision is recorded and
+checkable. Each leg has been built
 and each has its own gate. What did not exist until this script is a single
-place that asks whether all three hold AT ONCE, against what is actually
+place that asks whether they all hold AT ONCE, against what is actually
 shipped.
 
 That distinction is the whole point. A leg living in an unmerged pull request is
@@ -17,7 +18,7 @@ so the number moves only when work merges.
     python3 scripts/check-readiness-claim.py            # human summary
     python3 scripts/check-readiness-claim.py --json     # machine-readable
 
-Exit 0 when all three legs hold on the shipped branches, 1 when any does not,
+Exit 0 when every leg holds on the shipped branches, 1 when any does not,
 2 when a component cannot be read — unreadable is not the same as unmet, and
 reporting it as unmet would be the same defect this script exists to catch.
 
@@ -56,6 +57,12 @@ import time
 # the leg shipped. A symbol rather than a file for the usual reason: files move,
 # and a grep for a path that no longer exists reports a missing property when
 # what moved was a file.
+# The sequence the delivering PRs must land in. Declared rather than derived:
+# the canon gate reds on its own citations without E1's work, so an order that
+# lands it first proves nothing -- and no ordering available from the data
+# reproduces this one reliably. --compose checks this covers exactly the legs.
+MERGE_ORDER = (115, 116, 117, 118)
+
 LEGS = (
     {
         "leg": "proven isolation",
@@ -81,8 +88,33 @@ LEGS = (
         "wired": "AdmitImageRef(spec.Image)",
         "wired_path": "host/exec/manager/manager.go",
         "means": (
-            "a session cannot start from a re-pointable image tag; the release "
-            "path verifies its own signature before applying consumer tags"
+            "a session cannot start from a re-pointable image tag"
+        ),
+    },
+    {
+        "leg": "verified release path",
+        "delivered_by": 116,
+        "repo": "Wide-Moat/ocu-sandbox",
+        "branch": "main",
+        # The anchored TAIL, not the flag name. `certificate-identity-regexp`
+        # survives loosening the pin to ".*", so it measures that a flag is
+        # present rather than that an identity is pinned. What this still cannot
+        # see: a verify step that gains continue-on-error, or one that moves
+        # after the consumer tags are applied. Both are out of grep's reach.
+        "evidence": "ghcr-guest\\.yml@refs/heads/main$",
+        "path": ".github/workflows/ghcr-guest.yml",
+        # The verify STEP inside promote, ordered before the consumer tags are
+        # applied. My first choice, promote's `needs: [image, sign-image]`, is
+        # present on main too -- in a workflow with zero verification -- so it
+        # passed the moment the evidence did and the two-symbol discipline was
+        # ceremonial. This string is absent on main, present on #116.
+        # Still out of reach: step ORDER within the job, continue-on-error, and
+        # which job the step ends up in.
+        "wired": "verify the signature before trusting the digest",
+        "wired_path": ".github/workflows/ghcr-guest.yml",
+        "means": (
+            "the release path verifies its own signature against a pinned "
+            "identity before applying consumer tags"
         ),
     },
     {
@@ -109,9 +141,11 @@ class Unreadable(Exception):
     """A component could not be read. Distinct from a leg that does not hold."""
 
 
-def _run(args: list[str]) -> tuple[int, str, str]:
+def _run(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     for attempt in range(3):
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        proc = subprocess.run(
+            args, capture_output=True, text=True, timeout=300, cwd=cwd
+        )
         if proc.returncode == 0:
             return 0, proc.stdout, proc.stderr
         transient = any(
@@ -402,6 +436,141 @@ def _self_test() -> int:
     if "is open and still carries" in buf.getvalue():
         failures.append("closed PR reported as intact")
 
+    # composed_verdict, which otherwise nothing in CI exercises. Real git, no
+    # network: a throwaway repo whose branches carry or omit the leg symbols.
+    import subprocess as _sp
+    import tempfile as _tf
+
+    with _tf.TemporaryDirectory() as d:
+        def git(*a):
+            _sp.run(["git", "-C", d, *a], capture_output=True, text=True, check=False)
+
+        leg = LEGS[0]
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@example.invalid")
+        git("config", "user.name", "t")
+        _io.open(f"{d}/seed", "w", encoding="utf-8").write("seed\n")
+        git("add", "-A")
+        git("commit", "-qm", "seed")
+        # A doctruth-shaped module, so the compose cases actually RUN the gate.
+        # Without it every case takes the "gate is not present" path and the
+        # gate-running behaviour is bound by nothing -- measured: deleting the
+        # whole block left this suite green.
+        import os as _os
+        _os.makedirs(f"{d}/host/internal/doctruth", exist_ok=True)
+        _io.open(f"{d}/host/go.mod", "w", encoding="utf-8").write("module x\n\ngo 1.21\n")
+        # A buildable package: the build check runs before the gate, and a module
+        # with nothing to compile is not a useful stand-in for the real tree.
+        _io.open(f"{d}/host/internal/doctruth/doctruth.go", "w", encoding="utf-8").write(
+            "package doctruth\n"
+        )
+        _io.open(f"{d}/host/internal/doctruth/guard_test.go", "w", encoding="utf-8").write(
+            "package doctruth\n\n"
+            "import (\n\t\"os\"\n\t\"testing\"\n)\n\n"
+            "func TestEveryDecisionNamesAGuardThatExists(t *testing.T) {\n"
+            "\tif _, err := os.Stat(\"../../../poison\"); err == nil {\n"
+            "\t\tt.Fatal(\"a decision names a guard that does not exist\")\n"
+            "\t}\n}\n"
+        )
+        git("add", "-A")
+        git("commit", "-qm", "the gate")
+        # The gate lives on main: composed_verdict starts its scratch worktree at
+        # origin/main, so anything the build or gate needs must be on the base,
+        # not only on the branches being merged.
+        git("checkout", "-q", "-b", "carries")
+        for path, symbol in ((leg["path"], leg["evidence"]),
+                             (leg["wired_path"], leg["wired"])):
+            import os as _os
+            _os.makedirs(_os.path.dirname(f"{d}/{path}"), exist_ok=True)
+            # Valid Go, not a bare symbol: the build check runs on this tree, and
+            # a file containing only an identifier is not a package. The fixture
+            # has to be buildable for the gate case to mean anything.
+            pkg = _os.path.basename(_os.path.dirname(path))
+            _io.open(f"{d}/{path}", "w", encoding="utf-8").write(
+                f"package {pkg}\n\n// {symbol}\n"
+            )
+        git("add", "-A")
+        git("commit", "-qm", "carries the leg")
+        git("checkout", "-q", "-b", "broken-build")
+        # Invalid Go inside the host module: without this branch the build loop
+        # -- the check that exists because two branches both edit manager.go --
+        # can be deleted with every committed case still green.
+        _io.open(f"{d}/host/internal/doctruth/broken.go", "w", encoding="utf-8").write(
+            "package doctruth\n\nfunc {\n"
+        )
+        git("add", "-A")
+        git("commit", "-qm", "breaks the build")
+        git("checkout", "-q", "main")
+        git("checkout", "-q", "-b", "poisoned")
+        _io.open(f"{d}/poison", "w", encoding="utf-8").write("x\n")
+        git("add", "-A")
+        git("commit", "-qm", "carries the leg and reds the gate")
+        git("checkout", "-q", "main")
+
+        compose_cases = [
+            ("a branch carrying the leg makes it hold", ["carries"], 1),
+            ("a branch without it does not", ["main"], 0),
+            # -2 is "rejected", distinct from 0 legs holding: the legs were
+            # present, the gate refused the tree.
+            ("a branch that breaks the build is rejected", ["broken-build"], -2),
+            ("a branch that reds the gate is rejected", ["poisoned"], -2),
+            ("a directory that is not a worktree refuses", None, -1),
+            # Bound on the DIAGNOSIS, not the verdict: without the guard a merge
+            # into a missing directory fails anyway, so the refusal alone is
+            # non-discriminating. What the guard buys is not blaming a conflict.
+        ]
+        for label, branches, want in compose_cases:
+            if branches is None:
+                held, notes = composed_verdict("/nonexistent-xyz", ["carries"])
+                if "not a git worktree" not in " ".join(notes):
+                    failures.append(
+                        "a missing directory is blamed on a merge conflict: "
+                        + " ".join(notes)[:60]
+                    )
+            else:
+                # A fresh clone per case: composed_verdict merges, so reusing
+                # one tree lets an earlier case satisfy a later one -- measured,
+                # "a branch without the leg" passed while held=1.
+                w = _tf.mkdtemp(prefix="ocu-case-")
+                _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
+                _sp.run(["git", "-C", w, "checkout", "-q", "main"],
+                        capture_output=True, check=False)
+                try:
+                    held, case_notes = composed_verdict(
+                        w, [f"origin/{b}" for b in branches]
+                    )
+                    # Bind the BUILD check, not just the rejection: a broken tree
+                    # also reds the gate, so asserting -2 alone passes with the
+                    # build loop deleted. The note names which check refused.
+                    if label.startswith("a branch that breaks the build"):
+                        if not any("does not build" in n for n in case_notes):
+                            failures.append(
+                                f"{label}: rejected, but not by the build check: "
+                                + (case_notes[-1][:60] if case_notes else "no notes")
+                            )
+                finally:
+                    import shutil as _sh
+
+                    _sh.rmtree(w, ignore_errors=True)
+
+            got = held if held < 0 else (1 if held >= 1 else 0)
+            if got != want:
+                failures.append(f"{label}: held={held}, want {want}")
+            else:
+                print(f"  ok: {label}")
+
+    # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
+    # composes without its PR and the verdict is confidently wrong.
+    declared = set(MERGE_ORDER)
+    from_legs = {leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}
+    if declared != from_legs:
+        failures.append(
+            f"MERGE_ORDER {sorted(declared)} does not cover the legs "
+            f"{sorted(from_legs)}"
+        )
+    else:
+        print("  ok: MERGE_ORDER covers exactly the delivering PRs")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
@@ -409,6 +578,134 @@ def _self_test() -> int:
         return 1
     print(f"delivery reporting: {len(cases)} cases through main(), all as specified")
     return 0
+
+
+def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]]:
+    """Merge the delivering branches in order and re-run every leg on the result.
+
+    The legs live in PRs that fork from a common base rather than nesting, so
+    "each PR is green" does not establish that the properties hold
+    TOGETHER. Nothing else answers that: the shipped checker reads the shipping
+    branch, and the shipping branch has none of them yet.
+
+    A conflict or a missing symbol is a real answer -- it means the sequence
+    does not deliver what it claims.
+    """
+    notes = []
+    # Compose in a THROWAWAY worktree, never the caller's tree. Pointed at a
+    # working repo the merges land on whatever branch is checked out, and a
+    # conflict leaves it mid-merge with MERGE_HEAD set -- a check that damages
+    # the repo it inspects is worse than no check.
+    # Refuse a directory that is not a git worktree BEFORE attempting a merge.
+    # Otherwise every failure -- missing directory, wrong path, not a repo --
+    # reports "does not merge cleanly", sending the reader to hunt a conflict
+    # that does not exist.
+    code, out, _ = _run(["git", "-C", repo_dir, "rev-parse", "--is-inside-work-tree"])
+    if code != 0 or out.strip() != "true":
+        return -1, [f"{repo_dir} is not a git worktree"]
+
+    import tempfile
+
+    scratch = tempfile.mkdtemp(prefix="ocu-compose-")
+    work = f"{scratch}/tree"
+    # Fetch BEFORE composing: worktree add --detach starts at the caller's HEAD,
+    # and nothing here refreshes the remote. Measured -- composing from a base 40
+    # commits stale reported 4 of 4, describing a merge that will never happen.
+    code, _, err = _run(["git", "-C", repo_dir, "fetch", "-q", "origin"])
+    if code != 0:
+        return -1, [f"cannot fetch origin in {repo_dir}: {err.strip()[:80]}"]
+    code, _, err = _run(
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, "origin/main"]
+    )
+    if code != 0:
+        return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
+    base_code, base, _ = _run(["git", "-C", work, "rev-parse", "--short", "HEAD"])
+    notes.append(f"composed from origin/main at {base.strip() if base_code == 0 else '?'}")
+    try:
+        return _compose_in(repo_dir, work, branches, notes)
+    finally:
+        _run(["git", "-C", repo_dir, "worktree", "remove", "--force", work])
+        # worktree remove deletes the tree, not the mkdtemp parent holding it.
+        # Measured: 80 ocu-compose-* directories left behind by earlier runs.
+        import shutil
+
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _compose_in(
+    origin_dir: str, repo_dir: str, branches: list[str], notes: list[str]
+) -> tuple[int, list[str]]:
+    for branch in branches:
+        # Resolve first: an unfetched or deleted ref is an UNREADABLE input, not
+        # a broken composition, and reporting it as "does not merge cleanly"
+        # blames the branches for the caller's stale remote.
+        code, _, _ = _run(["git", "-C", repo_dir, "rev-parse", "--verify", f"{branch}^{{commit}}"])
+        if code != 0:
+            notes.append(f"{branch} does not resolve -- fetch, or it was deleted")
+            return -1, notes
+        code, out, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        if code != 0:
+            notes.append(f"{branch} does not merge cleanly: {(out + err).strip()[:80]}")
+            return 0, notes
+        notes.append(f"merged {branch}")
+
+    held = 0
+    for leg in LEGS:
+        pairs = [(leg["evidence"], leg["path"])]
+        if leg.get("wired"):
+            pairs.append((leg["wired"], leg["wired_path"]))
+        ok = True
+        for symbol, path in pairs:
+            code, out, _ = _run(["git", "-C", repo_dir, "show", f"HEAD:{path}"])
+            if code != 0 or symbol not in out:
+                ok = False
+                break
+        held += ok
+        notes.append(f"{'PRESENT' if ok else 'ABSENT '} {leg['leg']}")
+
+    # Symbol presence is not the property. A decision citing a guard that does
+    # not exist leaves every symbol in place and reds the canon gate, so a tree
+    # can report every leg present while the gate that proves one of them
+    # fails. Run it.
+    import os
+
+    # Build both modules first. host/ and host/exec/ are separate modules, so
+    # the canon gate never compiles manager.go -- the file BOTH #115 and #118
+    # edit, where both wired symbols live. A textually clean but semantically
+    # broken merge would otherwise pass with every symbol PRESENT.
+    for module in ("host", "host/exec"):
+        mod_dir = f"{repo_dir}/{module}"
+        if not os.path.isfile(f"{mod_dir}/go.mod"):
+            continue
+        code, out, err = _run(["go", "build", "./..."], cwd=mod_dir)
+        if code != 0:
+            # "does not build" is load-bearing text, not prose: the self-test
+            # binds the build check by asserting this note names it. Reword it
+            # and that case goes vacuous while still passing, because a broken
+            # tree also reds the gate below.
+            notes.append(f"{module} does not build on the composed tree: {(out + err).strip()[:120]}")
+            return -2, notes
+        notes.append(f"{module} builds on the composed tree")
+
+    gate_dir = f"{repo_dir}/host"
+    if not os.path.isdir(f"{gate_dir}/internal/doctruth"):
+        # The composed tree does not carry the gate. Say so rather than
+        # reporting a pass for a test that never ran -- and rather than
+        # crashing on a cwd that does not exist.
+        notes.append("canon gate is not present on the composed tree")
+        return held, notes
+    code, out, err = _run(
+        ["go", "test", "./internal/doctruth/...",
+         "-run", "TestEveryDecisionNamesAGuardThatExists"],
+        cwd=gate_dir,
+    )
+    if code != 0:
+        notes.append(f"canon gate FAILS on the composed tree: {(out + err).strip()[:120]}")
+        # -2: rejected, not "0 legs hold". Four PRESENT lines above a 0 count
+        # contradict each other; the composition is refused, not measured.
+        return -2, notes
+    notes.append("canon gate passes on the composed tree")
+    return held, notes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -419,6 +716,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument(
+        "--compose",
+        metavar="DIR",
+        help="a checkout to merge the delivering branches into, then re-run "
+        "every leg against the result: symbol presence plus the canon gate. "
+        "--json has no effect with this mode",
+    )
+    ap.add_argument(
         "--self-test",
         action="store_true",
         help="drive the report over constructed delivery outcomes and exit",
@@ -426,6 +730,52 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if getattr(args, "self_test", False):
         return _self_test()
+
+    if args.compose:
+        # Derive the sequence from the legs rather than duplicating it: a leg
+        # whose PR is missing from a hand-kept tuple composes silently without
+        # it, which is how the release-path property went untracked.
+        # MERGE_ORDER, declared. Neither available ordering is trustworthy:
+        # LEGS order gives 115,118,116,117 -- the legs are listed by property,
+        # not by dependency -- and PR number only happens to match today because
+        # these were opened in dependency order. Deriving the SET from the legs
+        # keeps a leg from composing silently without its PR; the ORDER has to
+        # be stated, and is checked against that set below.
+        declared = list(MERGE_ORDER)
+        from_legs = {leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}
+        if set(declared) != from_legs:
+            missing = from_legs - set(declared)
+            extra = set(declared) - from_legs
+            print(
+                f"  MERGE_ORDER does not cover the legs: missing {sorted(missing)}, "
+                f"unknown {sorted(extra)}"
+            )
+            return 2
+        branches = []
+        for pr in declared:
+            code, out, _ = _run(
+                ["gh", "pr", "view", str(pr), "--repo", LEGS[0]["repo"],
+                 "--json", "headRefName", "--jq", ".headRefName"]
+            )
+            if code != 0 or not out.strip():
+                print(f"  cannot resolve the head branch of #{pr}")
+                return 2
+            branches.append(f"origin/{out.strip()}")
+        held, notes = composed_verdict(args.compose, branches)
+        for n in notes:
+            print(f"  {n}")
+        if held == -2:
+            # A build failure reaches this same line; naming only the gate
+            # would contradict the "does not build" note printed above it.
+            print("\ncomposition rejected: the composed tree fails its build or gate")
+            return 1
+        if held < 0:
+            # Unreadable, not unmet. The distinction is the one this script's
+            # header calls the defect it exists to catch.
+            print("\ncannot judge the composition: a delivering branch is unreadable")
+            return 2
+        print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
+        return 0 if held == len(LEGS) else 1
 
     results = []
     for leg in LEGS:
@@ -468,7 +818,7 @@ def main(argv: list[str] | None = None) -> int:
         if held == len(results):
             print(
                 "The deployment-readiness claim holds on the shipped branches: "
-                "all three legs are merged. Whether each gate is GREEN is a separate question this script does not ask."
+                "every leg is merged. Whether each gate is GREEN is a separate question this script does not ask."
             )
         else:
             print(
