@@ -62,6 +62,11 @@ import time
 # the canon gate reds on its own citations without E1's work, so an order that
 # lands it first proves nothing -- and no ordering available from the data
 # reproduces this one reliably. --compose checks this covers exactly the legs.
+# The ref the composed tree is built from. A constant so the self-test can bind
+# the VALUE composed_verdict uses -- an earlier version grepped this file for
+# the literal, which certifies a string's presence, not the base.
+COMPOSE_BASE = "origin/main"
+
 MERGE_ORDER = (115, 116, 117, 118)
 
 LEGS = (
@@ -507,6 +512,22 @@ def _self_test() -> int:
         git("add", "-A")
         git("commit", "-qm", "carries the leg and reds the gate")
         git("checkout", "-q", "main")
+        # A decoy the remote HEAD points at, carrying NO leg symbols. Without it
+        # the fixture cannot catch a base that names an alias: a clone's
+        # origin/HEAD follows origin/main, so composing from origin/HEAD looks
+        # identical to composing from origin/main. That mutant survived every
+        # check here and got committed green. Now the alias and the branch
+        # disagree, so only a base naming the branch can hold the legs.
+        git("checkout", "-q", "-b", "decoy")
+        # The decoy must DIFFER from main, or composing from either gives the
+        # same tree and the alias stays invisible -- the colliding pair has to
+        # actually collide. Remove the gate here.
+        _sp.run(["rm", "-rf", f"{d}/host/internal/doctruth"], capture_output=True)
+        git("add", "-A")
+        git("commit", "-qm", "decoy without the gate")
+        git("checkout", "-q", "main")
+        _sp.run(["git", "-C", d, "symbolic-ref", "HEAD", "refs/heads/decoy"],
+                capture_output=True)
 
         compose_cases = [
             ("a branch carrying the leg makes it hold", ["carries"], 1),
@@ -534,6 +555,24 @@ def _self_test() -> int:
                 # "a branch without the leg" passed while held=1.
                 w = _tf.mkdtemp(prefix="ocu-case-")
                 _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
+                # The decoy's DIFFERENCE is the only thing binding the call site
+                # to COMPOSE_BASE. A decoy identical to main disarms that
+                # silently -- measured, the alias mutant goes green again. Tree
+                # sha, not commit sha: an empty commit on the decoy would
+                # differ by commit and still not collide.
+                _t_alias = _sp.run(
+                    ["git", "-C", w, "rev-parse", "origin/HEAD^{tree}"],
+                    capture_output=True, text=True,
+                ).stdout.strip()
+                _t_base = _sp.run(
+                    ["git", "-C", w, "rev-parse", f"{COMPOSE_BASE}^{{tree}}"],
+                    capture_output=True, text=True,
+                ).stdout.strip()
+                if _t_alias and _t_alias == _t_base:
+                    failures.append(
+                        "the decoy does not differ from the base, so the alias "
+                        "mutant cannot be caught"
+                    )
                 _sp.run(["git", "-C", w, "checkout", "-q", "main"],
                         capture_output=True, check=False)
                 try:
@@ -648,6 +687,20 @@ def _self_test() -> int:
         else:
             print("  ok: a real conflict is tolerated, not cannot-judge")
 
+    # Value-level, not a source grep. The earlier version searched this file for
+    # the literal "origin/<branch>", which any fixture string satisfied: setting
+    # a leg to "left" printed ok because the conflict fixture already contains
+    # "origin/left". This binds the object composed_verdict actually passes to
+    # `worktree add`, so no literal elsewhere can satisfy it.
+    leg_branches = {leg["branch"] for leg in LEGS}
+    if {f"origin/{b}" for b in leg_branches} != {COMPOSE_BASE}:
+        failures.append(
+            f"legs are measured on {sorted(leg_branches)} but compose bases on "
+            f"{COMPOSE_BASE}"
+        )
+    else:
+        print(f"  ok: compose bases on the branch the legs measure ({COMPOSE_BASE})")
+
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
     declared = set(MERGE_ORDER)
@@ -679,6 +732,23 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
 
     A conflict or a missing symbol is a real answer -- it means the sequence
     does not deliver what it claims.
+
+    WHAT THIS TREE IS. origin/main of the component repo as of this run, with
+    the delivering branches merged on top -- ocu-sandbox has no next/v1, main IS
+    its shipping branch. That is why the base is pinned and printed: composing
+    from the caller's HEAD would model a tree nobody deploys.
+
+    Precisely: the tree as it WOULD exist if the delivering branches merged onto
+    today's origin/main in MERGE_ORDER. Not as it will exist -- anything landing
+    on main before the real merges, or any rebase of a delivering branch,
+    changes the answer. That is why the base sha is in the output and why the
+    check runs per-PR rather than once.
+
+    WHAT IT IS NOT. A green here is a claim about a FUTURE merge, never
+    readiness. Readiness is the plain mode, which reads the shipping branch and
+    reports 0 of 4 until the legs actually land. Nobody should cite a compose
+    green as evidence a property is deployed; the two answers are different
+    questions and the exit codes are deliberately separate.
     """
     notes = []
     # Compose in a THROWAWAY worktree, never the caller's tree. Pointed at a
@@ -700,16 +770,24 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     # Fetch BEFORE composing: worktree add --detach starts at the caller's HEAD,
     # and nothing here refreshes the remote. Measured -- composing from a base 40
     # commits stale reported 4 of 4, describing a merge that will never happen.
-    code, _, err = _run(["git", "-C", repo_dir, "fetch", "-q", "origin"])
+    # Fetch the remote COMPOSE_BASE names, not a hardcoded "origin": if the
+    # constant ever moves to another remote, a fixed fetch would refresh the
+    # wrong one and compose from a stale ref -- the coincidence-of-literals
+    # shape this file has already been bitten by twice.
+    base_remote = COMPOSE_BASE.split("/", 1)[0]
+    code, _, err = _run(["git", "-C", repo_dir, "fetch", "-q", base_remote])
     if code != 0:
-        return -1, [f"cannot fetch origin in {repo_dir}: {err.strip()[:80]}"]
+        return -1, [f"cannot fetch {base_remote} in {repo_dir}: {err.strip()[:80]}"]
     code, _, err = _run(
-        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, "origin/main"]
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, COMPOSE_BASE]
     )
     if code != 0:
         return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
     base_code, base, _ = _run(["git", "-C", work, "rev-parse", "--short", "HEAD"])
-    notes.append(f"composed from origin/main at {base.strip() if base_code == 0 else '?'}")
+    notes.append(
+        f"composed from {COMPOSE_BASE} at "
+        f"{base.strip() if base_code == 0 else '?'}"
+    )
     try:
         return _compose_in(repo_dir, work, branches, notes)
     finally:
