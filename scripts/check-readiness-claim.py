@@ -648,6 +648,22 @@ def _self_test() -> int:
         else:
             print("  ok: a real conflict is tolerated, not cannot-judge")
 
+    # The compose base must BE the branch the legs are measured against, or the
+    # composed tree models something nobody deploys and "4 of 4" answers a
+    # question no one asked. Prose in the docstring is not enough -- that is the
+    # claim-without-a-check shape this script exists to catch.
+    leg_branches = {leg["branch"] for leg in LEGS}
+    src = _io.open(__file__, encoding="utf-8").read()
+    for branch in leg_branches:
+        if f'"origin/{branch}"' not in src:
+            failures.append(
+                f"legs are measured on {branch} but compose does not base on "
+                f"origin/{branch}"
+            )
+            break
+    else:
+        print(f"  ok: compose bases on the branch the legs measure ({', '.join(sorted(leg_branches))})")
+
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
     declared = set(MERGE_ORDER)
@@ -679,6 +695,18 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
 
     A conflict or a missing symbol is a real answer -- it means the sequence
     does not deliver what it claims.
+
+    WHAT THIS TREE IS. It is origin/main of the component repo with the
+    delivering branches merged on top, so it models the shipping branch as it
+    will exist after the merges -- ocu-sandbox has no next/v1, main IS its
+    shipping branch. That is why the base is pinned and printed: composing from
+    the caller's HEAD would model a tree nobody deploys.
+
+    WHAT IT IS NOT. A green here is a claim about a FUTURE merge, never
+    readiness. Readiness is the plain mode, which reads the shipping branch and
+    reports 0 of 4 until the legs actually land. Nobody should cite a compose
+    green as evidence a property is deployed; the two answers are different
+    questions and the exit codes are deliberately separate.
     """
     notes = []
     # Compose in a THROWAWAY worktree, never the caller's tree. Pointed at a
