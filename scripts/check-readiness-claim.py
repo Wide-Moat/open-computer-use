@@ -611,6 +611,43 @@ def _self_test() -> int:
         else:
             print(f"  ok: {label}")
 
+    # A real conflict must stay in the TOLERATED bucket while an environmental
+    # merge failure must not. Every non-zero git merge used to return 0, which
+    # is how the identity failure reported a green job over one branch of four.
+    with _tf.TemporaryDirectory() as dc:
+        def gc(*a):
+            return _sp.run(
+                ["git", "-C", dc, "-c", "user.email=t@x", "-c", "user.name=t", *a],
+                capture_output=True, text=True,
+            )
+
+        gc("init", "-q", "-b", "main")
+        _io.open(f"{dc}/f", "w", encoding="utf-8").write("base\n")
+        gc("add", "-A")
+        gc("commit", "-qm", "base")
+        for nm, txt in (("left", "LEFT\n"), ("right", "RIGHT\n")):
+            gc("checkout", "-q", "main")
+            gc("checkout", "-q", "-b", nm)
+            _io.open(f"{dc}/f", "w", encoding="utf-8").write(txt)
+            gc("add", "-A")
+            gc("commit", "-qm", nm)
+        gc("checkout", "-q", "main")
+        wc = _tf.mkdtemp(prefix="ocu-conflict-")
+        try:
+            _sp.run(["git", "clone", "-q", dc, wc], capture_output=True)
+            held_c, notes_c = composed_verdict(wc, ["origin/left", "origin/right"])
+        finally:
+            import shutil as _sh2
+
+            _sh2.rmtree(wc, ignore_errors=True)
+        if held_c != 0 or not any("conflicts:" in n for n in notes_c):
+            failures.append(
+                f"a real conflict must hold=0 and say conflicts: got {held_c}, "
+                + (notes_c[-1][:50] if notes_c else "no notes")
+            )
+        else:
+            print("  ok: a real conflict is tolerated, not cannot-judge")
+
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
     declared = set(MERGE_ORDER)
@@ -713,8 +750,18 @@ def _compose_in(
              "merge", "-q", "--no-edit", branch]
         )
         if code != 0:
-            notes.append(f"{branch} does not merge cleanly: {(out + err).strip()[:80]}")
-            return 0, notes
+            # A CONFLICT is a real "does not hold". Anything else -- no identity,
+            # a broken index, a missing object -- is the environment failing, and
+            # returning 0 for it puts it in the bucket the CI step tolerates.
+            # That is not hypothetical: the identity failure landed exactly here
+            # and a job that composed one branch of four reported success.
+            # git exits 1 on a conflict and 128 on operational refusal.
+            detail = (out + err).strip()
+            if code == 1 and "CONFLICT" in detail.upper():
+                notes.append(f"{branch} conflicts: {detail[:80]}")
+                return 0, notes
+            notes.append(f"{branch} cannot be merged here: {detail[:80]}")
+            return -1, notes
         notes.append(f"merged {branch}")
 
     held = 0
