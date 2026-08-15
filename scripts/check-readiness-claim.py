@@ -212,7 +212,7 @@ def delivery_intact(leg: dict) -> bool | None:
         return None
     try:
         return _delivery_intact(leg, pr)
-    except (subprocess.SubprocessError, Unreadable, OSError):
+    except (subprocess.SubprocessError, Unreadable, OSError, ValueError):
         # Containment, not laziness. This function is a REPORT decoration on a
         # verdict main() has already reached. Letting it raise would delete the
         # whole readiness report -- including the HOLDS/NOT YET lines that are
@@ -272,20 +272,17 @@ def _self_test() -> int:
 
     global _run
     real_run = _run
-    real_sleep = time.sleep
-    # The stubs below return transport failures on purpose, which drives _run's
-    # real retry backoff. That is seconds of wall clock per case for a delay
-    # this test is not measuring -- and a self-test slow enough to time out in
-    # CI is a self-test people delete. Neutralise the sleep, not the retry: the
-    # retry LOOP still runs, so a stub that returns a transient error is still
-    # attempted three times exactly as production would.
-    time.sleep = lambda _n: None
     failures = []
 
     def stub(script):
         def _stub(args):
             return script(args)
         return _stub
+
+    _ALL_SYMBOLS = (
+        "func AdmitUIDMap\nm.admitUserns(ctx\nfunc AdmitImageRef\n"
+        "AdmitImageRef(spec.Image)\nfunc TestEveryDecisionNamesAGuardThatExists\n"
+    )
 
     def encoded(text):
         return 0, base64.b64encode(text.encode()).decode(), ""
@@ -300,8 +297,7 @@ def _self_test() -> int:
         ref = next((a for a in args if "ref=" in a), "")
         if "ref=main" in ref:
             return encoded("package x\n")
-        return encoded("func AdmitUIDMap\nm.admitUserns(ctx\nfunc AdmitImageRef\n"
-                       "AdmitImageRef(spec.Image)\nfunc TestEveryDecisionNamesAGuardThatExists\n")
+        return encoded(_ALL_SYMBOLS)
     cases.append(("intact", carries, "is open and still carries", 1))
 
     def closed(args):
@@ -339,6 +335,46 @@ def _self_test() -> int:
         return 1, "", "server error: 502 bad gateway"
     cases.append(("contents transport failure", net_fail_contents, "could not be read", 1))
 
+    # The three cases below each isolate ONE check. Earlier stubs withheld BOTH
+    # symbols at once, so a BROKEN verdict could arrive by either path and the
+    # individual gates were decoration: dropping the state check, the wired
+    # check, or the 404 branch each left every case green.
+    def merged_but_carries(args):
+        # State gate alone: the branch still has both symbols, only the PR died.
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch MERGED", ""
+        ref = next((a for a in args if "ref=" in a), "")
+        if "ref=main" in ref:
+            return encoded("package x\n")
+        return encoded(_ALL_SYMBOLS)
+    cases.append(("merged PR whose branch still carries", merged_but_carries,
+                  "DELIVERY BROKEN", 1))
+
+    def wired_dropped(args):
+        # Wired-symbol check alone: the verdict function is there, the call is not.
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch OPEN", ""
+        ref = next((a for a in args if "ref=" in a), "")
+        if "ref=main" in ref:
+            return encoded("package x\n")
+        path = next((a for a in args if "contents/" in a), "")
+        if "manager.go" in path:
+            return encoded("package x\n")  # call site rebased away
+        return encoded(_ALL_SYMBOLS)
+    cases.append(("call site dropped, verdict kept", wired_dropped,
+                  "DELIVERY BROKEN", 1))
+
+    def contents_gone(args):
+        # 404 branch alone: the PR is open, the FILE is gone from the branch.
+        if args[:2] == ["gh", "pr"]:
+            return 0, "some-branch OPEN", ""
+        ref = next((a for a in args if "ref=" in a), "")
+        if "ref=main" in ref:
+            return encoded("package x\n")
+        return 1, "", "gh: Not Found (HTTP 404)"
+    cases.append(("contents 404 on the PR branch", contents_gone,
+                  "DELIVERY BROKEN", 1))
+
     for label, script, expect, want_exit in cases:
         _run = stub(script)
         buf = _io.StringIO()
@@ -368,7 +404,6 @@ def _self_test() -> int:
     if "is open and still carries" in buf.getvalue():
         failures.append("closed PR reported as intact")
 
-    time.sleep = real_sleep
     for f in failures:
         print(f"FAIL {f}")
     if failures:
