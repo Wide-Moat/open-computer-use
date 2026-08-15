@@ -56,6 +56,16 @@ import time
 # the leg shipped. A symbol rather than a file for the usual reason: files move,
 # and a grep for a path that no longer exists reports a missing property when
 # what moved was a file.
+# The order is load-bearing: the canon gate reds on its own citations without
+# E1's work, so a sequence that lands it first proves nothing. Named here rather
+# than in a comment so --compose actually executes the claim.
+DELIVERING_BRANCHES = (
+    "feat/e1-userns-admission",
+    "supply-chain/verify-before-promote",
+    "canon/decisions-name-their-guards",
+    "supply-chain/pin-image-by-digest",
+)
+
 LEGS = (
     {
         "leg": "proven isolation",
@@ -411,6 +421,41 @@ def _self_test() -> int:
     return 0
 
 
+def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]]:
+    """Merge the delivering branches in order and re-run every leg on the result.
+
+    The legs live in PRs that fork from a common base rather than nesting, so
+    "each PR is green" does not establish that the three properties hold
+    TOGETHER. Nothing else answers that: the shipped checker reads the shipping
+    branch, and the shipping branch has none of them yet.
+
+    A conflict or a missing symbol is a real answer -- it means the sequence
+    does not deliver what it claims.
+    """
+    notes = []
+    for branch in branches:
+        code, _, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        if code != 0:
+            notes.append(f"{branch} does not merge cleanly: {err.strip()[:80]}")
+            return 0, notes
+        notes.append(f"merged {branch}")
+
+    held = 0
+    for leg in LEGS:
+        pairs = [(leg["evidence"], leg["path"])]
+        if leg.get("wired"):
+            pairs.append((leg["wired"], leg["wired_path"]))
+        ok = True
+        for symbol, path in pairs:
+            code, out, _ = _run(["git", "-C", repo_dir, "show", f"HEAD:{path}"])
+            if code != 0 or symbol not in out:
+                ok = False
+                break
+        held += ok
+        notes.append(f"{'HOLDS' if ok else 'NOT YET'} {leg['leg']}")
+    return held, notes
+
+
 def main(argv: list[str] | None = None) -> int:
     # Explicit argv, because _self_test drives main() while sys.argv still says
     # --self-test. Re-parsing the process argv there sent main() straight back
@@ -419,6 +464,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument(
+        "--compose",
+        metavar="DIR",
+        help="a checkout to merge the delivering branches into, then re-run "
+        "every leg against the result -- proves the sequence delivers 3 of 3",
+    )
+    ap.add_argument(
         "--self-test",
         action="store_true",
         help="drive the report over constructed delivery outcomes and exit",
@@ -426,6 +477,15 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if getattr(args, "self_test", False):
         return _self_test()
+
+    if args.compose:
+        held, notes = composed_verdict(
+            args.compose, [f"origin/{b}" for b in DELIVERING_BRANCHES]
+        )
+        for n in notes:
+            print(f"  {n}")
+        print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
+        return 0 if held == len(LEGS) else 1
 
     results = []
     for leg in LEGS:
