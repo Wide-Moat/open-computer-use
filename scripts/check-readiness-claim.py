@@ -62,6 +62,11 @@ import time
 # the canon gate reds on its own citations without E1's work, so an order that
 # lands it first proves nothing -- and no ordering available from the data
 # reproduces this one reliably. --compose checks this covers exactly the legs.
+# The ref the composed tree is built from. A constant so the self-test can bind
+# the VALUE composed_verdict uses -- an earlier version grepped this file for
+# the literal, which certifies a string's presence, not the base.
+COMPOSE_BASE = "origin/main"
+
 MERGE_ORDER = (115, 116, 117, 118)
 
 LEGS = (
@@ -648,27 +653,19 @@ def _self_test() -> int:
         else:
             print("  ok: a real conflict is tolerated, not cannot-judge")
 
-    # Not redundant with the fixture cases, though it looks it. Point the base at
-    # a NONEXISTENT ref and six of them red too -- the worktree cannot be made.
-    # Point it at origin/HEAD, which exists and resolves to the same commit, and
-    # every one of them passes while the base has silently stopped naming the
-    # branch the legs read. Only this fires. Measured both ways.
-    #
-    # The compose base must BE the branch the legs are measured against, or the
-    # composed tree models something nobody deploys and "4 of 4" answers a
-    # question no one asked. Prose in the docstring is not enough -- that is the
-    # claim-without-a-check shape this script exists to catch.
+    # Value-level, not a source grep. The earlier version searched this file for
+    # the literal "origin/<branch>", which any fixture string satisfied: setting
+    # a leg to "left" printed ok because the conflict fixture already contains
+    # "origin/left". This binds the object composed_verdict actually passes to
+    # `worktree add`, so no literal elsewhere can satisfy it.
     leg_branches = {leg["branch"] for leg in LEGS}
-    src = _io.open(__file__, encoding="utf-8").read()
-    for branch in leg_branches:
-        if f'"origin/{branch}"' not in src:
-            failures.append(
-                f"legs are measured on {branch} but compose does not base on "
-                f"origin/{branch}"
-            )
-            break
+    if {f"origin/{b}" for b in leg_branches} != {COMPOSE_BASE}:
+        failures.append(
+            f"legs are measured on {sorted(leg_branches)} but compose bases on "
+            f"{COMPOSE_BASE}"
+        )
     else:
-        print(f"  ok: compose bases on the branch the legs measure ({', '.join(sorted(leg_branches))})")
+        print(f"  ok: compose bases on the branch the legs measure ({COMPOSE_BASE})")
 
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
@@ -707,10 +704,11 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     its shipping branch. That is why the base is pinned and printed: composing
     from the caller's HEAD would model a tree nobody deploys.
 
-    It is a snapshot, not a prediction. Anything that lands on main before the
-    real merges, or any rebase of a delivering branch, changes the answer -- so
-    a green means the sequence delivered AT THIS COMMIT, which is why the base
-    sha is in the output and why the check runs per-PR rather than once.
+    Precisely: the tree as it WOULD exist if the delivering branches merged onto
+    today's origin/main in MERGE_ORDER. Not as it will exist -- anything landing
+    on main before the real merges, or any rebase of a delivering branch,
+    changes the answer. That is why the base sha is in the output and why the
+    check runs per-PR rather than once.
 
     WHAT IT IS NOT. A green here is a claim about a FUTURE merge, never
     readiness. Readiness is the plain mode, which reads the shipping branch and
@@ -742,12 +740,15 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     if code != 0:
         return -1, [f"cannot fetch origin in {repo_dir}: {err.strip()[:80]}"]
     code, _, err = _run(
-        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, "origin/main"]
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, COMPOSE_BASE]
     )
     if code != 0:
         return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
     base_code, base, _ = _run(["git", "-C", work, "rev-parse", "--short", "HEAD"])
-    notes.append(f"composed from origin/main at {base.strip() if base_code == 0 else '?'}")
+    notes.append(
+        f"composed from {COMPOSE_BASE} at "
+        f"{base.strip() if base_code == 0 else '?'}"
+    )
     try:
         return _compose_in(repo_dir, work, branches, notes)
     finally:
