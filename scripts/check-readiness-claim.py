@@ -528,14 +528,9 @@ def _self_test() -> int:
                         + " ".join(notes)[:60]
                     )
             else:
-                # A fresh clone per case: composed_verdict MERGES, so reusing one
-                # tree lets an earlier case's merge satisfy a later one -- the
-                # "does not" case passed only because a previous merge left the
-                # symbols behind.
                 # A fresh clone per case: composed_verdict merges, so reusing
-                # one tree lets an earlier case satisfy a later one. Keep the
-                # clone alive for the whole call -- composed_verdict adds its
-                # own scratch worktree inside it and needs the parent to exist.
+                # one tree lets an earlier case satisfy a later one -- measured,
+                # "a branch without the leg" passed while held=1.
                 w = _tf.mkdtemp(prefix="ocu-case-")
                 _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
                 _sp.run(["git", "-C", w, "checkout", "-q", "main"],
@@ -684,6 +679,10 @@ def _compose_in(
             continue
         code, out, err = _run(["go", "build", "./..."], cwd=mod_dir)
         if code != 0:
+            # "does not build" is load-bearing text, not prose: the self-test
+            # binds the build check by asserting this note names it. Reword it
+            # and that case goes vacuous while still passing, because a broken
+            # tree also reds the gate below.
             notes.append(f"{module} does not build on the composed tree: {(out + err).strip()[:120]}")
             return -2, notes
         notes.append(f"{module} builds on the composed tree")
@@ -720,7 +719,8 @@ def main(argv: list[str] | None = None) -> int:
         "--compose",
         metavar="DIR",
         help="a checkout to merge the delivering branches into, then re-run "
-        "every leg against the result: symbol presence plus the canon gate",
+        "every leg against the result: symbol presence plus the canon gate. "
+        "--json has no effect with this mode",
     )
     ap.add_argument(
         "--self-test",
