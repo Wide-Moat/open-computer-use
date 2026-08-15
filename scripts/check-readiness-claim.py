@@ -412,6 +412,66 @@ def _self_test() -> int:
     if "is open and still carries" in buf.getvalue():
         failures.append("closed PR reported as intact")
 
+    # composed_verdict, which otherwise nothing in CI exercises. Real git, no
+    # network: a throwaway repo whose branches carry or omit the leg symbols.
+    import subprocess as _sp
+    import tempfile as _tf
+
+    with _tf.TemporaryDirectory() as d:
+        def git(*a):
+            _sp.run(["git", "-C", d, *a], capture_output=True, text=True, check=False)
+
+        leg = LEGS[0]
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "t@example.invalid")
+        git("config", "user.name", "t")
+        _io.open(f"{d}/seed", "w", encoding="utf-8").write("seed\n")
+        git("add", "-A")
+        git("commit", "-qm", "seed")
+        git("checkout", "-q", "-b", "carries")
+        for path, symbol in ((leg["path"], leg["evidence"]),
+                             (leg["wired_path"], leg["wired"])):
+            import os as _os
+            _os.makedirs(_os.path.dirname(f"{d}/{path}"), exist_ok=True)
+            _io.open(f"{d}/{path}", "w", encoding="utf-8").write(symbol + "\n")
+        git("add", "-A")
+        git("commit", "-qm", "carries the leg")
+        git("checkout", "-q", "main")
+
+        compose_cases = [
+            ("a branch carrying the leg makes it hold", ["carries"], 1),
+            ("a branch without it does not", ["main"], 0),
+            ("a directory that is not a worktree refuses", None, 0),
+            # Bound on the DIAGNOSIS, not the verdict: without the guard a merge
+            # into a missing directory fails anyway, so the refusal alone is
+            # non-discriminating. What the guard buys is not blaming a conflict.
+        ]
+        for label, branches, want in compose_cases:
+            if branches is None:
+                held, notes = composed_verdict("/nonexistent-xyz", ["carries"])
+                if "not a git worktree" not in " ".join(notes):
+                    failures.append(
+                        "a missing directory is blamed on a merge conflict: "
+                        + " ".join(notes)[:60]
+                    )
+            else:
+                # A fresh clone per case: composed_verdict MERGES, so reusing one
+                # tree lets an earlier case's merge satisfy a later one -- the
+                # "does not" case passed only because a previous merge left the
+                # symbols behind.
+                with _tf.TemporaryDirectory() as w:
+                    _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
+                    _sp.run(["git", "-C", w, "checkout", "-q", "main"],
+                            capture_output=True, check=False)
+                    held, _ = composed_verdict(
+                        w, [f"origin/{b}" for b in branches]
+                    )
+            got = 1 if held >= 1 else 0
+            if got != want:
+                failures.append(f"{label}: held={held}, want {'>=1' if want else '0'}")
+            else:
+                print(f"  ok: {label}")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
@@ -433,6 +493,14 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     does not deliver what it claims.
     """
     notes = []
+    # Refuse a directory that is not a git worktree BEFORE attempting a merge.
+    # Otherwise every failure -- missing directory, wrong path, not a repo --
+    # reports "does not merge cleanly", sending the reader to hunt a conflict
+    # that does not exist.
+    code, out, _ = _run(["git", "-C", repo_dir, "rev-parse", "--is-inside-work-tree"])
+    if code != 0 or out.strip() != "true":
+        return 0, [f"{repo_dir} is not a git worktree"]
+
     for branch in branches:
         code, _, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
         if code != 0:
