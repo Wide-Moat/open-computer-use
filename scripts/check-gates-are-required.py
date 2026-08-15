@@ -917,10 +917,22 @@ def main() -> int:
         # printed into a log nobody opens is the theatre this NFR names. A
         # warning annotation appears on the PR without failing the run.
         if os.environ.get("GITHUB_ACTIONS") == "true":
-            summary = "; ".join(problems)
+            # A newline in either field ENDS the annotation and lets whatever
+            # follows be read as its own workflow command, so a branch name on
+            # a fork PR could forge one. Strip the separators rather than trust
+            # the source: %0A is the encoding a real multi-line annotation uses.
+            def _one_line(text: str) -> str:
+                return (
+                    str(text)
+                    .replace("\r", " ")
+                    .replace("\n", " ")
+                    .replace("::", ": ")
+                )
+
+            summary = _one_line("; ".join(problems))
             print(
                 f"::warning title=NFR-SEC-89: gates are not enforced on "
-                f"{args.branch}::{summary}"
+                f"{_one_line(args.branch)}::{summary}"
             )
         print(
             "\nEvery gate can be green and every one of them merged past. "
