@@ -250,8 +250,6 @@ def _delivery_intact(leg: dict, pr: int) -> bool | None:
             if "404" in _err2 or "Not Found" in _err2:
                 return False
             return None
-        if not out2.strip():
-            return False
         if symbol not in _fetch(leg, path, out2):
             return False
     return True
