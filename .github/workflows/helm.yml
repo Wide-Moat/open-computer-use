@@ -51,7 +51,7 @@ jobs:
           set -e
           # Should fail — schema requires either secrets.mcpApiKey or secrets.existingSecret.
           if helm lint helm/computer-use-server 2>/dev/null; then
-            echo "BUG: helm lint should have failed with empty secrets" >&2
+            echo "BUG: helm lint should have failed with empty secrets"
             exit 1
           fi
           # Should pass with all required keys set
@@ -90,9 +90,30 @@ jobs:
             --set persistence.varLibDocker.persistentVolume.enabled=false \
             > /tmp/render-runc.yaml
           grep -q "privileged: true" /tmp/render-runc.yaml
-          ! grep -q "runtimeClassName:" /tmp/render-runc.yaml
-          ! grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml
-          ! grep -q "volumeMode: Block" /tmp/render-runc.yaml
+          # Each runc-path assertion is written as an explicit if/exit rather than
+          # `! grep -q ...`: a pipeline inverted with `!` is exempt from errexit, so
+          # such an assertion only fails the step when it happens to be the last
+          # command in the script.
+          if grep -q "runtimeClassName:" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not pin a runtimeClass -- found 'runtimeClassName:' in the runc render"
+            exit 1
+          fi
+          if grep -q "checksum/dind-init:" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not carry the kata init checksum annotation -- found 'checksum/dind-init:' in the runc render"
+            exit 1
+          fi
+          if grep -q "name: dind-init" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not mount the kata init volume -- found 'name: dind-init' in the runc render"
+            exit 1
+          fi
+          if grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not mount the kata init entrypoint -- found 'dind-entrypoint.sh' in the runc render"
+            exit 1
+          fi
+          if grep -q "volumeMode: Block" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not request a block device -- found 'volumeMode: Block' in the runc render"
+            exit 1
+          fi
 
       - name: Install kubeconform and validate manifests against k8s schemas
         env:
