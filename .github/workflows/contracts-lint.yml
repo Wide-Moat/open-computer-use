@@ -30,13 +30,6 @@ on:
       # one breaking its own self-test — triggers none of them: the checker was
       # the one thing its own gate did not check.
       - "scripts/**"
-      - "helm/**"
-      # One filter, six jobs, no per-job conditions — so they fire together or
-      # not at all. That costs a few irrelevant runs (a helm-only PR runs the
-      # contract linters) and buys the property that matters at flip time: no
-      # context can be required-and-absent, which would deadlock a PR that never
-      # triggered it. Splitting the chart into its own workflow would reverse
-      # that trade.
   push:
     branches:
       - next/v1
@@ -223,39 +216,3 @@ jobs:
             exit 1
           fi
           echo "contracts/ is clean"
-
-  chart:
-    name: chart — helm lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4.3.1
-      # The chart was linted only by the publish job, which runs on push — so a
-      # PR could break the schema and the failure appeared after the merge, in a
-      # job whose purpose is publishing rather than checking.
-      #
-      # The overrides are the same ones publish uses, and they are load-bearing:
-      # values.yaml ships empty placeholders for the operator to fill, while the
-      # schema demands non-empty, so linting the file as committed always fails.
-      # Red-probed that this still catches a real defect — flipping
-      # secrets.create to false leaves the oneOf with no matching branch and the
-      # lint errors.
-      - name: helm lint the chart as a PR would ship it
-        run: |
-          helm lint helm/computer-use-server \
-            --set secrets.mcpApiKey=lint-only \
-            --set orchestrator.env.PUBLIC_BASE_URL=https://lint.example.com
-
-      # lint alone is not enough, measured: a template referencing a value that
-      # does not exist — `{{ .Values.missing | required "…" }}` — produces a WARN
-      # and "0 chart(s) failed", so a chart that cannot install passes. --strict
-      # does not change that; rendering does, exiting 1. A gate that misses the
-      # breakage an operator hits first is not worth the minute it costs.
-      - name: helm template — the chart must actually render
-        run: |
-          helm template lint-render helm/computer-use-server \
-            --set secrets.mcpApiKey=lint-only \
-            --set orchestrator.env.PUBLIC_BASE_URL=https://lint.example.com \
-            > /dev/null

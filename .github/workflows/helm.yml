@@ -22,7 +22,10 @@ on:
       - 'examples/helm/**'
       - '.github/workflows/helm.yml'
   pull_request:
-    branches: [main]
+    # next/v1 too: the chart ships from this branch, and without it a PR
+    # could break the chart with nothing saying so until the publish job ran
+    # after the merge.
+    branches: [main, next/v1]
     paths:
       - 'helm/**'
       - 'examples/helm/**'
