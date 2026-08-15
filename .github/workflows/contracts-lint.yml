@@ -147,20 +147,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
-      # --compose shipped in #448 and ran in no workflow -- the same shape as
-      # the honesty gate #121 wired, one level up. Report-only for the same
-      # reason as the step above: it reds until the delivering PRs merge, and
-      # no PR here can fix that. What it catches meanwhile is the sequence
-      # ceasing to deliver -- a conflict, a broken build, or a red canon gate
-      # on the composed tree -- which nothing else notices until merge day.
-      - name: composition of the delivering PRs (report-only)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git clone -q --filter=blob:none \
-            https://github.com/Wide-Moat/ocu-sandbox.git "$RUNNER_TEMP/sandbox"
-          python3 scripts/check-readiness-claim.py --compose "$RUNNER_TEMP/sandbox" || true
 
       - name: gate enforcement on this branch (report-only until protection is on)
         # The github context reaches the script through env, never by
@@ -236,3 +222,33 @@ jobs:
             exit 1
           fi
           echo "contracts/ is clean"
+
+  composition:
+    # Its own job: this clones a sibling repo and runs a cold Go build, which is
+    # minutes of network-bound work -- measured, not the 11s a warm cache
+    # suggests. Riding in a contract-validation job would let a clone flake red
+    # "the contract documents are valid".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+      # --compose shipped in #448 and ran in no workflow -- the same shape as the
+      # honesty gate #121 wired, one level up.
+      #
+      # Report-only, but NOT for the reason the readiness step above gives. That
+      # one reds until the legs merge; this one exits 0 today. A compose red is
+      # actionable -- it means the sequence stopped delivering -- but only in
+      # ocu-sandbox, never by the PR being tested here.
+      #
+      # `|| [ "$?" -eq 1 ]` tolerates exit 1 (composition does not hold) and lets
+      # exit 2 (CANNOT JUDGE -- auth refused, a head branch gone) red the job.
+      # Flattening both with `|| true` is the pattern this file already records
+      # swallowing an auth failure every run while nobody noticed.
+      - name: composition of the delivering PRs (report-only on exit 1)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none \
+            https://github.com/Wide-Moat/ocu-sandbox.git "$RUNNER_TEMP/sandbox"
+          python3 scripts/check-readiness-claim.py --compose "$RUNNER_TEMP/sandbox" \
+            || [ "$?" -eq 1 ]
