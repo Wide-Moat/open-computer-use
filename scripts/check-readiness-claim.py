@@ -736,11 +736,16 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     # Fetch BEFORE composing: worktree add --detach starts at the caller's HEAD,
     # and nothing here refreshes the remote. Measured -- composing from a base 40
     # commits stale reported 4 of 4, describing a merge that will never happen.
-    code, _, err = _run(["git", "-C", repo_dir, "fetch", "-q", "origin"])
+    # Fetch the remote COMPOSE_BASE names, not a hardcoded "origin": if the
+    # constant ever moves to another remote, a fixed fetch would refresh the
+    # wrong one and compose from a stale ref -- the coincidence-of-literals
+    # shape this file has already been bitten by twice.
+    base_remote = COMPOSE_BASE.split("/", 1)[0]
+    code, _, err = _run(["git", "-C", repo_dir, "fetch", "-q", base_remote])
     if code != 0:
-        return -1, [f"cannot fetch origin in {repo_dir}: {err.strip()[:80]}"]
+        return -1, [f"cannot fetch {base_remote} in {repo_dir}: {err.strip()[:80]}"]
     code, _, err = _run(
-        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, COMPOSE_BASE]
+        ["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work, "origin/HEAD"]
     )
     if code != 0:
         return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
