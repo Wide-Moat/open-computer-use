@@ -602,6 +602,61 @@ def self_test() -> int:
     #
     # The first case is the one the key-only comparison failed: the workflow
     # knows the job as `sast-semgrep`, protection requires it as "SAST — semgrep".
+    # The ASSEMBLY, composed. Every defect this file has shipped lived here
+    # rather than in a piece: a filter handed the wrong argument, a wrapper built
+    # without the field it is filtered on, a scan run unconditionally. Driving
+    # the pieces alone left all three re-mergeable.
+    #
+    # The shape is CI's: protection unreadable (403), enforcement carried by an
+    # active ruleset, the workflow scan finding one job that cannot fail.
+    gate_ctx = [
+        {"context": c}
+        for c in ("gitleaks", "trufflehog", "SAST — semgrep", "Analyze (go)", "trivy")
+    ]
+    ci_rules = [
+        {
+            "type": "required_status_checks",
+            "ruleset_id": 1,
+            "parameters": {"required_status_checks": gate_ctx},
+        }
+    ]
+    lax_job = [("security.yml:sast-semgrep", {"sast-semgrep", "sast — semgrep"})]
+
+    def compose(jobs, bypass=None, slug="owner/repo"):
+        return assemble_problems(
+            None, False, ci_rules, bypass or [], [], slug, "owner/repo", jobs
+        )
+
+    only_lax = compose(lax_job)
+    if len(only_lax) != 1 or "continue-on-error" not in only_lax[0]:
+        print(
+            "SELF-TEST FAIL: a required job that cannot fail must be the sole "
+            f"finding in the CI shape, got {only_lax!r}"
+        )
+        failures += 1
+    elif compose([("x.yml:other", {"other"})]) != []:
+        print("SELF-TEST FAIL: a job that is not required must leave the CI shape clean")
+        failures += 1
+    elif compose(lax_job, bypass=[{"actor_id": 1}]) == only_lax:
+        # A bypassable ruleset is discarded by verdict()'s filter, so the shape
+        # degrades to "cannot establish enforcement" rather than naming bypass —
+        # correct, since a ruleset anyone can step around establishes nothing.
+        # What must not happen is the two shapes reporting identically, which is
+        # what a wrapper dropping bypass_actors would produce.
+        print(
+            "SELF-TEST FAIL: a bypassable ruleset must not read the same as an "
+            "enforcing one"
+        )
+        failures += 1
+    elif compose(lax_job, slug="someone/else") != []:
+        print(
+            "SELF-TEST FAIL: a mismatched checkout must skip the scan, so no "
+            "finding can come from another repository's workflows"
+        )
+        failures += 1
+    else:
+        print("  ok: the composed assembly reports exactly the finding each shape earns")
+
     # The required set can come from a RULESET instead of classic protection —
     # the configuration the flip instructions recommend, since CI can observe
     # rulesets and cannot read the protection endpoint. Taking it from
@@ -704,6 +759,84 @@ def self_test() -> int:
     return 0
 
 
+def assemble_problems(
+    protection: dict | None,
+    protection_readable: bool,
+    effective: list[dict],
+    bypass: list[dict],
+    unreadable_rulesets: list[str],
+    local_repo_slug: str,
+    target_repo: str,
+    workflow_jobs: list[tuple[str, set[str]]],
+) -> list[str]:
+    """Assemble the full verdict from already-fetched inputs.
+
+    Pure, and separate from main() for the reason this file has now recorded
+    three times: every defect it has shipped lived in the ASSEMBLY — a filter
+    passed the wrong argument, a wrapper built without the field it is filtered
+    on, a scan run unconditionally. Each instance was fixed and the class stayed
+    open, because self_test() drove the pieces and never their composition.
+    Mutating any wiring decision below now reds a committed case.
+    """
+    rulesets = synthesise_ruleset(effective, bypass)
+
+    problems = verdict(
+        protection if isinstance(protection, dict) else None,
+        rulesets,
+        protection_readable=protection_readable,
+    )
+    # A job that cannot fail cannot gate, whatever protection says about it.
+    # Only REQUIRED contexts are judged: a reporting-only job carrying
+    # continue-on-error is doing what it was built to do, and calling that a
+    # violation would red every repository that has one.
+    #
+    # Consequence worth naming: on a branch with no protection this finds
+    # nothing, because there are no required contexts to compare against. That
+    # is not a miss — such a branch already reports the larger violation above.
+    # It does mean the check first bites at flip time, which is exactly when a
+    # continue-on-error gate would otherwise be marked required and enforce
+    # nothing.
+    # Both sources, because either can be the one enforcing. A branch protected
+    # by a RULESET rather than by classic protection has an empty protection
+    # payload, and taking the required set from protection alone would report no
+    # unenforceable job on exactly the configuration the flip instructions
+    # recommend — rulesets, because CI can observe them.
+    required_names = required_contexts(protection, rulesets)
+    # Only meaningful when the checkout IS the repository being judged. Reading
+    # the local .github/workflows while --repo names a different repository
+    # would report that repository's gates using this one's files — measured, and
+    # it produced two findings that belonged to the wrong repo.
+    local_repo = local_repo_slug
+    jobs = workflow_jobs if local_repo == target_repo.lower() else []
+    if not local_repo:
+        print(
+            "note: skipping the continue-on-error check — the checkout's own "
+            "repository could not be determined from the git remote",
+            file=sys.stderr,
+        )
+    elif local_repo != target_repo.lower():
+        print(
+            f"note: skipping the continue-on-error check — this checkout is "
+            f"{local_repo}, not {target_repo}",
+            file=sys.stderr,
+        )
+    for job in unenforceable_required_jobs(jobs, required_names):
+        problems.append(
+            f"{job} carries continue-on-error, so it reports success whatever it "
+            "finds — a required context that cannot fail is presence, not "
+            "enforcement"
+        )
+
+    for rid in unreadable_rulesets:
+        problems.append(
+            f"cannot establish the bypass posture for ruleset {rid}: it is "
+            "unreadable with this token, and a ruleset whose bypass actors "
+            "cannot be read must not be assumed to have none"
+        )
+
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo")
@@ -763,61 +896,17 @@ def main() -> int:
             # read the ruleset would report a bypassable branch as enforced.
             unreadable_rulesets.append(str(rid))
 
-    rulesets = synthesise_ruleset(effective, bypass)
-
-    problems = verdict(
+    problems = assemble_problems(
         protection if isinstance(protection, dict) else None,
-        rulesets,
-        protection_readable=protection_readable,
+        protection_readable,
+        effective,
+        bypass,
+        unreadable_rulesets,
+        _local_repo_slug(),
+        args.repo,
+        non_blocking_jobs(),
     )
-    # A job that cannot fail cannot gate, whatever protection says about it.
-    # Only REQUIRED contexts are judged: a reporting-only job carrying
-    # continue-on-error is doing what it was built to do, and calling that a
-    # violation would red every repository that has one.
-    #
-    # Consequence worth naming: on a branch with no protection this finds
-    # nothing, because there are no required contexts to compare against. That
-    # is not a miss — such a branch already reports the larger violation above.
-    # It does mean the check first bites at flip time, which is exactly when a
-    # continue-on-error gate would otherwise be marked required and enforce
-    # nothing.
-    # Both sources, because either can be the one enforcing. A branch protected
-    # by a RULESET rather than by classic protection has an empty protection
-    # payload, and taking the required set from protection alone would report no
-    # unenforceable job on exactly the configuration the flip instructions
-    # recommend — rulesets, because CI can observe them.
-    required_names = required_contexts(protection, rulesets)
-    # Only meaningful when the checkout IS the repository being judged. Reading
-    # the local .github/workflows while --repo names a different repository
-    # would report that repository's gates using this one's files — measured, and
-    # it produced two findings that belonged to the wrong repo.
-    local_repo = _local_repo_slug()
-    jobs = non_blocking_jobs() if local_repo == args.repo.lower() else []
-    if not local_repo:
-        print(
-            "note: skipping the continue-on-error check — the checkout's own "
-            "repository could not be determined from the git remote",
-            file=sys.stderr,
-        )
-    elif local_repo != args.repo.lower():
-        print(
-            f"note: skipping the continue-on-error check — this checkout is "
-            f"{local_repo}, not {args.repo}",
-            file=sys.stderr,
-        )
-    for job in unenforceable_required_jobs(jobs, required_names):
-        problems.append(
-            f"{job} carries continue-on-error, so it reports success whatever it "
-            "finds — a required context that cannot fail is presence, not "
-            "enforcement"
-        )
 
-    for rid in unreadable_rulesets:
-        problems.append(
-            f"cannot establish the bypass posture for ruleset {rid}: it is "
-            "unreadable with this token, and a ruleset whose bypass actors "
-            "cannot be read must not be assumed to have none"
-        )
     if problems:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:
