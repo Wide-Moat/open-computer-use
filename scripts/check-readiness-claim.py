@@ -59,6 +59,7 @@ import time
 LEGS = (
     {
         "leg": "proven isolation",
+        "delivered_by": 115,
         "repo": "Wide-Moat/ocu-sandbox",
         "branch": "main",
         "evidence": "func AdmitUIDMap",
@@ -72,6 +73,7 @@ LEGS = (
     },
     {
         "leg": "auditable supply chain",
+        "delivered_by": 118,
         "repo": "Wide-Moat/ocu-sandbox",
         "branch": "main",
         "evidence": "func AdmitImageRef",
@@ -85,6 +87,7 @@ LEGS = (
     },
     {
         "leg": "checkable canon",
+        "delivered_by": 117,
         "repo": "Wide-Moat/ocu-sandbox",
         "branch": "main",
         "evidence": "func TestEveryDecisionNamesAGuardThatExists",
@@ -189,6 +192,51 @@ def _fetch(leg: dict, path: str, encoded: str) -> str:
         raise Unreadable(f"{leg['repo']}:{path}: undecodable content: {exc}") from exc
 
 
+def delivery_intact(leg: dict) -> bool | None:
+    """Does the PR named in `delivered_by` still carry this leg's evidence?
+
+    A leg that does not hold on the shipping branch is expected while its PR is
+    open. What is NOT expected is the delivery path silently emptying: a rebase
+    that drops the call site, a branch renamed out from under the claim, a PR
+    closed without merging. All of those leave the readiness line reading
+    "NOT YET" — identical to healthy work in progress — so the regression hides
+    behind the expected state.
+
+    Returns True when the PR still carries both markers, False when it does not,
+    and None when the answer cannot be read (no token, network, PR gone). None is
+    not False: an unreadable delivery path is reported as unreadable, because
+    treating "could not look" as "broken" would cry wolf on every offline run.
+    """
+    pr = leg.get("delivered_by")
+    if not pr:
+        return None
+    code, out, _ = _run(
+        ["gh", "pr", "view", str(pr), "--repo", leg["repo"],
+         "--json", "headRefName,state", "--jq", ".headRefName + \" \" + .state"]
+    )
+    if code != 0 or not out.strip():
+        return None
+    parts = out.strip().split()
+    if len(parts) != 2:
+        return None
+    ref, state = parts
+    if state != "OPEN":
+        return False
+    for symbol, path in ((leg["evidence"], leg["path"]),
+                         (leg.get("wired"), leg.get("wired_path"))):
+        if not symbol:
+            continue
+        code2, out2, _ = _run(
+            ["gh", "api", f"repos/{leg['repo']}/contents/{path}?ref={ref}",
+             "--jq", ".content"]
+        )
+        if code2 != 0 or not out2.strip():
+            return False
+        if symbol not in _fetch(leg, path, out2):
+            return False
+    return True
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
@@ -201,7 +249,8 @@ def main() -> int:
         except Unreadable as exc:
             print(f"cannot read {leg['leg']}: {exc}", file=sys.stderr)
             return 2
-        results.append({**leg, "holds": holds})
+        intact = None if holds else delivery_intact(leg)
+        results.append({**leg, "holds": holds, "delivery_intact": intact})
 
     if args.json:
         print(json.dumps(results, indent=2))
@@ -211,6 +260,24 @@ def main() -> int:
             print(f"  {mark} {r['leg']}")
             print(f"            {r['means']}")
             print(f"            evidence: {r['evidence']} on {r['repo']}@{r['branch']}")
+            if not r["holds"] and r.get("delivered_by"):
+                intact = r.get("delivery_intact")
+                if intact is True:
+                    print(
+                        f"            delivery: #{r['delivered_by']} is open and "
+                        "still carries this leg"
+                    )
+                elif intact is False:
+                    print(
+                        f"            DELIVERY BROKEN: #{r['delivered_by']} no "
+                        "longer carries this leg (closed, renamed, or rebased "
+                        "away) -- the path to shipping it is gone, not pending"
+                    )
+                else:
+                    print(
+                        f"            delivery: #{r['delivered_by']} could not "
+                        "be read from here"
+                    )
         held = sum(1 for r in results if r["holds"])
         print()
         if held == len(results):
