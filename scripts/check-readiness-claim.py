@@ -572,9 +572,24 @@ def _self_test() -> int:
         def _raise(*_a, _e=exc, **_k):
             raise _e
 
+        # Stub the gh resolution too. The CI self-test step carries no GH_TOKEN,
+        # so without this main() returns 2 at "cannot resolve the head branch"
+        # before ever reaching the containment -- the case would assert 2 and
+        # pass with the containment deleted, which is exactly what it exists to
+        # catch. Measured: narrowing the containment with gh auth broken left
+        # this suite green.
+        _real_run = _run
+        def _stub_run(args, cwd=None):
+            if args[:2] == ["gh", "pr"]:
+                return 0, "stub-branch", ""
+            return _real_run(args, cwd=cwd)
+
+        globals()["_run"] = _stub_run
         globals()["composed_verdict"] = _raise
+        buf = _io.StringIO()
         try:
-            code = main(["--compose", "/nonexistent-for-self-test"])
+            with contextlib.redirect_stdout(buf):
+                code = main(["--compose", "/nonexistent-for-self-test"])
         except BaseException as esc:  # noqa: BLE001 - an escape IS the finding
             # Narrowing the containment lets the exception escape instead of
             # returning 2. Name it rather than tracebacking, so the failure says
@@ -583,6 +598,12 @@ def _self_test() -> int:
             failures.append(f"{label}: escaped as {type(esc).__name__}")
         finally:
             globals()["composed_verdict"] = _real_cv
+            globals()["_run"] = _real_run
+        # Bind the OUTPUT, not just the code: the gh-failure path also returns 2
+        # and cannot print this line.
+        if code == 2 and "cannot judge the composition: " not in buf.getvalue():
+            failures.append(f"{label}: returned 2 without naming the exception")
+            continue
         if code == -99:
             continue
         if code != 2:
@@ -674,7 +695,23 @@ def _compose_in(
         if code != 0:
             notes.append(f"{branch} does not resolve -- fetch, or it was deleted")
             return -1, notes
-        code, out, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        # NOT covered by the self-test, deliberately: git on a developer
+        # machine auto-derives an identity from the OS user and commits happily
+        # with no config at all (measured, rc 0), so a case stripping
+        # GIT_CONFIG_* cannot fail here even with this fix removed. The CI log
+        # is the evidence -- run 31870669835 composed one branch of four.
+        #
+        # Identity on the merge itself, not on the caller's clone: a runner has
+        # none, the first merge fast-forwards and needs no commit, and the
+        # second dies "Committer identity unknown" -- reported as "does not
+        # merge cleanly" and tolerated as a normal red. Setting it workflow-side
+        # fixes one caller; every other invocation keeps the silent fake-green.
+        code, out, err = _run(
+            ["git", "-C", repo_dir,
+             "-c", "user.email=composition@invalid",
+             "-c", "user.name=composition check",
+             "merge", "-q", "--no-edit", branch]
+        )
         if code != 0:
             notes.append(f"{branch} does not merge cleanly: {(out + err).strip()[:80]}")
             return 0, notes

@@ -147,7 +147,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
-
       - name: gate enforcement on this branch (report-only until protection is on)
         # The github context reaches the script through env, never by
         # interpolation inside the run block. A branch name is
@@ -253,11 +252,5 @@ jobs:
           set -euo pipefail
           git clone -q --filter=blob:none \
             https://github.com/Wide-Moat/ocu-sandbox.git "$RUNNER_TEMP/sandbox"
-          # A runner has no git identity. The first merge fast-forwards and needs
-          # none; the second wants a merge commit and dies "Committer identity
-          # unknown" -- which the script reported as "does not merge cleanly",
-          # so the job passed on a 0 of 4 that had composed one branch.
-          git -C "$RUNNER_TEMP/sandbox" config user.email "ci@invalid"
-          git -C "$RUNNER_TEMP/sandbox" config user.name "composition check"
           python3 scripts/check-readiness-claim.py --compose "$RUNNER_TEMP/sandbox" \
             || [ "$?" -eq 1 ]
