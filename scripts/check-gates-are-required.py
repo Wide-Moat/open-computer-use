@@ -226,7 +226,9 @@ def _local_repo_slug() -> str:
     return ""
 
 
-def non_blocking_jobs(workflow_dir: str = ".github/workflows") -> list[str]:
+def non_blocking_jobs(
+    workflow_dir: str = ".github/workflows",
+) -> list[tuple[str, set[str]]]:
     """Name jobs that carry continue-on-error, so they cannot fail a merge.
 
     A required context whose job is continue-on-error is green whatever the tool
@@ -239,7 +241,7 @@ def non_blocking_jobs(workflow_dir: str = ".github/workflows") -> list[str]:
     verdict reads rules rather than settings — this is a property of what runs,
     not of what is configured.
     """
-    found: list[str] = []
+    found: list[tuple[str, set[str]]] = []
     for path in sorted(glob.glob(os.path.join(workflow_dir, "*.yml"))):
         try:
             doc = yaml.safe_load(open(path, encoding="utf-8"))
@@ -249,7 +251,17 @@ def non_blocking_jobs(workflow_dir: str = ".github/workflows") -> list[str]:
             if not isinstance(job, dict):
                 continue
             if job.get("continue-on-error") is True:
-                found.append(f"{os.path.basename(path)}:{name}")
+                # Carry BOTH identities. The context GitHub publishes is the
+                # job's `name:` when it has one and the job KEY otherwise, and a
+                # required-set comparison against only one of them matches
+                # nothing: this repo's lax jobs are keyed `sast-semgrep` while
+                # their contexts read "SAST — semgrep".
+                found.append(
+                    (
+                        f"{os.path.basename(path)}:{name}",
+                        {name.lower(), str(job.get("name") or name).lower()},
+                    )
+                )
     return found
 
 
@@ -493,9 +505,20 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as td:
         io_open = open
         with io_open(os.path.join(td, "a.yml"), "w", encoding="utf-8") as fh:
-            fh.write("jobs:\n  gating:\n    runs-on: x\n  lax:\n    continue-on-error: true\n    runs-on: x\n")
+            # The lax job carries a display name unlike its key, because the
+            # required-set comparison must match EITHER — a job keyed `foo` can
+            # publish its context as "Foo Bar", and matching only one finds
+            # nothing on real workflows.
+            fh.write(
+                "jobs:\n"
+                "  gating:\n    runs-on: x\n"
+                "  lax:\n    name: Lax Display\n"
+                "    continue-on-error: true\n    runs-on: x\n"
+            )
         found = non_blocking_jobs(td)
-    if found != ["a.yml:lax"]:
+    labels = [f for f, _ in found]
+    identities = found[0][1] if found else set()
+    if labels != ["a.yml:lax"] or identities != {"lax", "Lax Display".lower()}:
         print(
             "SELF-TEST FAIL: the continue-on-error scan should report exactly "
             f"the lax job, got {found!r}"
@@ -654,9 +677,8 @@ def main() -> int:
             f"{local_repo}, not {args.repo}",
             file=sys.stderr,
         )
-    for job in jobs:
-        jobname = job.split(":", 1)[1].lower()
-        if jobname not in required_names:
+    for job, identities in jobs:
+        if not (identities & required_names):
             continue
         problems.append(
             f"{job} carries continue-on-error, so it reports success whatever it "
