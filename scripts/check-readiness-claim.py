@@ -56,9 +56,9 @@ import time
 # the leg shipped. A symbol rather than a file for the usual reason: files move,
 # and a grep for a path that no longer exists reports a missing property when
 # what moved was a file.
-# The order is load-bearing: the canon gate reds on its own citations without
-# E1's work, so a sequence that lands it first proves nothing. Named here rather
-# than in a comment so --compose actually executes the claim.
+# The order the delivering branches must land in. --compose merges them in this
+# sequence; whether the ORDER is load-bearing is a claim about running gates,
+# which --compose does not do -- see composed_verdict for what it measures.
 DELIVERING_BRANCHES = (
     "feat/e1-userns-admission",
     "supply-chain/verify-before-promote",
@@ -119,9 +119,11 @@ class Unreadable(Exception):
     """A component could not be read. Distinct from a leg that does not hold."""
 
 
-def _run(args: list[str]) -> tuple[int, str, str]:
+def _run(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     for attempt in range(3):
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
+        proc = subprocess.run(
+            args, capture_output=True, text=True, timeout=300, cwd=cwd
+        )
         if proc.returncode == 0:
             return 0, proc.stdout, proc.stderr
         transient = any(
@@ -441,7 +443,7 @@ def _self_test() -> int:
         compose_cases = [
             ("a branch carrying the leg makes it hold", ["carries"], 1),
             ("a branch without it does not", ["main"], 0),
-            ("a directory that is not a worktree refuses", None, 0),
+            ("a directory that is not a worktree refuses", None, -1),
             # Bound on the DIAGNOSIS, not the verdict: without the guard a merge
             # into a missing directory fails anyway, so the refusal alone is
             # non-discriminating. What the guard buys is not blaming a conflict.
@@ -459,16 +461,18 @@ def _self_test() -> int:
                 # tree lets an earlier case's merge satisfy a later one -- the
                 # "does not" case passed only because a previous merge left the
                 # symbols behind.
-                with _tf.TemporaryDirectory() as w:
-                    _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
-                    _sp.run(["git", "-C", w, "checkout", "-q", "main"],
-                            capture_output=True, check=False)
-                    held, _ = composed_verdict(
-                        w, [f"origin/{b}" for b in branches]
-                    )
-            got = 1 if held >= 1 else 0
+                # A fresh clone per case: composed_verdict merges, so reusing
+                # one tree lets an earlier case satisfy a later one. Keep the
+                # clone alive for the whole call -- composed_verdict adds its
+                # own scratch worktree inside it and needs the parent to exist.
+                w = _tf.mkdtemp(prefix="ocu-case-")
+                _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
+                _sp.run(["git", "-C", w, "checkout", "-q", "main"],
+                        capture_output=True, check=False)
+                held, _ = composed_verdict(w, [f"origin/{b}" for b in branches])
+            got = -1 if held < 0 else (1 if held >= 1 else 0)
             if got != want:
-                failures.append(f"{label}: held={held}, want {'>=1' if want else '0'}")
+                failures.append(f"{label}: held={held}, want {want}")
             else:
                 print(f"  ok: {label}")
 
@@ -493,18 +497,45 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     does not deliver what it claims.
     """
     notes = []
+    # Compose in a THROWAWAY worktree, never the caller's tree. Pointed at a
+    # working repo the merges land on whatever branch is checked out, and a
+    # conflict leaves it mid-merge with MERGE_HEAD set -- a check that damages
+    # the repo it inspects is worse than no check.
     # Refuse a directory that is not a git worktree BEFORE attempting a merge.
     # Otherwise every failure -- missing directory, wrong path, not a repo --
     # reports "does not merge cleanly", sending the reader to hunt a conflict
     # that does not exist.
     code, out, _ = _run(["git", "-C", repo_dir, "rev-parse", "--is-inside-work-tree"])
     if code != 0 or out.strip() != "true":
-        return 0, [f"{repo_dir} is not a git worktree"]
+        return -1, [f"{repo_dir} is not a git worktree"]
 
+    import tempfile
+
+    scratch = tempfile.mkdtemp(prefix="ocu-compose-")
+    work = f"{scratch}/tree"
+    code, _, err = _run(["git", "-C", repo_dir, "worktree", "add", "-q", "--detach", work])
+    if code != 0:
+        return -1, [f"cannot create a scratch worktree in {repo_dir}: {err.strip()[:80]}"]
+    try:
+        return _compose_in(repo_dir, work, branches, notes)
+    finally:
+        _run(["git", "-C", repo_dir, "worktree", "remove", "--force", work])
+
+
+def _compose_in(
+    origin_dir: str, repo_dir: str, branches: list[str], notes: list[str]
+) -> tuple[int, list[str]]:
     for branch in branches:
-        code, _, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        # Resolve first: an unfetched or deleted ref is an UNREADABLE input, not
+        # a broken composition, and reporting it as "does not merge cleanly"
+        # blames the branches for the caller's stale remote.
+        code, _, _ = _run(["git", "-C", repo_dir, "rev-parse", "--verify", f"{branch}^{{commit}}"])
         if code != 0:
-            notes.append(f"{branch} does not merge cleanly: {err.strip()[:80]}")
+            notes.append(f"{branch} does not resolve -- fetch, or it was deleted")
+            return -1, notes
+        code, out, err = _run(["git", "-C", repo_dir, "merge", "-q", "--no-edit", branch])
+        if code != 0:
+            notes.append(f"{branch} does not merge cleanly: {(out + err).strip()[:80]}")
             return 0, notes
         notes.append(f"merged {branch}")
 
@@ -520,7 +551,30 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
                 ok = False
                 break
         held += ok
-        notes.append(f"{'HOLDS' if ok else 'NOT YET'} {leg['leg']}")
+        notes.append(f"{'PRESENT' if ok else 'ABSENT '} {leg['leg']}")
+
+    # Symbol presence is not the property. A decision citing a guard that does
+    # not exist leaves every symbol in place and reds the canon gate, so a tree
+    # can report every leg present while the gate that proves one of them
+    # fails. Run it.
+    import os
+
+    gate_dir = f"{repo_dir}/host"
+    if not os.path.isdir(f"{gate_dir}/internal/doctruth"):
+        # The composed tree does not carry the gate. Say so rather than
+        # reporting a pass for a test that never ran -- and rather than
+        # crashing on a cwd that does not exist.
+        notes.append("canon gate is not present on the composed tree")
+        return held, notes
+    code, out, err = _run(
+        ["go", "test", "./internal/doctruth/...",
+         "-run", "TestEveryDecisionNamesAGuardThatExists"],
+        cwd=gate_dir,
+    )
+    if code != 0:
+        notes.append(f"canon gate FAILS on the composed tree: {(out + err).strip()[:120]}")
+        return 0, notes
+    notes.append("canon gate passes on the composed tree")
     return held, notes
 
 
@@ -552,6 +606,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         for n in notes:
             print(f"  {n}")
+        if held < 0:
+            # Unreadable, not unmet. The distinction is the one this script's
+            # header calls the defect it exists to catch.
+            print("\ncannot judge the composition: a delivering branch is unreadable")
+            return 2
         print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
         return 0 if held == len(LEGS) else 1
 
