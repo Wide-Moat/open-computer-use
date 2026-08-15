@@ -25,6 +25,11 @@ on:
     paths:
       - "contracts/**"
       - ".github/workflows/contracts-lint.yml"
+      # The jobs below run scripts/check-gates-are-required.py --self-test and
+      # the readiness claim. Without this a change to either script — including
+      # one breaking its own self-test — triggers none of them: the checker was
+      # the one thing its own gate did not check.
+      - "scripts/**"
   push:
     branches:
       - next/v1
