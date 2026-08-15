@@ -752,6 +752,44 @@ def self_test() -> int:
         else:
             print(f"  ok: {label} -> {'clean' if clean else problems[0][:60]}")
 
+    # The annotation is the only thing that makes this finding visible: the CI
+    # step is report-only, so deleting the emission would leave every gate green
+    # while the violation went back to printing into a log nobody opens.
+    ann_cases = [
+        ("clean shape emits nothing", "next/v1", [], None),
+        (
+            "violating shape annotates",
+            "next/v1",
+            ["no branch protection and no ruleset with enforcement=active"],
+            "::warning title=NFR-SEC-89: gates are not enforced on next/v1::"
+            "no branch protection and no ruleset with enforcement=active",
+        ),
+        (
+            "a newline cannot forge a second command",
+            "next/v1\n::error::forged",
+            ["a\n::error::forged"],
+            None,  # asserted structurally below, not by equality
+        ),
+    ]
+    for label, branch, probs, want in ann_cases:
+        got = violation_annotation(branch, probs)
+        if want is not None and got != want:
+            print(f"SELF-TEST FAIL: {label!r}: got {got!r}")
+            failures += 1
+            continue
+        if want is None and not probs:
+            if got is not None:
+                print(f"SELF-TEST FAIL: {label!r}: emitted {got!r} with no problems")
+                failures += 1
+                continue
+        if got is not None:
+            body = got[len("::warning title=") :]
+            if "\n" in got or "\r" in got or "::" in body.replace("::", "", 1):
+                print(f"SELF-TEST FAIL: {label!r}: annotation is forgeable: {got!r}")
+                failures += 1
+                continue
+        print(f"  ok: {label}")
+
     if failures:
         print(f"\n{failures} self-test case(s) failed: the check does not discriminate.")
         return 1
@@ -837,6 +875,31 @@ def assemble_problems(
     return problems
 
 
+def violation_annotation(branch: str, problems: list[str]) -> str | None:
+    """Build the one-line workflow annotation for an unenforced branch.
+
+    Separate from main() so the self-test can drive it. It has to be: the CI
+    step is report-only, so deleting the emission entirely would leave every
+    gate green while the finding went back to being invisible -- the exact
+    failure this annotation exists to end.
+
+    A newline in either field ENDS the annotation and lets whatever follows be
+    read as its own workflow command, and a branch name is attacker-supplied on
+    a fork PR. Strip the separators rather than trust the source.
+    """
+    if not problems:
+        return None
+
+    def _one_line(text: str) -> str:
+        return str(text).replace("\r", " ").replace("\n", " ").replace("::", ": ")
+
+    summary = _one_line("; ".join(problems))
+    return (
+        f"::warning title=NFR-SEC-89: gates are not enforced on "
+        f"{_one_line(branch)}::{summary}"
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo")
@@ -911,6 +974,14 @@ def main() -> int:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:
             print(f"  - {p}")
+        # Annotate, so the finding survives the log. The CI step is report-only
+        # by design -- enabling protection is an owner action, and blocking here
+        # would red every PR for a condition no PR can fix -- but report-only
+        # printed into a log nobody opens is the theatre this NFR names. A
+        # warning annotation appears on the PR without failing the run.
+        annotation = violation_annotation(args.branch, problems)
+        if annotation and os.environ.get("GITHUB_ACTIONS") == "true":
+            print(annotation)
         print(
             "\nEvery gate can be green and every one of them merged past. "
             "Presence is not enforcement."
