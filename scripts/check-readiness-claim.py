@@ -555,6 +555,24 @@ def _self_test() -> int:
                 # "a branch without the leg" passed while held=1.
                 w = _tf.mkdtemp(prefix="ocu-case-")
                 _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
+                # The decoy's DIFFERENCE is the only thing binding the call site
+                # to COMPOSE_BASE. A decoy identical to main disarms that
+                # silently -- measured, the alias mutant goes green again. Tree
+                # sha, not commit sha: an empty commit on the decoy would
+                # differ by commit and still not collide.
+                _t_alias = _sp.run(
+                    ["git", "-C", w, "rev-parse", "origin/HEAD^{tree}"],
+                    capture_output=True, text=True,
+                ).stdout.strip()
+                _t_base = _sp.run(
+                    ["git", "-C", w, "rev-parse", f"{COMPOSE_BASE}^{{tree}}"],
+                    capture_output=True, text=True,
+                ).stdout.strip()
+                if _t_alias and _t_alias == _t_base:
+                    failures.append(
+                        "the decoy does not differ from the base, so the alias "
+                        "mutant cannot be caught"
+                    )
                 _sp.run(["git", "-C", w, "checkout", "-q", "main"],
                         capture_output=True, check=False)
                 try:
