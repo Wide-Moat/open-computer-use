@@ -205,6 +205,34 @@ def synthesise_ruleset(
     ]
 
 
+def required_contexts(
+    protection: dict | None, rulesets: list[dict]
+) -> set[str]:
+    """Every context this branch requires, from BOTH sources, lowercased.
+
+    Either can be the one enforcing. A branch protected by a ruleset rather than
+    classic protection has an empty protection payload, and reading protection
+    alone reports no unenforceable job on exactly the configuration the flip
+    instructions recommend — rulesets, because CI can observe them and cannot
+    read the protection endpoint.
+    """
+    names: set[str] = set()
+    if isinstance(protection, dict):
+        rsc = protection.get("required_status_checks") or {}
+        names |= {str(c).lower() for c in rsc.get("contexts") or []}
+        names |= {str(c.get("context", "")).lower() for c in rsc.get("checks") or []}
+    for rs in rulesets or []:
+        for rule in rs.get("rules") or []:
+            if str(rule.get("type", "")).lower() != "required_status_checks":
+                continue
+            params = rule.get("parameters") or {}
+            names |= {
+                str(c.get("context", "")).lower()
+                for c in params.get("required_status_checks") or []
+            }
+    return {n for n in names if n}
+
+
 def unenforceable_required_jobs(
     jobs: list[tuple[str, set[str]]], required: set[str]
 ) -> list[str]:
@@ -565,6 +593,35 @@ def self_test() -> int:
     #
     # The first case is the one the key-only comparison failed: the workflow
     # knows the job as `sast-semgrep`, protection requires it as "SAST — semgrep".
+    # The required set can come from a RULESET instead of classic protection —
+    # the configuration the flip instructions recommend, since CI can observe
+    # rulesets and cannot read the protection endpoint. Taking it from
+    # protection alone reported nothing there; assert the extraction here so
+    # that stays fixed.
+    ruleset_only = [
+        {
+            "enforcement": "active",
+            "target": "branch",
+            "rules": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [{"context": "SAST — semgrep"}]
+                    },
+                }
+            ],
+        }
+    ]
+    from_ruleset = required_contexts(None, ruleset_only)
+    if from_ruleset != {"sast — semgrep"}:
+        print(
+            "SELF-TEST FAIL: a ruleset's required contexts must count as required, "
+            f"got {from_ruleset!r}"
+        )
+        failures += 1
+    else:
+        print("  ok: required contexts are read from rulesets as well as protection")
+
     lax = [("security.yml:sast-semgrep", {"sast-semgrep", "sast — semgrep"})]
     if unenforceable_required_jobs(lax, {"sast — semgrep"}) != ["security.yml:sast-semgrep"]:
         print("SELF-TEST FAIL: a required job named by its display name went unreported")
@@ -709,13 +766,12 @@ def main() -> int:
     # It does mean the check first bites at flip time, which is exactly when a
     # continue-on-error gate would otherwise be marked required and enforce
     # nothing.
-    required_names = set()
-    if isinstance(protection, dict):
-        rsc = protection.get("required_status_checks") or {}
-        required_names |= {str(c).lower() for c in rsc.get("contexts") or []}
-        required_names |= {
-            str(c.get("context", "")).lower() for c in rsc.get("checks") or []
-        }
+    # Both sources, because either can be the one enforcing. A branch protected
+    # by a RULESET rather than by classic protection has an empty protection
+    # payload, and taking the required set from protection alone would report no
+    # unenforceable job on exactly the configuration the flip instructions
+    # recommend — rulesets, because CI can observe them.
+    required_names = required_contexts(protection, rulesets)
     # Only meaningful when the checkout IS the repository being judged. Reading
     # the local .github/workflows while --repo names a different repository
     # would report that repository's gates using this one's files — measured, and
