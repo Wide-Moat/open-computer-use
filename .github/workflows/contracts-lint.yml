@@ -241,3 +241,15 @@ jobs:
           helm lint helm/computer-use-server \
             --set secrets.mcpApiKey=lint-only \
             --set orchestrator.env.PUBLIC_BASE_URL=https://lint.example.com
+
+      # lint alone is not enough, measured: a template referencing a value that
+      # does not exist — `{{ .Values.missing | required "…" }}` — produces a WARN
+      # and "0 chart(s) failed", so a chart that cannot install passes. --strict
+      # does not change that; rendering does, exiting 1. A gate that misses the
+      # breakage an operator hits first is not worth the minute it costs.
+      - name: helm template — the chart must actually render
+        run: |
+          helm template lint-render helm/computer-use-server \
+            --set secrets.mcpApiKey=lint-only \
+            --set orchestrator.env.PUBLIC_BASE_URL=https://lint.example.com \
+            > /dev/null
