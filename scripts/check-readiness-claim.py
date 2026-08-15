@@ -648,6 +648,12 @@ def _self_test() -> int:
         else:
             print("  ok: a real conflict is tolerated, not cannot-judge")
 
+    # Not redundant with the fixture cases, though it looks it. Point the base at
+    # a NONEXISTENT ref and six of them red too -- the worktree cannot be made.
+    # Point it at origin/HEAD, which exists and resolves to the same commit, and
+    # every one of them passes while the base has silently stopped naming the
+    # branch the legs read. Only this fires. Measured both ways.
+    #
     # The compose base must BE the branch the legs are measured against, or the
     # composed tree models something nobody deploys and "4 of 4" answers a
     # question no one asked. Prose in the docstring is not enough -- that is the
@@ -696,11 +702,15 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     A conflict or a missing symbol is a real answer -- it means the sequence
     does not deliver what it claims.
 
-    WHAT THIS TREE IS. It is origin/main of the component repo with the
-    delivering branches merged on top, so it models the shipping branch as it
-    will exist after the merges -- ocu-sandbox has no next/v1, main IS its
-    shipping branch. That is why the base is pinned and printed: composing from
-    the caller's HEAD would model a tree nobody deploys.
+    WHAT THIS TREE IS. origin/main of the component repo as of this run, with
+    the delivering branches merged on top -- ocu-sandbox has no next/v1, main IS
+    its shipping branch. That is why the base is pinned and printed: composing
+    from the caller's HEAD would model a tree nobody deploys.
+
+    It is a snapshot, not a prediction. Anything that lands on main before the
+    real merges, or any rebase of a delivering branch, changes the answer -- so
+    a green means the sequence delivered AT THIS COMMIT, which is why the base
+    sha is in the output and why the check runs per-PR rather than once.
 
     WHAT IT IS NOT. A green here is a claim about a FUTURE merge, never
     readiness. Readiness is the plain mode, which reads the shipping branch and
