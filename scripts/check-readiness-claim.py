@@ -56,6 +56,12 @@ import time
 # the leg shipped. A symbol rather than a file for the usual reason: files move,
 # and a grep for a path that no longer exists reports a missing property when
 # what moved was a file.
+# The sequence the delivering PRs must land in. Declared rather than derived:
+# the canon gate reds on its own citations without E1's work, so an order that
+# lands it first proves nothing -- and no ordering available from the data
+# reproduces this one reliably. --compose checks this covers exactly the legs.
+MERGE_ORDER = (115, 116, 117, 118)
+
 LEGS = (
     {
         "leg": "proven isolation",
@@ -477,6 +483,18 @@ def _self_test() -> int:
             else:
                 print(f"  ok: {label}")
 
+    # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
+    # composes without its PR and the verdict is confidently wrong.
+    declared = set(MERGE_ORDER)
+    from_legs = {leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}
+    if declared != from_legs:
+        failures.append(
+            f"MERGE_ORDER {sorted(declared)} does not cover the legs "
+            f"{sorted(from_legs)}"
+        )
+    else:
+        print("  ok: MERGE_ORDER covers exactly the delivering PRs")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
@@ -605,8 +623,24 @@ def main(argv: list[str] | None = None) -> int:
         # Derive the sequence from the legs rather than duplicating it: a leg
         # whose PR is missing from a hand-kept tuple composes silently without
         # it, which is how the release-path property went untracked.
+        # MERGE_ORDER, declared. Neither available ordering is trustworthy:
+        # LEGS order gives 115,118,116,117 -- the legs are listed by property,
+        # not by dependency -- and PR number only happens to match today because
+        # these were opened in dependency order. Deriving the SET from the legs
+        # keeps a leg from composing silently without its PR; the ORDER has to
+        # be stated, and is checked against that set below.
+        declared = list(MERGE_ORDER)
+        from_legs = {leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}
+        if set(declared) != from_legs:
+            missing = from_legs - set(declared)
+            extra = set(declared) - from_legs
+            print(
+                f"  MERGE_ORDER does not cover the legs: missing {sorted(missing)}, "
+                f"unknown {sorted(extra)}"
+            )
+            return 2
         branches = []
-        for pr in sorted({leg["delivered_by"] for leg in LEGS if leg.get("delivered_by")}):
+        for pr in declared:
             code, out, _ = _run(
                 ["gh", "pr", "view", str(pr), "--repo", LEGS[0]["repo"],
                  "--json", "headRefName", "--jq", ".headRefName"]
