@@ -25,9 +25,12 @@ the ones that must FAIL, so the check cannot quietly stop discriminating.
 from __future__ import annotations
 
 import argparse
+import glob
+import os
 import json
 import pathlib
 import subprocess
+import yaml
 import time
 import sys
 
@@ -200,6 +203,128 @@ def synthesise_ruleset(
             "bypass_actors": bypass_actors,
         }
     ]
+
+
+def required_contexts(
+    protection: dict | None, rulesets: list[dict]
+) -> set[str]:
+    """Every context this branch requires, from BOTH sources, lowercased.
+
+    Either can be the one enforcing. A branch protected by a ruleset rather than
+    classic protection has an empty protection payload, and reading protection
+    alone reports no unenforceable job on exactly the configuration the flip
+    instructions recommend — rulesets, because CI can observe them and cannot
+    read the protection endpoint.
+    """
+    names: set[str] = set()
+    if isinstance(protection, dict):
+        rsc = protection.get("required_status_checks") or {}
+        names |= {str(c).lower() for c in rsc.get("contexts") or []}
+        names |= {str(c.get("context", "")).lower() for c in rsc.get("checks") or []}
+    for rs in rulesets or []:
+        for rule in rs.get("rules") or []:
+            if str(rule.get("type", "")).lower() != "required_status_checks":
+                continue
+            params = rule.get("parameters") or {}
+            names |= {
+                str(c.get("context", "")).lower()
+                for c in params.get("required_status_checks") or []
+            }
+    return {n for n in names if n}
+
+
+def unenforceable_required_jobs(
+    jobs: list[tuple[str, set[str]]], required: set[str]
+) -> list[str]:
+    """Name jobs that are required AND cannot fail.
+
+    Separate from main() so the self-test can drive it. It has to be: the
+    bypass_actors incident in this same file was a filter that was real in the
+    tested function and dead on the live path, and a filter living only inside
+    main() repeats it — three mutations to this logic survived a green self-test
+    before it was extracted.
+
+    A job matches on EITHER identity it can publish, since GitHub uses the job's
+    `name:` when set and its key otherwise.
+    """
+    out: list[str] = []
+    for label, identities in jobs:
+        if identities & required:
+            out.append(label)
+    return out
+
+
+def _local_repo_slug() -> str:
+    """Return owner/name of the checkout this script is running in, lowercased.
+
+    Empty when it cannot be determined, which disables the workflow-file check
+    rather than letting it read the wrong repository's files.
+    """
+    proc = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if proc.returncode != 0:
+        return ""
+    url = proc.stdout.strip()
+    for prefix in ("git@github.com:", "https://github.com/"):
+        if url.startswith(prefix):
+            return url[len(prefix):].removesuffix(".git").lower()
+    return ""
+
+
+def non_blocking_jobs(
+    workflow_dir: str = ".github/workflows",
+) -> list[tuple[str, set[str]]]:
+    """Name jobs that carry continue-on-error, so they cannot fail a merge.
+
+    A required context whose job is continue-on-error is green whatever the tool
+    finds — the NFR's own sentence ("a merge cannot reach a protected branch
+    while a gate is failing") is unsatisfiable for it, because it is never
+    failing. Branch protection cannot see this: the API reports the context as
+    required and the run reports success.
+
+    Read from the workflow files rather than the API for the same reason the
+    verdict reads rules rather than settings — this is a property of what runs,
+    not of what is configured.
+
+    Scope, stated because every gap here fails OPEN: it reads JOB-level literal
+    `continue-on-error: true` only, and matches a context by exact identity, so a
+    MATRIX job is missed — codeql's job is keyed `analyze` and publishes
+    `Analyze (go)`, which neither identity equals. A step-level flag on the sole gating step, an
+    expression-valued flag, the string "true", and a reusable workflow called via
+    `uses:` all go unreported. Widening to those means evaluating expressions and
+    following workflow references, which is a different tool; what this catches
+    is the shape both of this repository's disabled gates take.
+    """
+    found: list[tuple[str, set[str]]] = []
+    paths = sorted(
+        glob.glob(os.path.join(workflow_dir, "*.yml"))
+        + glob.glob(os.path.join(workflow_dir, "*.yaml"))
+    )
+    for path in paths:
+        try:
+            doc = yaml.safe_load(open(path, encoding="utf-8"))
+        except Exception:
+            continue
+        for name, job in (doc.get("jobs") or {}).items():
+            if not isinstance(job, dict):
+                continue
+            if job.get("continue-on-error") is True:
+                # Carry BOTH identities. The context GitHub publishes is the
+                # job's `name:` when it has one and the job KEY otherwise, and a
+                # required-set comparison against only one of them matches
+                # nothing: this repo's lax jobs are keyed `sast-semgrep` while
+                # their contexts read "SAST — semgrep".
+                found.append(
+                    (
+                        f"{os.path.basename(path)}:{name}",
+                        {name.lower(), str(job.get("name") or name).lower()},
+                    )
+                )
+    return found
 
 
 def _probe_readable(path: str) -> bool:
@@ -434,6 +559,152 @@ def self_test() -> int:
     else:
         print("  ok: every filtered field is one the live wrapper supplies")
 
+    # The continue-on-error scan reads workflow files, so drive it against a
+    # temporary directory rather than the repo's own: asserting on this checkout
+    # would make the test's verdict depend on which repository it runs in.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        io_open = open
+        with io_open(os.path.join(td, "a.yml"), "w", encoding="utf-8") as fh:
+            # The lax job carries a display name unlike its key, because the
+            # required-set comparison must match EITHER — a job keyed `foo` can
+            # publish its context as "Foo Bar", and matching only one finds
+            # nothing on real workflows.
+            fh.write(
+                "jobs:\n"
+                "  gating:\n    runs-on: x\n"
+                "  lax:\n    name: Lax Display\n"
+                "    continue-on-error: true\n    runs-on: x\n"
+            )
+        # A .yaml sibling, because the glob covering only .yml was a real gap and
+        # a scratch probe of it left nothing behind to keep it closed.
+        with io_open(os.path.join(td, "b.yaml"), "w", encoding="utf-8") as fh:
+            fh.write("jobs:\n  yamllax:\n    continue-on-error: true\n    runs-on: x\n")
+        found = non_blocking_jobs(td)
+    labels = sorted(f for f, _ in found)
+    identities = dict(found).get("a.yml:lax", set())
+    if labels != ["a.yml:lax", "b.yaml:yamllax"] or identities != {
+        "lax",
+        "lax display",
+    }:
+        print(
+            "SELF-TEST FAIL: the continue-on-error scan should report exactly "
+            f"the lax job, got {found!r}"
+        )
+        failures += 1
+    else:
+        print("  ok: a job that cannot fail is reported, one that can is not")
+
+    # The required-set filter, driven directly. Living only inside main() it
+    # survived three mutations against a green self-test — the same shape as the
+    # bypass filter this file already records.
+    #
+    # The first case is the one the key-only comparison failed: the workflow
+    # knows the job as `sast-semgrep`, protection requires it as "SAST — semgrep".
+    # The ASSEMBLY, composed. Every defect this file has shipped lived here
+    # rather than in a piece: a filter handed the wrong argument, a wrapper built
+    # without the field it is filtered on, a scan run unconditionally. Driving
+    # the pieces alone left all three re-mergeable.
+    #
+    # The shape is CI's: protection unreadable (403), enforcement carried by an
+    # active ruleset, the workflow scan finding one job that cannot fail.
+    gate_ctx = [
+        {"context": c}
+        for c in ("gitleaks", "trufflehog", "SAST — semgrep", "Analyze (go)", "trivy")
+    ]
+    ci_rules = [
+        {
+            "type": "required_status_checks",
+            "ruleset_id": 1,
+            "parameters": {"required_status_checks": gate_ctx},
+        }
+    ]
+    lax_job = [("security.yml:sast-semgrep", {"sast-semgrep", "sast — semgrep"})]
+
+    def compose(jobs, bypass=None, slug="owner/repo"):
+        return assemble_problems(
+            None, False, ci_rules, bypass or [], [], slug, "owner/repo", jobs
+        )
+
+    only_lax = compose(lax_job)
+    if len(only_lax) != 1 or "continue-on-error" not in only_lax[0]:
+        print(
+            "SELF-TEST FAIL: a required job that cannot fail must be the sole "
+            f"finding in the CI shape, got {only_lax!r}"
+        )
+        failures += 1
+    elif compose([("x.yml:other", {"other"})]) != []:
+        print("SELF-TEST FAIL: a job that is not required must leave the CI shape clean")
+        failures += 1
+    elif compose(lax_job, bypass=[{"actor_id": 1}]) == only_lax:
+        # A bypassable ruleset is discarded by verdict()'s filter, so the shape
+        # degrades to "cannot establish enforcement" rather than naming bypass —
+        # correct, since a ruleset anyone can step around establishes nothing.
+        # What must not happen is the two shapes reporting identically, which is
+        # what a wrapper dropping bypass_actors would produce.
+        print(
+            "SELF-TEST FAIL: a bypassable ruleset must not read the same as an "
+            "enforcing one"
+        )
+        failures += 1
+    elif compose(lax_job, slug="someone/else") != []:
+        print(
+            "SELF-TEST FAIL: a mismatched checkout must skip the scan, so no "
+            "finding can come from another repository's workflows"
+        )
+        failures += 1
+    else:
+        print("  ok: the composed assembly reports exactly the finding each shape earns")
+
+    # The required set can come from a RULESET instead of classic protection —
+    # the configuration the flip instructions recommend, since CI can observe
+    # rulesets and cannot read the protection endpoint. Taking it from
+    # protection alone reported nothing there; assert the extraction here so
+    # that stays fixed.
+    ruleset_only = [
+        {
+            "enforcement": "active",
+            "target": "branch",
+            "rules": [
+                {
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [{"context": "SAST — semgrep"}]
+                    },
+                }
+            ],
+        }
+    ]
+    from_ruleset = required_contexts(None, ruleset_only)
+    if from_ruleset != {"sast — semgrep"}:
+        print(
+            "SELF-TEST FAIL: a ruleset's required contexts must count as required, "
+            f"got {from_ruleset!r}"
+        )
+        failures += 1
+    else:
+        print("  ok: required contexts are read from rulesets as well as protection")
+
+    lax = [("security.yml:sast-semgrep", {"sast-semgrep", "sast — semgrep"})]
+    if unenforceable_required_jobs(lax, {"sast — semgrep"}) != ["security.yml:sast-semgrep"]:
+        print("SELF-TEST FAIL: a required job named by its display name went unreported")
+        failures += 1
+    elif unenforceable_required_jobs(lax, {"sast-semgrep"}) != ["security.yml:sast-semgrep"]:
+        print("SELF-TEST FAIL: a required job named by its key went unreported")
+        failures += 1
+    elif unenforceable_required_jobs(lax, {"something-else"}) != []:
+        print("SELF-TEST FAIL: a job that is NOT required must not be accused")
+        failures += 1
+    elif unenforceable_required_jobs(lax, set()) != []:
+        # An empty required set means nothing is required — on an unprotected
+        # branch that is the normal state, and accusing every lax job there would
+        # fill the report-only step with findings that are not violations.
+        print("SELF-TEST FAIL: an empty required set must accuse nobody")
+        failures += 1
+    else:
+        print("  ok: a required non-blocking job is named by either identity, and only when required")
+
     gates = [
         {"context": c}
         for c in ("gitleaks", "trufflehog", "sast-semgrep", "Analyze (go)", "trivy")
@@ -486,6 +757,84 @@ def self_test() -> int:
         return 1
     print("\nself-test: the check reds on every unenforced shape and passes the enforced one.")
     return 0
+
+
+def assemble_problems(
+    protection: dict | None,
+    protection_readable: bool,
+    effective: list[dict],
+    bypass: list[dict],
+    unreadable_rulesets: list[str],
+    local_repo_slug: str,
+    target_repo: str,
+    workflow_jobs: list[tuple[str, set[str]]],
+) -> list[str]:
+    """Assemble the full verdict from already-fetched inputs.
+
+    Pure, and separate from main() for the reason this file has now recorded
+    three times: every defect it has shipped lived in the ASSEMBLY — a filter
+    passed the wrong argument, a wrapper built without the field it is filtered
+    on, a scan run unconditionally. Each instance was fixed and the class stayed
+    open, because self_test() drove the pieces and never their composition.
+    Mutating any wiring decision below now reds a committed case.
+    """
+    rulesets = synthesise_ruleset(effective, bypass)
+
+    problems = verdict(
+        protection if isinstance(protection, dict) else None,
+        rulesets,
+        protection_readable=protection_readable,
+    )
+    # A job that cannot fail cannot gate, whatever protection says about it.
+    # Only REQUIRED contexts are judged: a reporting-only job carrying
+    # continue-on-error is doing what it was built to do, and calling that a
+    # violation would red every repository that has one.
+    #
+    # Consequence worth naming: on a branch with no protection this finds
+    # nothing, because there are no required contexts to compare against. That
+    # is not a miss — such a branch already reports the larger violation above.
+    # It does mean the check first bites at flip time, which is exactly when a
+    # continue-on-error gate would otherwise be marked required and enforce
+    # nothing.
+    # Both sources, because either can be the one enforcing. A branch protected
+    # by a RULESET rather than by classic protection has an empty protection
+    # payload, and taking the required set from protection alone would report no
+    # unenforceable job on exactly the configuration the flip instructions
+    # recommend — rulesets, because CI can observe them.
+    required_names = required_contexts(protection, rulesets)
+    # Only meaningful when the checkout IS the repository being judged. Reading
+    # the local .github/workflows while --repo names a different repository
+    # would report that repository's gates using this one's files — measured, and
+    # it produced two findings that belonged to the wrong repo.
+    local_repo = local_repo_slug
+    jobs = workflow_jobs if local_repo == target_repo.lower() else []
+    if not local_repo:
+        print(
+            "note: skipping the continue-on-error check — the checkout's own "
+            "repository could not be determined from the git remote",
+            file=sys.stderr,
+        )
+    elif local_repo != target_repo.lower():
+        print(
+            f"note: skipping the continue-on-error check — this checkout is "
+            f"{local_repo}, not {target_repo}",
+            file=sys.stderr,
+        )
+    for job in unenforceable_required_jobs(jobs, required_names):
+        problems.append(
+            f"{job} carries continue-on-error, so it reports success whatever it "
+            "finds — a required context that cannot fail is presence, not "
+            "enforcement"
+        )
+
+    for rid in unreadable_rulesets:
+        problems.append(
+            f"cannot establish the bypass posture for ruleset {rid}: it is "
+            "unreadable with this token, and a ruleset whose bypass actors "
+            "cannot be read must not be assumed to have none"
+        )
+
+    return problems
 
 
 def main() -> int:
@@ -547,19 +896,17 @@ def main() -> int:
             # read the ruleset would report a bypassable branch as enforced.
             unreadable_rulesets.append(str(rid))
 
-    rulesets = synthesise_ruleset(effective, bypass)
-
-    problems = verdict(
+    problems = assemble_problems(
         protection if isinstance(protection, dict) else None,
-        rulesets,
-        protection_readable=protection_readable,
+        protection_readable,
+        effective,
+        bypass,
+        unreadable_rulesets,
+        _local_repo_slug(),
+        args.repo,
+        non_blocking_jobs(),
     )
-    for rid in unreadable_rulesets:
-        problems.append(
-            f"cannot establish the bypass posture for ruleset {rid}: it is "
-            "unreadable with this token, and a ruleset whose bypass actors "
-            "cannot be read must not be assumed to have none"
-        )
+
     if problems:
         print(f"NFR-SEC-89 VIOLATION on {args.repo}@{args.branch}:")
         for p in problems:
