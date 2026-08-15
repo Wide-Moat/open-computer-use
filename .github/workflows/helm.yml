@@ -15,14 +15,20 @@ name: Helm chart
 
 on:
   push:
-    branches: [main]
+    # Both sides for both branches. next/v1 has no branch protection, so a
+    # direct push can reach it without a pull request — checking only the PR
+    # would leave that path unguarded.
+    branches: [main, next/v1]
     tags: ['v*']
     paths:
       - 'helm/**'
       - 'examples/helm/**'
       - '.github/workflows/helm.yml'
   pull_request:
-    branches: [main]
+    # next/v1 too: the chart ships from this branch, and without it a PR
+    # could break the chart with nothing saying so until the publish job ran
+    # after the merge.
+    branches: [main, next/v1]
     paths:
       - 'helm/**'
       - 'examples/helm/**'
