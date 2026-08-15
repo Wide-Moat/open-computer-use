@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -773,6 +774,12 @@ def main(argv: list[str] | None = None) -> int:
             # Unreadable, not unmet. The distinction is the one this script's
             # header calls the defect it exists to catch.
             print("\ncannot judge the composition: a delivering branch is unreadable")
+            # Annotate: the CI step is report-only, so an exit code nobody reads
+            # is the whole finding. Without this a step that CANNOT RUN looks
+            # identical to one reporting a healthy composition.
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                detail = "; ".join(notes)[-160:].replace("\n", " ").replace("::", ": ")
+                print(f"::warning title=composition unreadable::{detail}")
             return 2
         print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
         return 0 if held == len(LEGS) else 1
