@@ -90,9 +90,22 @@ jobs:
             --set persistence.varLibDocker.persistentVolume.enabled=false \
             > /tmp/render-runc.yaml
           grep -q "privileged: true" /tmp/render-runc.yaml
-          ! grep -q "runtimeClassName:" /tmp/render-runc.yaml
-          ! grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml
-          ! grep -q "volumeMode: Block" /tmp/render-runc.yaml
+          if grep -q "runtimeClassName:" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not pin a runtimeClass -- found 'runtimeClassName:' in the runc render" >&2
+            exit 1
+          fi
+          if grep -q "name: dind-init" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not mount the kata init volume -- found 'name: dind-init' in the runc render" >&2
+            exit 1
+          fi
+          if grep -q "dind-entrypoint.sh" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not mount the kata init entrypoint -- found 'dind-entrypoint.sh' in the runc render" >&2
+            exit 1
+          fi
+          if grep -q "volumeMode: Block" /tmp/render-runc.yaml; then
+            echo "::error::the runc path must not request a block device -- found 'volumeMode: Block' in the runc render" >&2
+            exit 1
+          fi
 
       - name: Install kubeconform and validate manifests against k8s schemas
         env:
