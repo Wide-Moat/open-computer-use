@@ -132,6 +132,11 @@ jobs:
       # What this buys is that the number is on every run, so the day it becomes
       # 3 of 3 nobody has to take that on trust, and the day it regresses the
       # log says so.
+      # The self-test is the gate. The live query below is report-only, so
+      # without this the delivery reporting could stop discriminating and no
+      # run would notice.
+      - name: delivery reporting red-probe (six outcomes through the report)
+        run: python3 scripts/check-readiness-claim.py --self-test
       - name: deployment-readiness claim (report-only, see NFR §Deployment-readiness)
         # Reads a sibling component's default branch through the contents API.
         # That works from here because the components are public; were one made
