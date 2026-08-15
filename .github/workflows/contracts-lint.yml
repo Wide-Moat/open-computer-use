@@ -224,6 +224,9 @@ jobs:
           echo "contracts/ is clean"
 
   composition:
+    # Minutes of network-bound work; the 360-minute default would hold a runner
+    # for six hours on a wedged clone.
+    timeout-minutes: 15
     # Its own job: this clones a sibling repo and runs a cold Go build, which is
     # minutes of network-bound work -- measured, not the 11s a warm cache
     # suggests. Riding in a contract-validation job would let a clone flake red

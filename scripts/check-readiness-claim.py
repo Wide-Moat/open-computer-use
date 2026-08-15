@@ -560,6 +560,36 @@ def _self_test() -> int:
             else:
                 print(f"  ok: {label}")
 
+    # main()'s compose path must map an unexpected exception to 2, not 1. The CI
+    # step tolerates 1 by design, so a wedged build routed there would stay
+    # green over a check that never ran -- the theatre the exit split exists to
+    # close, one layer under it.
+    _real_cv = composed_verdict
+    for label, exc in (
+        ("a build timeout is cannot-judge", subprocess.TimeoutExpired(cmd=["go"], timeout=1)),
+        ("a missing binary is cannot-judge", FileNotFoundError("go: not found")),
+    ):
+        def _raise(*_a, _e=exc, **_k):
+            raise _e
+
+        globals()["composed_verdict"] = _raise
+        try:
+            code = main(["--compose", "/nonexistent-for-self-test"])
+        except BaseException as esc:  # noqa: BLE001 - an escape IS the finding
+            # Narrowing the containment lets the exception escape instead of
+            # returning 2. Name it rather than tracebacking, so the failure says
+            # which property broke.
+            code = -99
+            failures.append(f"{label}: escaped as {type(esc).__name__}")
+        finally:
+            globals()["composed_verdict"] = _real_cv
+        if code == -99:
+            continue
+        if code != 2:
+            failures.append(f"{label}: main() returned {code}, want 2")
+        else:
+            print(f"  ok: {label}")
+
     # MERGE_ORDER must cover exactly the legs. A leg missing from the sequence
     # composes without its PR and the verdict is confidently wrong.
     declared = set(MERGE_ORDER)
@@ -668,8 +698,6 @@ def _compose_in(
     # not exist leaves every symbol in place and reds the canon gate, so a tree
     # can report every leg present while the gate that proves one of them
     # fails. Run it.
-    import os
-
     # Build both modules first. host/ and host/exec/ are separate modules, so
     # the canon gate never compiles manager.go -- the file BOTH #115 and #118
     # edit, where both wired symbols live. A textually clean but semantically
@@ -751,9 +779,9 @@ def _compose_main(args) -> int:
             # Unreadable, not unmet. The distinction is the one this script's
             # header calls the defect it exists to catch.
             print("\ncannot judge the composition: a delivering branch is unreadable")
-            # Annotate: the CI step is report-only, so an exit code nobody reads
-            # is the whole finding. Without this a step that CANNOT RUN looks
-            # identical to one reporting a healthy composition.
+            # The exit code already reds the step; this names the CAUSE in the
+            # run summary, where a reader looking at a red job will find it
+            # without opening the log.
             if os.environ.get("GITHUB_ACTIONS") == "true":
                 detail = "; ".join(notes)[-160:].replace("\n", " ").replace("::", ": ")
                 print(f"::warning title=composition unreadable::{detail}")
