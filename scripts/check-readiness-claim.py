@@ -4,7 +4,8 @@
 """Answer the deployment-readiness claim by measuring it, not by asserting it.
 
 The claim has four legs — proven isolation, an auditable supply chain, a
-canon where every decision is recorded and checkable. Each leg has been built
+verified release path, and a canon where every decision is recorded and
+checkable. Each leg has been built
 and each has its own gate. What did not exist until this script is a single
 place that asks whether they all hold AT ONCE, against what is actually
 shipped.
@@ -102,11 +103,14 @@ LEGS = (
         # after the consumer tags are applied. Both are out of grep's reach.
         "evidence": "ghcr-guest\\.yml@refs/heads/main$",
         "path": ".github/workflows/ghcr-guest.yml",
-        # The call site: promote applies the consumer tags, so it must DEPEND on
-        # the signing job. Verification that exists but does not gate promotion
-        # is the dead-code failure this field exists to catch -- the same shape
-        # as a verdict function with no production caller.
-        "wired": "needs: [image, sign-image]",
+        # The verify STEP inside promote, ordered before the consumer tags are
+        # applied. My first choice, promote's `needs: [image, sign-image]`, is
+        # present on main too -- in a workflow with zero verification -- so it
+        # passed the moment the evidence did and the two-symbol discipline was
+        # ceremonial. This string is absent on main, present on #116.
+        # Still out of reach: step ORDER within the job, continue-on-error, and
+        # which job the step ends up in.
+        "wired": "verify the signature before trusting the digest",
         "wired_path": ".github/workflows/ghcr-guest.yml",
         "means": (
             "the release path verifies its own signature against a pinned "
@@ -487,6 +491,16 @@ def _self_test() -> int:
             )
         git("add", "-A")
         git("commit", "-qm", "carries the leg")
+        git("checkout", "-q", "-b", "broken-build")
+        # Invalid Go inside the host module: without this branch the build loop
+        # -- the check that exists because two branches both edit manager.go --
+        # can be deleted with every committed case still green.
+        _io.open(f"{d}/host/internal/doctruth/broken.go", "w", encoding="utf-8").write(
+            "package doctruth\n\nfunc {\n"
+        )
+        git("add", "-A")
+        git("commit", "-qm", "breaks the build")
+        git("checkout", "-q", "main")
         git("checkout", "-q", "-b", "poisoned")
         _io.open(f"{d}/poison", "w", encoding="utf-8").write("x\n")
         git("add", "-A")
@@ -498,6 +512,7 @@ def _self_test() -> int:
             ("a branch without it does not", ["main"], 0),
             # -2 is "rejected", distinct from 0 legs holding: the legs were
             # present, the gate refused the tree.
+            ("a branch that breaks the build is rejected", ["broken-build"], -2),
             ("a branch that reds the gate is rejected", ["poisoned"], -2),
             ("a directory that is not a worktree refuses", None, -1),
             # Bound on the DIAGNOSIS, not the verdict: without the guard a merge
@@ -526,7 +541,18 @@ def _self_test() -> int:
                 _sp.run(["git", "-C", w, "checkout", "-q", "main"],
                         capture_output=True, check=False)
                 try:
-                    held, _ = composed_verdict(w, [f"origin/{b}" for b in branches])
+                    held, case_notes = composed_verdict(
+                        w, [f"origin/{b}" for b in branches]
+                    )
+                    # Bind the BUILD check, not just the rejection: a broken tree
+                    # also reds the gate, so asserting -2 alone passes with the
+                    # build loop deleted. The note names which check refused.
+                    if label.startswith("a branch that breaks the build"):
+                        if not any("does not build" in n for n in case_notes):
+                            failures.append(
+                                f"{label}: rejected, but not by the build check: "
+                                + (case_notes[-1][:60] if case_notes else "no notes")
+                            )
                 finally:
                     import shutil as _sh
 
@@ -563,7 +589,7 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
     """Merge the delivering branches in order and re-run every leg on the result.
 
     The legs live in PRs that fork from a common base rather than nesting, so
-    "each PR is green" does not establish that the three properties hold
+    "each PR is green" does not establish that the properties hold
     TOGETHER. Nothing else answers that: the shipped checker reads the shipping
     branch, and the shipping branch has none of them yet.
 
@@ -739,7 +765,9 @@ def main(argv: list[str] | None = None) -> int:
         for n in notes:
             print(f"  {n}")
         if held == -2:
-            print("\ncomposition rejected: the canon gate is red on the composed tree")
+            # A build failure reaches this same line; naming only the gate
+            # would contradict the "does not build" note printed above it.
+            print("\ncomposition rejected: the composed tree fails its build or gate")
             return 1
         if held < 0:
             # Unreadable, not unmet. The distinction is the one this script's
