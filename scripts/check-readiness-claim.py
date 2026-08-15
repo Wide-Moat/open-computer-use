@@ -525,7 +525,12 @@ def _self_test() -> int:
                 _sp.run(["git", "clone", "-q", d, w], capture_output=True, check=False)
                 _sp.run(["git", "-C", w, "checkout", "-q", "main"],
                         capture_output=True, check=False)
-                held, _ = composed_verdict(w, [f"origin/{b}" for b in branches])
+                try:
+                    held, _ = composed_verdict(w, [f"origin/{b}" for b in branches])
+                finally:
+                    import shutil as _sh
+
+                    _sh.rmtree(w, ignore_errors=True)
 
             got = held if held < 0 else (1 if held >= 1 else 0)
             if got != want:
@@ -599,6 +604,11 @@ def composed_verdict(repo_dir: str, branches: list[str]) -> tuple[int, list[str]
         return _compose_in(repo_dir, work, branches, notes)
     finally:
         _run(["git", "-C", repo_dir, "worktree", "remove", "--force", work])
+        # worktree remove deletes the tree, not the mkdtemp parent holding it.
+        # Measured: 80 ocu-compose-* directories left behind by earlier runs.
+        import shutil
+
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _compose_in(
