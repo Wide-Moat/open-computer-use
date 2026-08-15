@@ -709,30 +709,7 @@ def _compose_in(
     return held, notes
 
 
-def main(argv: list[str] | None = None) -> int:
-    # Explicit argv, because _self_test drives main() while sys.argv still says
-    # --self-test. Re-parsing the process argv there sent main() straight back
-    # into the self-test: infinite recursion that appeared only as a subprocess,
-    # since an in-process caller has a clean sys.argv.
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--json", action="store_true", help="machine-readable output")
-    ap.add_argument(
-        "--compose",
-        metavar="DIR",
-        help="a checkout to merge the delivering branches into, then re-run "
-        "every leg against the result: symbol presence plus the canon gate. "
-        "--json has no effect with this mode",
-    )
-    ap.add_argument(
-        "--self-test",
-        action="store_true",
-        help="drive the report over constructed delivery outcomes and exit",
-    )
-    args = ap.parse_args(argv)
-    if getattr(args, "self_test", False):
-        return _self_test()
-
-    if args.compose:
+def _compose_main(args) -> int:
         # Derive the sequence from the legs rather than duplicating it: a leg
         # whose PR is missing from a hand-kept tuple composes silently without
         # it, which is how the release-path property went untracked.
@@ -783,6 +760,46 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"\n{held} of {len(LEGS)} legs hold on the composed tree")
         return 0 if held == len(LEGS) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Explicit argv, because _self_test drives main() while sys.argv still says
+    # --self-test. Re-parsing the process argv there sent main() straight back
+    # into the self-test: infinite recursion that appeared only as a subprocess,
+    # since an in-process caller has a clean sys.argv.
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--compose",
+        metavar="DIR",
+        help="a checkout to merge the delivering branches into, then re-run "
+        "every leg against the result: symbol presence plus the canon gate. "
+        "--json has no effect with this mode",
+    )
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="drive the report over constructed delivery outcomes and exit",
+    )
+    args = ap.parse_args(argv)
+    if getattr(args, "self_test", False):
+        return _self_test()
+
+    if args.compose:
+        # An unexpected exception here -- a build outrunning _run's timeout, a
+        # git binary gone -- is CANNOT JUDGE, not "composition does not hold".
+        # Without this it tracebacks to exit 1, which the CI step deliberately
+        # tolerates, so a timeout would read as a broken composition.
+        try:
+            return _compose_main(args)
+        except Exception as exc:  # noqa: BLE001 - the class is the point
+            print(f"\ncannot judge the composition: {type(exc).__name__}: {exc}"[:200])
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(
+                    "::warning title=composition unreadable::"
+                    f"{type(exc).__name__} on the compose path"
+                )
+            return 2
 
     results = []
     for leg in LEGS:
