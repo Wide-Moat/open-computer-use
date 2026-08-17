@@ -43,6 +43,10 @@ MUST_COVER_CANON = {
     # Already correct today, listed so a revert is caught rather than noticed:
     # helm.yml lints the chart that ships on this branch.
     "helm.yml",
+    # The four tests/ scripts that need neither an image nor a server. They ran
+    # nowhere before #503; narrowing this workflow back to main would strand
+    # them again.
+    "shell-tests.yml",
 }
 
 # Workflows deliberately outside the set, with the reason, so the next reader
