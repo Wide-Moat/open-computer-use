@@ -103,6 +103,66 @@ def declared_ids(root: pathlib.Path) -> set[str]:
     return ids
 
 
+CANON = "next/v1"
+
+
+def unreachable_on_canon(root: pathlib.Path, hits: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Armed ids whose only naming file cannot run on the canon branch.
+
+    "Named by a check" was the wrong bar on its own. A check that exists in the
+    tree but never executes on next/v1 answers for main and nothing else, and
+    the ratchet counted it as coverage. Measured when this was written:
+    NFR-SEC-15's verification is the /home/assistant volume-size assertion in
+    tests/test-docker-image.sh, invoked only by build.yml, whose
+    pull_request trigger is `branches: [main]` -- so the id read as armed while
+    nothing on canon asserted it.
+
+    Reachability is the same question check-gates-trigger-on-canon.py asks of a
+    workflow; here it is asked of the file that carries the assertion.
+    """
+    import yaml
+
+    workflows = root / ".github" / "workflows"
+    fires: dict[str, bool] = {}
+    for path in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            fires[path.name] = False
+            continue
+        on = doc.get(True) or doc.get("on") or {}
+        if not isinstance(on, dict) or "pull_request" not in on:
+            fires[path.name] = False
+            continue
+        pull = on["pull_request"]
+        if pull is None:
+            fires[path.name] = True
+            continue
+        branches = pull.get("branches") if isinstance(pull, dict) else None
+        fires[path.name] = branches is None or CANON in branches or any(
+            "*" in str(b) for b in branches
+        )
+
+    bodies = {p.name: p.read_text(encoding="utf-8", errors="ignore")
+              for p in list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))}
+
+    stranded: dict[str, list[str]] = {}
+    for nid, files in sorted(hits.items()):
+        reachable = False
+        for rel in files:
+            if rel.startswith(".github/workflows/"):
+                reachable |= fires.get(pathlib.Path(rel).name, False)
+            elif rel.startswith("scripts/"):
+                # scripts are invoked by contracts-lint, which covers canon
+                reachable |= True
+            else:
+                # a tests/ file runs only if a workflow that fires invokes it
+                reachable |= any(fires.get(w, False) for w, body in bodies.items() if rel in body)
+        if not reachable:
+            stranded[nid] = files
+    return stranded
+
+
 def armed_ids(root: pathlib.Path, ids: set[str]) -> dict[str, list[str]]:
     """Ids named by a file under CODE_DIRS, with the files that name them.
 
@@ -166,6 +226,40 @@ def verdict(declared: set[str], armed: dict[str, list[str]], floor: int) -> list
             + ", ".join(sorted(declared - set(armed) if floor else []))[:200]
         )
     return problems
+
+
+def _reachability_self_test() -> int:
+    """Drive unreachable_on_canon() over constructed trees.
+
+    Without this the reachability branch is live and untested: every case below
+    exercises verdict() only, and the meta-gate would certify a stubbed
+    reachability check as bound.
+    """
+    import tempfile
+
+    failures = 0
+    scenarios = [
+        ("[main]", ["NFR-X-1"], "a tests/ file reached only by a main-only workflow"),
+        (f"[main, {CANON}]", [], "the same file once the workflow reaches canon"),
+        ("", [], "a workflow with an unfiltered pull_request trigger"),
+    ]
+    for branches, want, label in scenarios:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "tests").mkdir()
+            trigger = f"    branches: {branches}\n" if branches else ""
+            (root / ".github" / "workflows" / "w.yml").write_text(
+                f"name: w\non:\n  pull_request:\n{trigger}jobs:\n  j:\n    steps:\n"
+                "      - run: ./tests/t.sh\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "t.sh").write_text("# NFR-X-1\n", encoding="utf-8")
+            got = sorted(unreachable_on_canon(root, {"NFR-X-1": ["tests/t.sh"]}))
+            ok = got == want
+            failures += 0 if ok else 1
+            print(f"  {'ok' if ok else 'FAIL'}: {label} -> {got or 'reachable'}")
+    return failures
 
 
 def _self_test() -> int:
@@ -232,6 +326,8 @@ def _self_test() -> int:
     failures += 0 if ok else 1
     print(f"  {'ok' if ok else 'FAIL'}: a caller below the floor is refused (exit {rc})")
 
+    failures += _reachability_self_test()
+
     print()
     if failures:
         print(f"self-test: {failures} case(s) failed")
@@ -273,8 +369,19 @@ def main(argv: list[str] | None = None) -> int:
 
     armed = armed_ids(root, declared)
     print(f"NFR coverage: {len(armed)} of {len(declared)} ids are named by a check that runs")
+    stranded = unreachable_on_canon(root, armed)
     for nfr in sorted(armed):
-        print(f"  armed  {nfr}  <- {', '.join(sorted(set(armed[nfr])))}")
+        mark = "STRANDED" if nfr in stranded else "armed   "
+        print(f"  {mark} {nfr}  <- {', '.join(sorted(set(armed[nfr])))}")
+
+    if stranded:
+        print(
+            f"::notice::{len(stranded)} armed id(s) are named only by a check that "
+            f"cannot run on {CANON}: {', '.join(sorted(stranded))}. The assertion "
+            f"exists and answers for main. Reported, not failed -- the workflow that "
+            f"would carry it to canon also builds and pushes images, which is a "
+            f"release-posture decision rather than a coverage fix."
+        )
 
     problems = verdict(declared, armed, args.min_armed)
     if problems:
