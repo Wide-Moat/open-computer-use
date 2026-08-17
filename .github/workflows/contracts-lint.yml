@@ -99,6 +99,13 @@ jobs:
       - name: OCSF class identity red-probe (RED-when-swapped, two-sided)
         run: python3 scripts/check-ocsf-class-identity.py --self-test
       - name: OCSF class identity (message title uid == vendored class uid)
+        # NFR-MAINT-AUDIT-SCHEMA. Its verification column asks for an "OCSF JSON
+        # CI gate", which is this step: it binds each fan-in message to the class
+        # it claims, so a vendored file re-pointed at another OCSF version fails
+        # here rather than validating clean. Named so check-nfr-coverage.py counts
+        # the requirement as armed -- and this job blocks, so the name is not
+        # decoration. The bridge-integration half of that row (CEF / ECS / UDM)
+        # has no gate yet and is not claimed by this line.
         run: python3 scripts/check-ocsf-class-identity.py
       # NFR-SEC-89. The self-test is the gate; it drives the verdict against
       # constructed API shapes including the ones that must FAIL, so the check
@@ -181,7 +188,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 3
+        run: python3 scripts/check-nfr-coverage.py --min-armed 4
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
