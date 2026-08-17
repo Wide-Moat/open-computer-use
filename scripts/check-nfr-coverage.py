@@ -45,7 +45,13 @@ NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
 # Where an executable check can live. Docs are excluded on purpose: an id named
 # in prose is the thing this script measures the absence of.
-CODE_DIRS = ("scripts", ".github")
+#
+# `tests` is here because that is where some checks actually are:
+# NFR-SEC-15's stated verification is the /home/assistant volume-size assertion
+# in tests/test-docker-image.sh, which build.yml runs and which blocks. Naming
+# it anywhere else to satisfy this scanner would put the id away from the
+# assertion that answers it.
+CODE_DIRS = ("scripts", ".github", "tests")
 
 
 def declared_ids(root: pathlib.Path) -> set[str]:
