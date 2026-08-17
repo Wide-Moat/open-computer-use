@@ -39,6 +39,18 @@ commit cannot supply:
     NFR-FLEX-03   needs an IdP integration to be portable across
     NFR-COST-05   needs session accounting that does not exist
     NFR-COMP-25   marked REVISIT, non-gating
+    NFR-SEC-57    the egress tripwire does not exist in the tree -- grep for
+                  it across computer-use-server/ and helm/ returns nothing
+    NFR-SEC-83    frame-ancestors and X-Frame-Options are on no response;
+                  every response.headers assignment in app.py is Cache-Control
+                  (#498). A gate before the header exists reds every PR for a
+                  condition no PR can fix
+    NFR-SEC-86    the artifact-body render substrate does not exist yet
+
+That accounts for every id whose verification column names a CI gate. The rest
+of the 190 are not silent for want of trying: 18 name a running deployment as
+their verification, and the remainder are declarations rather than checkable
+properties. Counting them as coverage debt would misread the manifesto.
 
 That list is the answer to "why not more", and it is here rather than in a
 commit message so the next person reads it before re-deriving it.
