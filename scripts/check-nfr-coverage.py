@@ -62,6 +62,12 @@ import sys
 # manifesto as 187 rows when it holds 190, and an arm on any of the three would
 # have been invisible to the ratchet: the coverage number would not move and
 # nothing would say why.
+# The floor, in the file the check lives in. A caller may raise it; a caller
+# that passes LESS is refused, because the only legitimate reason for the
+# number to fall is that an NFR genuinely stopped being checked -- and that is
+# what the coverage comparison already catches, loudly.
+COMMITTED_FLOOR = 11
+
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
 # Where an executable check can live. Docs are excluded on purpose: an id named
@@ -193,23 +199,62 @@ def _self_test() -> int:
         failures += 0 if ok else 1
         print(f"  {'ok' if ok else 'FAIL'}: only table rows count as declared ({sorted(got)})")
 
+    # The floor itself has to be un-lowerable, and the constant has to match
+    # what the workflow passes -- a floor the caller can undercut is decoration.
+    import subprocess
+
+    wf = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/contracts-lint.yml"
+    if wf.is_file():
+        text = wf.read_text(encoding="utf-8")
+        passed = [
+            int(part.split()[0])
+            for part in text.split("--min-armed ")[1:]
+            if part.split() and part.split()[0].isdigit()
+        ]
+        ok = bool(passed) and all(v >= COMMITTED_FLOOR for v in passed)
+        failures += 0 if ok else 1
+        print(
+            f"  {'ok' if ok else 'FAIL'}: the workflow never passes less than "
+            f"COMMITTED_FLOOR ({passed} vs {COMMITTED_FLOOR})"
+        )
+
+    rc = main(["--min-armed", str(COMMITTED_FLOOR - 1)])
+    ok = rc == 2
+    failures += 0 if ok else 1
+    print(f"  {'ok' if ok else 'FAIL'}: a caller below the floor is refused (exit {rc})")
+
     print()
     if failures:
         print(f"self-test: {failures} case(s) failed")
         return 1
-    print("self-test: the check reds on a dropped arm and a stale id, and counts rows only.")
+    print("self-test: the check reds on a dropped arm and a stale id, counts rows only, and refuses a lowered floor.")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-root", default=".")
-    ap.add_argument("--min-armed", type=int, default=1)
+    # Default to the committed floor, not to 1. The floor lived only in the
+    # workflow's --min-armed argument, so lowering it was a one-character edit
+    # that nothing noticed: measured, changing 11 to 1 left the check green and
+    # silent. A ratchet that can be wound backwards without a sound is not one.
+    ap.add_argument("--min-armed", type=int, default=COMMITTED_FLOOR)
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return _self_test()
+
+    if args.min_armed < COMMITTED_FLOOR:
+        print(
+            f"::error::--min-armed {args.min_armed} is below the committed floor "
+            f"of {COMMITTED_FLOOR}. Raising the floor is a normal commit; lowering "
+            "it means an NFR stopped being checked, which this refuses to do "
+            "quietly. Change COMMITTED_FLOOR in this file, in the same commit "
+            "that removes the arm, and say why.",
+            file=sys.stderr,
+        )
+        return 2
 
     root = pathlib.Path(args.repo_root).resolve()
     declared = declared_ids(root)
