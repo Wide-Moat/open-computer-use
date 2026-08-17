@@ -181,6 +181,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the self-test stubber itself discriminates
+        run: python3 scripts/check-self-tests-are-bound.py --self-test
+
+      - name: every checker fails its own self-test when stubbed
+        # One level up from the seven --self-test steps below. Those prove the
+        # self-tests EXIST; this proves each would NOTICE. A self-test whose
+        # fixtures agree with a broken predicate is the same fake-green it was
+        # written to prevent, and it is invisible by construction: everything
+        # stays green while nothing is checked.
+        run: python3 scripts/check-self-tests-are-bound.py
+
       - name: the vendor-SDK checker itself discriminates
         run: python3 scripts/check-no-vendor-sdk.py --self-test
 
