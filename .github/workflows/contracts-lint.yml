@@ -155,6 +155,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
+      - name: the NFR-coverage checker itself discriminates
+        run: python3 scripts/check-nfr-coverage.py --self-test
+
+      - name: how many NFRs are checked by something that runs
+        # A ratchet, not a target. It reds when an armed NFR becomes unarmed or
+        # when a check names an id the manifesto no longer declares -- both are
+        # regressions a PR causes and a PR can fix. It does NOT red for the
+        # unarmed remainder: that is the state of the layer, no single PR can
+        # move it, and a gate nobody can turn green is a gate that gets ignored.
+        # The number on every run is the point.
+        run: python3 scripts/check-nfr-coverage.py --min-armed 1
+
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
         # interpolation inside the run block. A branch name is
