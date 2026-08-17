@@ -501,7 +501,13 @@ jobs:
       - name: Install server deps
         run: |
           pip install -r computer-use-server/requirements.txt
-          pip install pytest pytest-asyncio
+          # Pinned for the same reason requirements.txt is: unpinned, each run
+          # resolves whatever PyPI serves that day, so a red can arrive from an
+          # upstream release nobody here chose. Measured: a June run resolved
+          # pytest 9.0.3, today it resolves 9.1.1 -- the test framework changed
+          # under the suite with no commit. pytest-asyncio 1.4.0 declares
+          # pytest<10,>=8.4, so it accepts this pin.
+          pip install pytest==9.1.1 pytest-asyncio==1.4.0
 
       - name: Run orchestrator pytest
         run: pytest tests/orchestrator/ -v
@@ -617,7 +623,9 @@ jobs:
           python-version: '3.13'
 
       - name: Install test deps
-        run: pip install httpx pytest pytest-timeout
+        # Pinned: see the orchestrator job. pytest-timeout 2.4.0 declares
+        # pytest>=7.0.0, so it accepts this pin.
+        run: pip install httpx==0.28.1 pytest==9.1.1 pytest-timeout==2.4.0
 
       - name: Bring up the integration stack
         run: |
