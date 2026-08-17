@@ -19,7 +19,13 @@ exclude_path = [
 
 # Match the forward-reference rule: a relative path that doesn't resolve on
 # disk is a broken link, period.
-include_fragments = true
+# lychee 2.9 replaced the boolean with an enum: none | anchor-only | text-only
+# | full. `true` meant anchor fragments, so `anchor-only` is the same
+# behaviour under the new name -- `full` would silently start checking text
+# fragments too. Measured against docs/: both values give an identical
+# 1847 total / 1518 OK / 3 errors, so this changes nothing today and states
+# the intent for when it would.
+include_fragments = "anchor-only"
 
 # Patterns to allow without HTTP checking (anchor-only refs, mailto, etc.).
 exclude = [
