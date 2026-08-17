@@ -22,6 +22,27 @@ the set is measured when almost none of it is.
 
     check-nfr-coverage.py [--repo-root .] [--min-armed N] [--self-test]
 
+Why the number stops where it does. Twenty rows state a CI-gate verification;
+eleven are armed, and each of the remaining nine is blocked by something a
+commit cannot supply:
+
+    NFR-SEC-12    component 06-egress-trust-edge is status:draft, contract:null
+    NFR-SEC-37    needs observed traffic between running components
+    NFR-IC-05     the contract itself says carrier: none (gateway behaviour,
+                  not a wire field) -- there is no artifact to check
+    NFR-MAINT-07  no ORM, no migrations, no SQL exists in the tree yet
+    NFR-MAINT-08  drift detection needs a running deployment
+    NFR-MAINT-10  patch coverage needs a threshold decision, and the Python
+                  surface here is PoC code rather than next/v1 architecture
+    NFR-MAINT-11  needs the parsers and schedulers the components will bring
+    NFR-PERF-13   needs a green baseline to regress against
+    NFR-FLEX-03   needs an IdP integration to be portable across
+    NFR-COST-05   needs session accounting that does not exist
+    NFR-COMP-25   marked REVISIT, non-gating
+
+That list is the answer to "why not more", and it is here rather than in a
+commit message so the next person reads it before re-deriving it.
+
 --min-armed is a RATCHET. It fails when coverage drops below the floor, so an
 armed NFR cannot quietly become unarmed -- the number can only go up. It does
 not fail for the 187, because failing the build on a state no PR can fix would
