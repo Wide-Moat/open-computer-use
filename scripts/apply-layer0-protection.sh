@@ -192,3 +192,78 @@ if [ "$APPLIED" != "$WANTED" ]; then
 fi
 
 echo "ok protection on $BRANCH requires ${#REQUIRED[@]} context(s), read back and identical"
+
+# Classic protection alone leaves the NFR-SEC-89 step unable to answer. That
+# step judges the sibling repositories too, and GITHUB_TOKEN cannot read
+# another repository's protection endpoint — administration:read is not
+# grantable to it — so a cross-repo verdict rests on rulesets alone. With
+# protection only, the check reports "cannot establish enforcement from here"
+# forever: correct protection, permanently unreadable, indistinguishable from
+# no protection at all.
+#
+# So mirror the same set into an active ruleset. Both objects are enforced by
+# GitHub independently, which is the other half of the reason: ocu-sandbox
+# carried 31 contexts in protection and 19 in its ruleset, and the four CodeQL
+# contexts were missing from the ruleset only. One mechanism configured and the
+# other left behind is a gap that reads as enforcement.
+RULESET_BODY="$(python3 -c '
+import json, sys
+print(json.dumps({
+    "name": "layer0-" + sys.argv[1],
+    "target": "branch",
+    "enforcement": "active",
+    # No bypass actors, for the same reason enforce_admins is true above: an
+    # actor who can bypass is an actor for whom the gates do not exist.
+    "bypass_actors": [],
+    "conditions": {"ref_name": {"include": ["refs/heads/" + sys.argv[1]], "exclude": []}},
+    "rules": [
+        {"type": "deletion"},
+        {"type": "non_fast_forward"},
+        {"type": "pull_request", "parameters": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews_on_push": True,
+            "require_code_owner_review": False,
+            "require_last_push_approval": False,
+            "required_review_thread_resolution": False,
+        }},
+        {"type": "required_status_checks", "parameters": {
+            "strict_required_status_checks_policy": False,
+            "required_status_checks": [{"context": c} for c in sys.argv[2:]],
+        }},
+    ],
+}))' "$BRANCH" "${REQUIRED[@]}")"
+
+EXISTING_RULESET="$(gh api "repos/$REPO/rulesets" \
+  --jq ".[]|select(.name==\"layer0-${BRANCH}\")|.id" 2>/dev/null | head -1)"
+
+# RS_RC is captured INSIDE each arm. Reading $? after the if/else would read
+# the status of the `if` itself, which is the status of its last command --
+# measured: an arm exiting 7 leaves $? as 0 once the fi closes, so a failed
+# write would pass for success and the die below would never fire.
+RS_RC=0
+if [ -n "$EXISTING_RULESET" ]; then
+  printf '%s' "$RULESET_BODY" | gh api -X PUT "repos/$REPO/rulesets/$EXISTING_RULESET" --input - >/dev/null 2>/tmp/l0rs.err || RS_RC=$?
+else
+  printf '%s' "$RULESET_BODY" | gh api -X POST "repos/$REPO/rulesets" --input - >/dev/null 2>/tmp/l0rs.err || RS_RC=$?
+fi
+if [ "$RS_RC" -ne 0 ]; then
+  die "the ruleset write failed: $(tr -d '\n' < /tmp/l0rs.err | cut -c1-200)
+       Protection IS written and holds; only the ruleset mirror is missing, so
+       the cross-repo NFR-SEC-89 verdict stays unreadable until this succeeds."
+fi
+
+# Same discipline as above: read the stored ruleset back rather than trusting
+# the write. A ruleset that stores a different set is the failure this whole
+# script exists to make impossible to miss.
+RS_ID="$(gh api "repos/$REPO/rulesets" \
+  --jq ".[]|select(.name==\"layer0-${BRANCH}\")|.id" 2>/dev/null | head -1)"
+RS_APPLIED="$(gh api "repos/$REPO/rulesets/$RS_ID" \
+  --jq '.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks[].context' 2>/dev/null | sort)"
+
+if [ "$RS_APPLIED" != "$WANTED" ]; then
+  echo "MISMATCH between the ruleset sent and the ruleset stored:" >&2
+  diff <(printf '%s\n' "$WANTED") <(printf '%s\n' "$RS_APPLIED") >&2
+  die "the ruleset was written but does not hold the intended set"
+fi
+
+echo "ok ruleset layer0-$BRANCH requires the same ${#REQUIRED[@]} context(s), read back and identical"
