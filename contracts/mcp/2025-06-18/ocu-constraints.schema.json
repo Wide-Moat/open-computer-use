@@ -69,6 +69,7 @@
     },
 
     "boundedError": {
+      "x-open-because": "Overlay on the MCP JSON-RPC error object: the remaining members belong to the protocol.",
       "$comment": "JSON-RPC error object (Tier 1, protocol error). Never reaches the model. Carries a stable reason code only; no topology/stack. error.message and error.data length-bounded per NFR-SEC-51.",
       "type": "object",
       "required": ["code", "message"],
@@ -90,6 +91,7 @@
     },
 
     "boundedTool": {
+      "x-open-because": "Overlay on the MCP Tool object: constrains only the OCU-bound fields; name, inputSchema and outputSchema belong to MCP.",
       "$comment": "OCU overlay on the MCP Tool object. Constrains only OCU-bounded fields; name/inputSchema/outputSchema/annotations semantics remain the MCP base.",
       "type": "object",
       "required": ["name", "inputSchema"],
@@ -101,6 +103,7 @@
           "$comment": "NFR-SEC-51: bounded. maxLength mirrors x-ocu-limits.maxToolDescriptionBytes (a retunable default, not a frozen value)."
         },
         "inputSchema": {
+          "x-open-because": "This node is the tool's own JSON Schema and must carry whatever keywords that schema declares. Closing it would forbid a tool from describing its inputs.",
           "type": "object",
           "required": ["type"],
           "properties": { "type": { "const": "object" } },
@@ -113,6 +116,7 @@
     },
 
     "boundedCallToolResult": {
+      "x-open-because": "Overlay on the MCP CallToolResult: the remaining members belong to the protocol.",
       "$comment": "OCU overlay on the MCP CallToolResult. Tier-2 error model: isError:true is a tool-execution error returned to the model as sanitized, bounded content; protocol errors use boundedError instead. (NFR-SEC-51, NFR-SEC-46)",
       "type": "object",
       "required": ["content"],
@@ -131,6 +135,7 @@
     },
 
     "boundedInitializeResult": {
+      "x-open-because": "Overlay on the MCP InitializeResult: OCU pins the revision and the capability set; other members belong to MCP.",
       "$comment": "OCU pins the negotiated revision and the tools-only capability set; bounds the free-text instructions field.",
       "type": "object",
       "required": ["protocolVersion", "capabilities", "serverInfo"],
@@ -142,6 +147,7 @@
           "additionalProperties": false,
           "properties": {
             "tools": {
+              "x-open-because": "MCP may add fields to the tools capability in a later revision; OCU asserts only listChanged:false. The parent capabilities node IS closed, so no other capability can appear.",
               "type": "object",
               "properties": { "listChanged": { "const": false } }
             }
