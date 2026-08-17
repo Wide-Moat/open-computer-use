@@ -89,6 +89,13 @@ jobs:
           # a floating one broke the CLI.
           npm install --no-save --no-audit --no-fund @asyncapi/parser@3.4.0
           node scripts/validate-asyncapi.mjs "${files[@]}"
+      - name: every $ref resolves on disk, not over the network
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          files=(contracts/**/*.asyncapi.yaml)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no asyncapi files"; exit 1; fi
+          python3 scripts/check-asyncapi-refs-are-local.py "${files[@]}"
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
       # The parser above proves each payload $ref resolves to a well-formed JSON
