@@ -42,6 +42,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
@@ -67,6 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
@@ -93,10 +99,31 @@ jobs:
       - name: OCSF class identity red-probe (RED-when-swapped, two-sided)
         run: python3 scripts/check-ocsf-class-identity.py --self-test
       - name: OCSF class identity (message title uid == vendored class uid)
+        # NFR-MAINT-AUDIT-SCHEMA. Its verification column asks for an "OCSF JSON
+        # CI gate", which is this step: it binds each fan-in message to the class
+        # it claims, so a vendored file re-pointed at another OCSF version fails
+        # here rather than validating clean. Named so check-nfr-coverage.py counts
+        # the requirement as armed -- and this job blocks, so the name is not
+        # decoration. The bridge-integration half of that row (CEF / ECS / UDM)
+        # has no gate yet and is not claimed by this line.
         run: python3 scripts/check-ocsf-class-identity.py
       # NFR-SEC-89. The self-test is the gate; it drives the verdict against
       # constructed API shapes including the ones that must FAIL, so the check
       # cannot quietly stop discriminating.
+  nfr-gates:
+    # Their own job, not more steps on the AsyncAPI one. They lived there
+    # because that is where the first of them landed, and a failure in
+    # step 3 -- a network validation against a remote schema -- skipped
+    # every one of them SILENTLY: no step with `if:` or continue-on-error,
+    # so an unrelated flake disarmed the whole NFR set and the run still
+    # reported the one failure it had. Measured before splitting: 16 steps
+    # in a job named for contracts, 10 of them about something else.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - name: gate-enforcement red-probe (six shapes, one clean)
         run: python3 scripts/check-gates-are-required.py --self-test
       # The live query is REPORT-ONLY today, and deliberately so: it currently
@@ -154,6 +181,74 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the self-test stubber itself discriminates
+        run: python3 scripts/check-self-tests-are-bound.py --self-test
+
+      - name: every checker fails its own self-test when stubbed
+        # One level up from the seven --self-test steps below. Those prove the
+        # self-tests EXIST; this proves each would NOTICE. A self-test whose
+        # fixtures agree with a broken predicate is the same fake-green it was
+        # written to prevent, and it is invisible by construction: everything
+        # stays green while nothing is checked.
+        run: python3 scripts/check-self-tests-are-bound.py
+
+      - name: the vendor-SDK checker itself discriminates
+        run: python3 scripts/check-no-vendor-sdk.py --self-test
+
+      - name: OCU's own code imports no upstream-vendor SDK
+        # NFR-FLEX-01 (import half). Parsed with ast, not grepped: this repo
+        # names every vendor in prose, including in the checker's own docstring.
+        # skills/ and tests/ are out of scope on purpose -- a skill is the
+        # caller's artifact, and the row says provider selection is the calling
+        # client's concern. The endpoint-by-config half is runtime, not claimed.
+        run: python3 scripts/check-no-vendor-sdk.py
+
+      - name: the schema-closure checker itself discriminates
+        run: python3 scripts/check-schemas-are-closed.py --self-test
+
+      - name: every authored schema shape is closed, or says why not
+        # NFR-SEC-51 (contract half). The runtime half -- reject-on-unknown-field
+        # at the gateway before dispatch -- is not provable from here and is not
+        # claimed. A node may stay open, but it must carry `x-open-because`: a
+        # dedicated key, because matching prose failed twice, on "Open Computer
+        # Use Contributors" in every copyright line and on the literal word
+        # additionalProperties inside a schema's own description.
+        run: python3 scripts/check-schemas-are-closed.py
+
+      - name: the compliance-front-matter checker itself discriminates
+        run: python3 scripts/check-compliance-front-matter.py --self-test
+
+      - name: how many controls each component spec declares
+        # NFR-COMP-17. The field is present in all seven specs and empty in all
+        # seven, and the front-matter validator does not know it exists -- so
+        # nothing has ever looked. This does not fill it in: which controls a
+        # component satisfies is an owner's judgement, and inventing entries to
+        # green a number would hide the gap rather than measure it. The floor is
+        # 0, so the current state passes; it reds when a spec loses its key or
+        # loses declarations it had.
+        run: python3 scripts/check-compliance-front-matter.py --min-declared 0
+
+      - name: the pin-policy checker itself discriminates
+        run: python3 scripts/check-pin-policy.py --self-test
+
+      - name: every action and container image names an immutable ref
+        # NFR-SEC-18. security.yml states this policy in a header comment and
+        # credits zizmor with enforcing it; zizmor appears in five comments and
+        # in no executed step, so until now the policy was a claim about a tool
+        # that does not run here.
+        run: python3 scripts/check-pin-policy.py
+
+      - name: the NFR-coverage checker itself discriminates
+        run: python3 scripts/check-nfr-coverage.py --self-test
+
+      - name: how many NFRs are checked by something that runs
+        # A ratchet, not a target. It reds when an armed NFR becomes unarmed or
+        # when a check names an id the manifesto no longer declares -- both are
+        # regressions a PR causes and a PR can fix. It does NOT red for the
+        # unarmed remainder: that is the state of the layer, no single PR can
+        # move it, and a gate nobody can turn green is a gate that gets ignored.
+        # The number on every run is the point.
+        run: python3 scripts/check-nfr-coverage.py --min-armed 11
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
@@ -199,6 +294,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
@@ -218,6 +316,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - name: Validate Protobuf definitions
         run: |
           set -euo pipefail
@@ -236,6 +337,9 @@ jobs:
       LEXICON_DENYLIST: ${{ secrets.LEXICON_DENYLIST }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - name: naming denylist (contracts)
         run: |
           set -euo pipefail

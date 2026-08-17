@@ -19,10 +19,10 @@
 #
 # Pinning policy (mandatory for every `uses:` and container `image:`):
 #   - Third-party actions pinned to a 40-char commit SHA, never to a
-#     movable tag (zizmor `unpinned-uses` would block merge on its own).
+#     movable tag (scripts/check-pin-policy.py blocks merge on its own).
 #   - Container images pinned to `name:tag@sha256:<digest>`.
 #   - Every actions/checkout call sets `persist-credentials: false`
-#     (zizmor `artipacked`).
+#     (the same check; zizmor calls this rule `artipacked`).
 
 name: security
 
@@ -53,6 +53,10 @@ concurrency:
 jobs:
   secrets-gitleaks:
     name: secrets — gitleaks
+    # NFR-SEC-19 (zero secrets in source). Named here so check-nfr-coverage.py
+    # counts this requirement as armed: a row in the manifesto is a claim, and
+    # the claim is only measured while a job that can FAIL carries its id. This
+    # job blocks -- no continue-on-error -- so the name is not decoration.
     runs-on: ubuntu-latest
     steps:
       # Fork-PR-safe two-source pattern. The PR HEAD provides the source
@@ -149,6 +153,9 @@ jobs:
 
   secrets-trufflehog:
     name: secrets — trufflehog
+    # NFR-SEC-19, second reading. Two scanners with different corpora, both
+    # blocking: gitleaks alone leaves the requirement resting on one tool's
+    # rule set.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -516,8 +523,9 @@ jobs:
       # for version X, but running version Y"). Dependabot opens one PR per
       # SUBPATH, so a package used through four paths arrives as four PRs that
       # each break the set in isolation, and the failure names a version
-      # mismatch rather than the split bump behind it. zizmor proves each ref IS
-      # a SHA; nothing proved sibling subpaths share one.
+      # mismatch rather than the split bump behind it. check-pin-policy.py
+      # proves each ref IS a SHA; nothing proved sibling subpaths share one,
+      # which is what the checker below adds.
       - name: Self-test the action-pin checker
         run: python3 scripts/check-action-pin-consistency.py --self-test
 

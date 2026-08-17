@@ -48,6 +48,14 @@ permissions:
 
 jobs:
   rehearsal:
+    # NFR-SEC-07 (supply chain: SBOM + SLSA + cosign per release). The release
+    # workflow that carries the real thing fires on `v*` tags only and has NEVER
+    # RUN -- 24 tags exist and supply-chain.yml has zero runs, because the tags
+    # predate it. So the id is named HERE, on the rehearsal that exercises the
+    # same pipeline on every pull request: syft, cosign, sign, verify, and the
+    # red legs (an empty SBOM, an absent digest, a foreign digest that must not
+    # verify). This job blocks. Naming it on supply-chain.yml instead would
+    # claim a requirement is measured by something no run has ever executed.
     name: release — gate 3 rehearsal (nothing published)
     runs-on: ubuntu-latest
     services:
