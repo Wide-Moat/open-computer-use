@@ -168,6 +168,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
+      - name: the compliance-front-matter checker itself discriminates
+        run: python3 scripts/check-compliance-front-matter.py --self-test
+
+      - name: how many controls each component spec declares
+        # NFR-COMP-17. The field is present in all seven specs and empty in all
+        # seven, and the front-matter validator does not know it exists -- so
+        # nothing has ever looked. This does not fill it in: which controls a
+        # component satisfies is an owner's judgement, and inventing entries to
+        # green a number would hide the gap rather than measure it. The floor is
+        # 0, so the current state passes; it reds when a spec loses its key or
+        # loses declarations it had.
+        run: python3 scripts/check-compliance-front-matter.py --min-declared 0
+
       - name: the pin-policy checker itself discriminates
         run: python3 scripts/check-pin-policy.py --self-test
 
@@ -188,7 +201,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 4
+        run: python3 scripts/check-nfr-coverage.py --min-armed 5
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
