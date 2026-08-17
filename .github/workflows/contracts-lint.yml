@@ -181,6 +181,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the vendor-SDK checker itself discriminates
+        run: python3 scripts/check-no-vendor-sdk.py --self-test
+
+      - name: OCU's own code imports no upstream-vendor SDK
+        # NFR-FLEX-01 (import half). Parsed with ast, not grepped: this repo
+        # names every vendor in prose, including in the checker's own docstring.
+        # skills/ and tests/ are out of scope on purpose -- a skill is the
+        # caller's artifact, and the row says provider selection is the calling
+        # client's concern. The endpoint-by-config half is runtime, not claimed.
+        run: python3 scripts/check-no-vendor-sdk.py
+
       - name: the schema-closure checker itself discriminates
         run: python3 scripts/check-schemas-are-closed.py --self-test
 
@@ -226,7 +237,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 10
+        run: python3 scripts/check-nfr-coverage.py --min-armed 11
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
