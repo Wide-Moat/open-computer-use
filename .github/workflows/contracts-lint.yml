@@ -125,13 +125,14 @@ jobs:
       #   3. Remove `continue-on-error: true` from sast-semgrep in
       #      security.yml. A required context that cannot fail is green whatever
       #      it finds, which is the exact shape this NFR exists to name.
-      #   4. Retire the `composition` job. It composes the delivering PRs to
-      #      show the sequence still delivers; once they merge, their head
-      #      branches delete, resolution exits 2, and the job reds until it is
-      #      removed. That red is the reminder, but recording it here means
-      #      nobody has to be surprised by it. It is engineering evidence, not
-      #      auditor evidence -- a green on a throwaway composed tree is a
-      #      claim about a future merge, never readiness itself.
+      #   4. DONE. The `composition` job is retired. It composed the delivering
+      #      PRs to show the sequence still delivers; they merged, their head
+      #      branches deleted, and it red exactly as recorded here --
+      #      `origin/feat/e1-userns-admission does not resolve`. That red was
+      #      the reminder and it worked. Nothing replaces it: a green on a
+      #      throwaway composed tree was a claim about a future merge, and the
+      #      merge has happened, so the readiness check below now reads the
+      #      shipped branches instead of predicting them.
       # The readiness claim is worth nothing if it is only ever answered when
       # somebody remembers to ask. Report-only for the same reason as the check
       # below: it reports 0 of 4 today because the legs sit in open pull
@@ -249,36 +250,3 @@ jobs:
             exit 1
           fi
           echo "contracts/ is clean"
-
-  composition:
-    # Minutes of network-bound work; the 360-minute default would hold a runner
-    # for six hours on a wedged clone.
-    timeout-minutes: 15
-    # Its own job: this clones a sibling repo and runs a cold Go build, which is
-    # minutes of network-bound work -- measured, not the 11s a warm cache
-    # suggests. Riding in a contract-validation job would let a clone flake red
-    # "the contract documents are valid".
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-      # --compose shipped in #448 and ran in no workflow -- the same shape as the
-      # honesty gate #121 wired, one level up.
-      #
-      # Report-only, but NOT for the reason the readiness step above gives. That
-      # one reds until the legs merge; this one exits 0 today. A compose red is
-      # actionable -- it means the sequence stopped delivering -- but only in
-      # ocu-sandbox, never by the PR being tested here.
-      #
-      # `|| [ "$?" -eq 1 ]` tolerates exit 1 (composition does not hold) and lets
-      # exit 2 (CANNOT JUDGE -- auth refused, a head branch gone) red the job.
-      # Flattening both with `|| true` is the pattern this file already records
-      # swallowing an auth failure every run while nobody noticed.
-      - name: composition of the delivering PRs (report-only on exit 1)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git clone -q --filter=blob:none \
-            https://github.com/Wide-Moat/ocu-sandbox.git "$RUNNER_TEMP/sandbox"
-          python3 scripts/check-readiness-claim.py --compose "$RUNNER_TEMP/sandbox" \
-            || [ "$?" -eq 1 ]
