@@ -4,6 +4,13 @@
 #
 # Binds each audit-fan-in message to the OCSF class it claims.
 #
+# NFR-SEC-88 (class half): the control-plane authentication trail must be an
+# OCSF Authentication (3002) event. This holds the CLASS -- `title: Authentication
+# (OCSF 3002)` is checked against the vendored class file, so re-pointing that
+# message at another class fails here. The emission half (every authentication
+# act produces one, failures counted, fail-open with counted loss) is runtime
+# and is not claimed by this check.
+#
 # The AsyncAPI validator beside this one checks that every payload $ref resolves
 # to a well-formed JSON Schema. It does not check WHICH schema: replacing a
 # vendored OCSF class with `{"type": "integer", "minimum": 5}` passes it (probed
