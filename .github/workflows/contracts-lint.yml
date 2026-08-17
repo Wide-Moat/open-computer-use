@@ -193,6 +193,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the canon-trigger checker itself discriminates
+        run: python3 scripts/check-gates-trigger-on-canon.py --self-test
+
+      - name: every named gate reports on a next/v1 pull request
+        # check-gates-are-required.py asks whether a context is REQUIRED. That
+        # question assumes the context arrives. codeql.yml was filtered to
+        # `branches: [main]`, so no codeql context reached a next/v1 PR and the
+        # platform agreed -- code-scanning held 10 Trivy uploads for canon and
+        # zero from CodeQL. The workflow existed, was pinned, and analysed
+        # nothing on the branch it was supposed to guard.
+        run: python3 scripts/check-gates-trigger-on-canon.py
+
       - name: the self-test stubber itself discriminates
         run: python3 scripts/check-self-tests-are-bound.py --self-test
 
