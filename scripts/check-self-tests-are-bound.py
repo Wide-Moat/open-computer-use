@@ -44,7 +44,7 @@ SUBJECTS: dict[str, str] = {
     "check-nfr-coverage.py": "verdict",
     "check-gates-are-required.py": "verdict",
     "check-readiness-claim.py": "leg_holds",
-    "check-asyncapi-refs-are-local.py": "check_file",
+    "check-contract-refs-are-local.py": "check_file",
 }
 
 # What "found nothing" looks like for each: a list of findings, or a bool that

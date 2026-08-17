@@ -34,8 +34,15 @@ from urllib.parse import urlsplit
 try:
     import yaml
 except ImportError:
-    sys.stderr.write("check-asyncapi-refs-are-local: PyYAML is required\n")
+    sys.stderr.write("check-contract-refs-are-local: PyYAML is required\n")
     sys.exit(2)
+
+
+# Documents that legitimately carry no $ref. Declared by name so that a
+# document which HAS refs cannot silently drop to zero and still pass: the gate
+# would otherwise read "all 0 refs are local" as a clean bill of health.
+# ocu-constraints defines its shapes inline under $defs and binds nothing.
+REFLESS = {"ocu-constraints.schema.json"}
 
 
 def iter_refs(node, path=()):
@@ -150,7 +157,7 @@ def main(argv):
     if argv and argv[0] == "--self-test":
         return self_test()
     if not argv:
-        sys.stderr.write("usage: check-asyncapi-refs-are-local.py <doc.asyncapi.yaml>...\n")
+        sys.stderr.write("usage: check-contract-refs-are-local.py <doc.asyncapi.yaml>...\n")
         return 2
     failed = 0
     for arg in argv:
@@ -163,12 +170,16 @@ def main(argv):
                     f"::error::{arg}: $ref {ref!r} at /{pointer} {reason} — "
                     f"contract schemas are vendored and resolved on disk\n"
                 )
-        elif ref_count == 0:
-            # Zero refs is not a pass. A document that lost its payload refs is
-            # exactly the shape this gate exists to notice, and "all 0 refs are
-            # local" is true of it.
+        elif ref_count == 0 and Path(arg).name not in REFLESS:
+            # Zero refs is a pass only for a document listed as self-contained.
+            # "All 0 refs are local" is also true of a document that LOST its
+            # payload bindings, which is the shape this gate exists to notice --
+            # so the empty case must be declared, not inferred.
             failed += 1
-            sys.stderr.write(f"::error::{arg}: no $ref found — the payload bindings are gone\n")
+            sys.stderr.write(
+                f"::error::{arg}: no $ref found — either the payload bindings are "
+                f"gone, or the document is self-contained and belongs in REFLESS\n"
+            )
         else:
             print(f"refs local: {arg} ({ref_count} refs)")
     return 1 if failed else 0

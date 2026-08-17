@@ -93,9 +93,14 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
-          files=(contracts/**/*.asyncapi.yaml)
-          if [ ${#files[@]} -eq 0 ]; then echo "::error::no asyncapi files"; exit 1; fi
-          python3 scripts/check-asyncapi-refs-are-local.py "${files[@]}"
+          # Every contract, not just the AsyncAPI one. redocly and ajv resolve a
+          # remote $ref the same way the AsyncAPI parser does, and the other
+          # twelve documents carry 164 refs between them under no such check.
+          # The vendored OCSF schemas are excluded as targets, not as subjects:
+          # they are $ref'd BY the fan-in document and validated through it.
+          files=(contracts/**/*.schema.json contracts/**/*.asyncapi.yaml contracts/**/*.openapi.yaml)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no contract files"; exit 1; fi
+          python3 scripts/check-contract-refs-are-local.py "${files[@]}"
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
       # The parser above proves each payload $ref resolves to a well-formed JSON
