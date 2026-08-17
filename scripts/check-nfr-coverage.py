@@ -217,6 +217,61 @@ def armed_ids(root: pathlib.Path, ids: set[str]) -> dict[str, list[str]]:
     return hits
 
 
+def declared_rows(root: pathlib.Path) -> dict[str, str]:
+    """id -> its verification text. declared_ids() returns only the ids, and the
+    completeness check needs to know WHAT each row asks for."""
+    path = root / MANIFESTO
+    if not path.is_file():
+        return {}
+    rows: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.split("|")]
+        if len(cells) > 5 and NFR_ID.fullmatch(cells[1]):
+            rows[cells[1]] = " ".join(cells[4:6])
+    return rows
+
+
+EXCUSE_ENTRY = re.compile(r"^\s{4}(NFR-[A-Z]+-[A-Za-z0-9-]+)\s{2,}\S", re.M)
+CI_VERIFICATION = ("ci gate", "ci lint", "lint", "script")
+
+
+def excused_ids(source: str) -> set[str]:
+    """Ids the docstring lists as unarmed-and-why.
+
+    Matched on the list's SHAPE -- four spaces, an id, two or more spaces, a
+    reason -- not on the id appearing somewhere in the header. A first version
+    of this measurement searched the whole docstring and reported NFR-SEC-15 and
+    NFR-SEC-89 as stale excuses; both are armed, and both appear in prose
+    explaining what the check does. A substring match answers a question nobody
+    asked.
+    """
+    return set(EXCUSE_ENTRY.findall(source))
+
+
+def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str]) -> list[str]:
+    """Ids whose verification column names a CI gate, yet are neither armed nor
+    listed with a reason.
+
+    This is the completeness question for the excuse list. Without it the list
+    answers for whatever somebody happened to add: measured before it existed,
+    190 declared, 11 armed, 11 excused, and three ids naming a CI gate that
+    nobody had accounted for.
+
+    Deliberately narrow. An id whose verification asks for a running deployment
+    is not coverage debt, and counting it would misread the manifesto.
+    """
+    return sorted(
+        nfr
+        for nfr, verification in rows.items()
+        if nfr not in armed
+        and nfr not in excused
+        and any(term in verification.lower() for term in CI_VERIFICATION)
+    )
+
+
 def verdict(declared: set[str], armed: dict[str, list[str]], floor: int) -> list[str]:
     """Reasons to refuse. Empty means the ratchet holds.
 
@@ -238,6 +293,35 @@ def verdict(declared: set[str], armed: dict[str, list[str]], floor: int) -> list
             + ", ".join(sorted(declared - set(armed) if floor else []))[:200]
         )
     return problems
+
+
+def _completeness_self_test() -> int:
+    """Drive unexplained_ci_ids() and excused_ids() on constructed inputs."""
+    failures = 0
+    rows = {
+        "NFR-A-1": "CI gate",
+        "NFR-A-2": "running deployment probe",
+        "NFR-A-3": "CI lint",
+    }
+    cases = [
+        ({"NFR-A-1"}, {"NFR-A-3"}, [], "armed or excused leaves nothing unexplained"),
+        ({"NFR-A-1"}, set(), ["NFR-A-3"], "a CI-gated id with no excuse is reported"),
+        (set(), set(), ["NFR-A-1", "NFR-A-3"], "both CI-gated ids reported, the deployment one is not"),
+    ]
+    for armed, excused, want, label in cases:
+        got = unexplained_ci_ids(rows, armed, excused)
+        ok = got == want
+        failures += 0 if ok else 1
+        print(f"  {'ok' if ok else 'FAIL'}: {label} -> {got or 'none'}")
+
+    # The excuse parser matches the list's shape, not any mention. This case is
+    # the false alarm that shaped it: an id named in prose is not an excuse.
+    source = "docstring mentions NFR-SEC-89 in a sentence\n    NFR-B-2   a real reason\n"
+    got = excused_ids(source)
+    ok = got == {"NFR-B-2"}
+    failures += 0 if ok else 1
+    print(f"  {'ok' if ok else 'FAIL'}: an id in prose is not an excuse -> {sorted(got)}")
+    return failures
 
 
 def _reachability_self_test() -> int:
@@ -339,6 +423,7 @@ def _self_test() -> int:
     print(f"  {'ok' if ok else 'FAIL'}: a caller below the floor is refused (exit {rc})")
 
     failures += _reachability_self_test()
+    failures += _completeness_self_test()
 
     print()
     if failures:
@@ -380,6 +465,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     armed = armed_ids(root, declared)
+    unexplained = unexplained_ci_ids(
+        declared_rows(root),
+        set(armed),
+        excused_ids(pathlib.Path(__file__).read_text(encoding="utf-8")),
+    )
+    if unexplained:
+        for nfr in unexplained:
+            print(
+                f"::error::{nfr} names a CI gate as its verification, is not armed, "
+                "and carries no reason in this file's list. Arm it or record why "
+                "it cannot be armed -- an unexplained gap is indistinguishable "
+                "from an unnoticed one.",
+                file=sys.stderr,
+            )
+        return 1
+
     print(f"NFR coverage: {len(armed)} of {len(declared)} ids are named by a check that runs")
     stranded = unreachable_on_canon(root, armed)
     for nfr in sorted(armed):
