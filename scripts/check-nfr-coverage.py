@@ -125,6 +125,15 @@ def armed_ids(root: pathlib.Path, ids: set[str]) -> dict[str, list[str]]:
             # assertion is the failure mode this whole file exists to name.
             if path.resolve() == this_file:
                 continue
+            # Build artifacts are not checks. A .pyc keeps the NFR ids of the
+            # source it was compiled from, so a deleted checker stays "armed"
+            # as long as its cache survives -- measured on a copy of this tree:
+            # delete check-pin-policy.py with __pycache__ present and the
+            # ratchet still reads 11. The id is named by a file that no longer
+            # runs. A clean checkout has no cache, so this also removes a
+            # difference between what CI counts and what a developer counts.
+            if "__pycache__" in path.parts or path.suffix in (".pyc", ".pyo"):
+                continue
             try:
                 body = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
