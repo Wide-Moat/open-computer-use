@@ -356,7 +356,14 @@ jobs:
         # red one.
         run: |
           set -euo pipefail
+          # --namespace, because the chart takes its namespace from
+          # {{ .Release.Namespace }} and a render without one lands every
+          # resource in `default` -- which makes CKV_K8S_21 fire on the
+          # renderer's choice rather than on the chart. Measured: it accounts
+          # for 6 of the 19 findings the skip list currently hides, and
+          # disappears entirely once a namespace is supplied.
           helm template scan helm/computer-use-server \
+            --namespace ocu \
             -f .github/checkov/helm-scan-values.yaml > /tmp/rendered.yaml
           # A chart that renders to nothing would also scan clean.
           test "$(grep -c '^kind:' /tmp/rendered.yaml)" -gt 0 \
@@ -435,6 +442,30 @@ jobs:
             --var-file .github/checkov/helm-scan-values.yaml \
             --skip-path 'templates/tests' \
             --skip-check CKV_K8S_21,CKV_K8S_16,CKV_K8S_43,CKV_K8S_15,CKV_K8S_35,CKV_K8S_23,CKV_K8S_40,CKV_K8S_20,CKV_K8S_37,CKV_K8S_28,CKV_K8S_22,CKV_K8S_8,CKV_K8S_9,CKV2_K8S_6
+      # Report-only, and deliberately a SECOND scan rather than a wider
+      # --framework on the first. The helm framework sees the chart; the
+      # kubernetes framework sees the manifests it renders to, and the two
+      # disagree: with the SAME fourteen skips applied, the rendered manifests
+      # still fail eight rules the skip list does not name -- CKV_K8S_10/11/12/13
+      # (cpu + memory requests and limits), 29/30/31 (security context, seccomp)
+      # and 38 (service-account token mounting).
+      #
+      # Those eight are not waived. They are INVISIBLE: --framework helm never
+      # evaluates them, so no waiver was ever written and nothing reports them.
+      # Widening the blocking scan would turn eight silent findings into a red
+      # gate in one step, and setting resource limits or a security context is a
+      # chart decision rather than a CI one (#322). Printing them keeps the
+      # verdict where it is and stops the gap being something you have to
+      # already know about in order to find.
+      - name: what the helm framework cannot see (report-only)
+        run: |
+          set -uo pipefail
+          checkov -f /tmp/rendered.yaml \
+            --quiet --compact --framework kubernetes \
+            --skip-check CKV_K8S_21,CKV_K8S_16,CKV_K8S_43,CKV_K8S_15,CKV_K8S_35,CKV_K8S_23,CKV_K8S_40,CKV_K8S_20,CKV_K8S_37,CKV_K8S_28,CKV_K8S_22,CKV_K8S_8,CKV_K8S_9,CKV2_K8S_6 \
+            || true
+          echo "::notice::the findings above are NOT covered by the skip list and NOT evaluated by the blocking helm-framework scan -- see #322"
+
 
   conventional-commits:
     name: commits — conventional-commits
