@@ -35,7 +35,13 @@ import pathlib
 import re
 import sys
 
-NFR_ID = re.compile(r"NFR-[A-Z]+-\d+")
+# Not `-\d+`: three rows do not end in a bare number -- NFR-FLEX-07a,
+# NFR-FLEX-07b (lowercase suffix) and NFR-MAINT-AUDIT-SCHEMA (a word). A
+# numeric-only pattern read the
+# manifesto as 187 rows when it holds 190, and an arm on any of the three would
+# have been invisible to the ratchet: the coverage number would not move and
+# nothing would say why.
+NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
 # Where an executable check can live. Docs are excluded on purpose: an id named
 # in prose is the thing this script measures the absence of.
@@ -146,11 +152,16 @@ def _self_test() -> int:
         (root / MANIFESTO).write_text(
             "Prose mentioning NFR-SEC-99 which is not a row.\n"
             "| NFR-SEC-01 | a real row |\n"
-            "| NFR-SEC-02 | another row, see NFR-SEC-01 |\n",
+            "| NFR-SEC-02 | another row, see NFR-SEC-01 |\n"
+            # Neither of these ends in a bare number. The first pattern here
+            # read only `-\\d+` and silently undercounted the manifesto by
+            # three rows, which also made an arm on any of them invisible.
+            "| NFR-FLEX-07a | a lowercase-suffixed row |\n"
+            "| NFR-MAINT-AUDIT-SCHEMA | a word-suffixed row |\n",
             encoding="utf-8",
         )
         got = declared_ids(root)
-        want = {"NFR-SEC-01", "NFR-SEC-02"}
+        want = {"NFR-SEC-01", "NFR-SEC-02", "NFR-FLEX-07a", "NFR-MAINT-AUDIT-SCHEMA"}
         ok = got == want
         failures += 0 if ok else 1
         print(f"  {'ok' if ok else 'FAIL'}: only table rows count as declared ({sorted(got)})")
