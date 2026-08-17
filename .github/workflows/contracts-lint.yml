@@ -226,7 +226,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 9
+        run: python3 scripts/check-nfr-coverage.py --min-armed 10
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
