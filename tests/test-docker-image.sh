@@ -35,6 +35,15 @@ run_in_container() {
     docker run --rm --platform linux/amd64 --entrypoint=bash --user=assistant "$IMAGE" -c "$1" 2>/dev/null
 }
 
+# Same run, but stderr is KEPT. run_in_container discards it, which is correct
+# for an assertion -- a tool's chatter is not the subject -- and useless the
+# moment something fails for a reason only stderr carries. #426 stalled exactly
+# there: the tsx probe failed in CI, the cause was suppressed, and diagnosing it
+# needed a machine that could build the image.
+run_in_container_verbose() {
+    docker run --rm --platform linux/amd64 --entrypoint=bash --user=assistant "$IMAGE" -c "$1" 2>&1
+}
+
 echo "=== Testing Docker image: $IMAGE ==="
 echo ""
 
@@ -108,6 +117,29 @@ for tool in mmdc tsc tsx claude codex opencode; do
     VRESULT=$(run_in_container "$tool --version >/dev/null 2>&1 && echo OK || echo FAIL") || VRESULT=""
     echo "$VRESULT" | grep -q "OK" && pass "$tool --version exit 0" || fail "$tool --version failed"
 done
+
+# tsx must RUN a file, not merely answer --version. #425 removed ts-node because
+# TypeScript 7 deletes the API it consumed, which leaves tsx as the only way a
+# skill executes TypeScript -- so "installed" stopped being a sufficient claim.
+#
+# On failure this prints the command's own stderr. The first attempt at this
+# check (#426) suppressed it, the CI failure said only "FAIL: tsx execution",
+# and finding the cause needed someone who could build and enter the image.
+# A check that cannot say why it failed defers the work rather than doing it.
+TSX_PROBE='cd /tmp && printf "console.log(\"tsx-ok\", 2*2);\n" > tsxprobe.ts && tsx tsxprobe.ts'
+# NOT `|| TSX_OUT="..."`: that fires on a NON-ZERO EXIT, which is exactly the
+# failing case, and overwrites the captured stderr with a placeholder. Probed --
+# it turned a real "Cannot find module" into "<docker run failed>", reproducing
+# the uninformative output this check exists to replace. Capture first, then
+# read the status separately.
+TSX_OUT=$(run_in_container_verbose "$TSX_PROBE"; echo "rc=$?")
+if echo "$TSX_OUT" | grep -q "tsx-ok 4"; then
+    pass "tsx executes a TypeScript file"
+else
+    fail "tsx cannot execute a TypeScript file"
+    echo "    the container said:"
+    echo "$TSX_OUT" | sed 's/^/      /' | head -20
+fi
 
 # list-subagent-models presence + executability (Phase 1 / Plan 01-05 install line)
 RESULT=$(run_in_container "which list-subagent-models >/dev/null 2>&1 && echo OK || echo MISSING") || RESULT=""
