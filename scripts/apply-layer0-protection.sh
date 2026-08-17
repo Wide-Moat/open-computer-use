@@ -32,10 +32,18 @@ if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; shift; fi
 REPO="${1:-Wide-Moat/open-computer-use}"
 BRANCH="${2:-next/v1}"
 
-# The eight that must be required. The two that must not are named below,
+# The nine that must be required. The two that must not are named below,
 # because "leave them out" is easy to satisfy by accident and easy to undo
 # by accident too.
+#
+# nfr-gates joined the list after the other eight. It carries the
+# deployment-readiness claim, the NFR-coverage ratchet, the pin policy and the
+# cross-repo NFR-SEC-89 verdict -- the checks that measure whether this
+# architecture holds. Leaving it optional would let a merge past the gate that
+# reports the goal, which is the same shape as leaving gitleaks optional: the
+# job would still run and still be green, and nothing would depend on it.
 REQUIRED=(
+  "nfr-gates"
   "secrets — gitleaks"
   "secrets — trufflehog"
   "SAST — semgrep"
