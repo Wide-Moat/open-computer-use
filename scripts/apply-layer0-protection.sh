@@ -145,12 +145,21 @@ if [ "$missing" -gt 0 ]; then
        gh api repos/$REPO/commits/$HEAD_SHA/check-runs --jq '.check_runs[].name'"
 fi
 
+# enforce_admins and a required review are part of the posture, not extras.
+# Applied as False/None this script produced a branch that NFR-SEC-89 reports as
+# violating the moment it is checked — "the gates bind everyone except the people
+# most able to bypass them" is the checker's own wording for exactly this state.
+# A tool that configures enforcement must not configure it into a finding.
 BODY="$(python3 -c '
 import json, sys
 print(json.dumps({
     "required_status_checks": {"strict": False, "contexts": sys.argv[1:]},
-    "enforce_admins": False,
-    "required_pull_request_reviews": None,
+    "enforce_admins": True,
+    "required_pull_request_reviews": {
+        "dismiss_stale_reviews": True,
+        "require_code_owner_reviews": False,
+        "required_approving_review_count": 1,
+    },
     "restrictions": None,
 }))' "${REQUIRED[@]}")"
 

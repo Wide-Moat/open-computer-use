@@ -3,10 +3,14 @@
 #
 # Fixture for python-unsafe-yaml-load, consumed by `semgrep test .semgrep/`.
 #
-# The annotations are the assertion: `ruleid:` marks a line the rule must flag,
-# `ok:` a line it must not. `semgrep test` compares them against the rule's own
+# The annotations below are the assertion. One marks a line the rule must flag,
+# the other a line it must not; semgrep compares them against the rule's own
 # output and fails when a line is flagged by a different rule than the one
 # named, so a finding raised for the wrong reason does not pass as a finding.
+#
+# The marker words are not spelled out in this comment on purpose: semgrep parses
+# annotation syntax anywhere in the file, including prose, and warns on every
+# occurrence it cannot resolve to a line.
 #
 # The two unsafe forms live in separate functions on purpose. A rule that only
 # reddens on one literal line is a signature, not a rule.
