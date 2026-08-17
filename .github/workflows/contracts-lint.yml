@@ -110,6 +110,20 @@ jobs:
       # NFR-SEC-89. The self-test is the gate; it drives the verdict against
       # constructed API shapes including the ones that must FAIL, so the check
       # cannot quietly stop discriminating.
+  nfr-gates:
+    # Their own job, not more steps on the AsyncAPI one. They lived there
+    # because that is where the first of them landed, and a failure in
+    # step 3 -- a network validation against a remote schema -- skipped
+    # every one of them SILENTLY: no step with `if:` or continue-on-error,
+    # so an unrelated flake disarmed the whole NFR set and the run still
+    # reported the one failure it had. Measured before splitting: 16 steps
+    # in a job named for contracts, 10 of them about something else.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
       - name: gate-enforcement red-probe (six shapes, one clean)
         run: python3 scripts/check-gates-are-required.py --self-test
       # The live query is REPORT-ONLY today, and deliberately so: it currently
@@ -167,7 +181,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
-
       - name: the compliance-front-matter checker itself discriminates
         run: python3 scripts/check-compliance-front-matter.py --self-test
 
