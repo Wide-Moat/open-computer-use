@@ -89,6 +89,18 @@ jobs:
           # a floating one broke the CLI.
           npm install --no-save --no-audit --no-fund @asyncapi/parser@3.4.0
           node scripts/validate-asyncapi.mjs "${files[@]}"
+      - name: every $ref resolves on disk, not over the network
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          # Every contract, not just the AsyncAPI one. redocly and ajv resolve a
+          # remote $ref the same way the AsyncAPI parser does, and the other
+          # twelve documents carry 164 refs between them under no such check.
+          # The vendored OCSF schemas are excluded as targets, not as subjects:
+          # they are $ref'd BY the fan-in document and validated through it.
+          files=(contracts/**/*.schema.json contracts/**/*.asyncapi.yaml contracts/**/*.openapi.yaml)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::no contract files"; exit 1; fi
+          python3 scripts/check-contract-refs-are-local.py "${files[@]}"
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
       # The parser above proves each payload $ref resolves to a well-formed JSON
@@ -325,7 +337,28 @@ jobs:
           shopt -s globstar nullglob
           files=(contracts/proto/**/*.proto)
           if [ ${#files[@]} -eq 0 ]; then echo "no proto files"; exit 0; fi
-          curl -sSL -o /tmp/buf "https://github.com/bufbuild/buf/releases/download/v1.34.0/buf-$(uname -s)-$(uname -m)"
+          # Pinned by CONTENT, not only by version tag. A release asset is
+          # mutable -- a tag can be moved and the binary replaced -- so the
+          # version alone buys nothing against a substituted artifact, and this
+          # job then executes it. The digests are the upstream sha256.txt for
+          # v1.34.0, inlined rather than fetched: downloading the checksum from
+          # the same host that serves the binary lets one compromise supply
+          # both, which verifies only that the file arrived intact.
+          asset="buf-$(uname -s)-$(uname -m)"
+          case "$asset" in
+            buf-Linux-x86_64)  want=c415352f30bed9bd3083b68fc8a463ca8cd3de5f6430531e9ef14677d2a7fc01 ;;
+            buf-Linux-aarch64) want=f739870ef11d13cb91270593bb711e0c520e66b9c18d4dc1a194cae09a68ff61 ;;
+            buf-Darwin-x86_64) want=553be8ae5292047148903339ed65220ef202bebabb12b9cc6d3b0de482e34520 ;;
+            buf-Darwin-arm64)  want=451e133fd83f0a26c9685c019f3b132f659cbedb6e5d1ed3c7fd194aea72d9d2 ;;
+            *) echo "::error::no pinned digest for $asset"; exit 1 ;;
+          esac
+          curl -sSL -o /tmp/buf "https://github.com/bufbuild/buf/releases/download/v1.34.0/$asset"
+          got=$(sha256sum /tmp/buf | cut -d' ' -f1)
+          if [ "$got" != "$want" ]; then
+            echo "::error::$asset digest $got does not match the pinned $want"
+            exit 1
+          fi
+          echo "buf $asset matches its pinned digest"
           chmod +x /tmp/buf
           cd contracts/proto
           /tmp/buf lint
