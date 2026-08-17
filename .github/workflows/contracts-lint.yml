@@ -155,6 +155,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
+      - name: the pin-policy checker itself discriminates
+        run: python3 scripts/check-pin-policy.py --self-test
+
+      - name: every action and container image names an immutable ref
+        # NFR-SEC-18. security.yml states this policy in a header comment and
+        # credits zizmor with enforcing it; zizmor appears in five comments and
+        # in no executed step, so until now the policy was a claim about a tool
+        # that does not run here.
+        run: python3 scripts/check-pin-policy.py
+
       - name: the NFR-coverage checker itself discriminates
         run: python3 scripts/check-nfr-coverage.py --self-test
 
@@ -165,7 +175,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 2
+        run: python3 scripts/check-nfr-coverage.py --min-armed 3
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
