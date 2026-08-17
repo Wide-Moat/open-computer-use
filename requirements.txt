@@ -60,7 +60,7 @@ scipy==1.18.0
 scikit-learn==1.7.2
 
 # Plotting and visualization
-matplotlib==3.11.0
+matplotlib==3.11.1
 seaborn==0.13.2
 
 # XML processing
