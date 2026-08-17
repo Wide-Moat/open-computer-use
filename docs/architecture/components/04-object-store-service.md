@@ -6,7 +6,7 @@ status: draft
 last-reviewed: 2026-07-07
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
-compliance: []
+compliance: [DORA-Art.28, DORA-Art.30, EU-AI-Act-Art.15, ISO27001-A.8.10, ISO27001-A.8.15, NIST-SP-800-190, NYDFS-500.15, SOC2-CC6.1, SOC2-CC6.6, SOC2-CC7.2]
 threat-model: 06-threat-model.md
 contract: [contracts/storage/mount-config.schema.json, contracts/storage/file-ops.schema.json]
 adr: [0003, 0010, 0013, 0014, 0015, 0016, 0023, 0025]
