@@ -6,7 +6,7 @@ status: draft
 last-reviewed: 2026-06-14
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
-compliance: []
+compliance: [DORA-Art.28, DORA-Art.9, EU-AI-Act-Art.14, ISO27001-A.8.10, ISO27001-A.8.15, ISO27001-A.8.2, NYDFS-500.15, NYDFS-500.7, SOC2-CC6.1, SOC2-CC6.6, SOC2-CC7.2]
 threat-model: 06-threat-model.md
 contract: [contracts/openapi/operator-rest.openapi.yaml, contracts/openapi/soar-revoke.openapi.yaml, contracts/proto/ocu/control/session/v1/session_setup.proto]
 adr: [0004, 0013, 0017, 0018, 0023]

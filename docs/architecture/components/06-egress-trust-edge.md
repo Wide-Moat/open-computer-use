@@ -6,7 +6,7 @@ status: draft
 last-reviewed: 2026-06-15
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
-compliance: []
+compliance: [DORA-Art.28, DORA-Art.30, DORA-Art.9, EU-AI-Act-Art.12, EU-AI-Act-Art.15, ISO27001-A.8.10, ISO27001-A.8.24, NYDFS-500.15, PCI-DSS-Req.3, SOC2-CC6.1, SOC2-CC6.6, SOC2-CC6.7]
 threat-model: 06-threat-model.md
 contract: null
 adr: [0005, 0006, 0007, 0008, 0013, 0016, 0021]

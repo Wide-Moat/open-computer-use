@@ -6,7 +6,7 @@ status: draft
 last-reviewed: 2026-06-06
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
-compliance: []
+compliance: [DORA-Art.10, EU-AI-Act-Art.12, ISO27001-A.8.15, NYDFS-500.06, SOC2-CC7.2]
 threat-model: 06-threat-model.md
 contract: contracts/audit/audit-fanin.asyncapi.yaml
 adr: [0009]

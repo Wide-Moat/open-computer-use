@@ -6,7 +6,7 @@ status: draft
 last-reviewed: 2026-06-27
 owner: "@Wide-Moat/architects"
 applies-to: next/v1
-compliance: []
+compliance: [ISO27001-A.9.4, NYDFS-500.07, SOC2-CC6.1]
 threat-model: 06-threat-model.md
 contract: contracts/mcp/2025-06-18/ocu-constraints.schema.json
 adr: [0027]

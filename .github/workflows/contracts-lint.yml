@@ -243,14 +243,16 @@ jobs:
         run: python3 scripts/check-compliance-front-matter.py --self-test
 
       - name: how many controls each component spec declares
-        # NFR-COMP-17. The field is present in all seven specs and empty in all
-        # seven, and the front-matter validator does not know it exists -- so
-        # nothing has ever looked. This does not fill it in: which controls a
-        # component satisfies is an owner's judgement, and inventing entries to
-        # green a number would hide the gap rather than measure it. The floor is
-        # 0, so the current state passes; it reds when a spec loses its key or
-        # loses declarations it had.
-        run: python3 scripts/check-compliance-front-matter.py --min-declared 0
+        # NFR-COMP-17. The field was empty in all seven specs, and the earlier
+        # reading of that -- "which controls a component satisfies is an owner's
+        # judgement" -- was only half right. It is a judgement, and it was
+        # already made: each spec declares the ADRs that govern it, and 43 of 45
+        # ADRs carry a populated compliance-impact. So the entries are derived
+        # from decisions already accepted rather than invented, and every one of
+        # the 61 traces to an ADR the spec itself names.
+        #
+        # The floor is now 61, not 0. Losing a control citation reds.
+        run: python3 scripts/check-compliance-front-matter.py --min-declared 61
 
       - name: the pin-policy checker itself discriminates
         run: python3 scripts/check-pin-policy.py --self-test
