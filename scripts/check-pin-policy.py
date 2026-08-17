@@ -122,6 +122,46 @@ def persisting_checkouts(text: str) -> list[str]:
     return bad
 
 
+    # A downloaded executable is a supply-chain input exactly like a `uses:` ref,
+    # and this checker did not look at one. The proto gate curled a 34 MB `buf`
+    # and ran it: the URL pinned v1.34.0, which is a version tag, not an
+    # identity -- a release asset is mutable, so the tag buys nothing against a
+    # substituted artifact. Nothing in CI verified a checksum anywhere.
+    #
+    # The rule is deliberately narrow: a download is only a finding when the
+    # same `run:` block later makes it executable. Fetching a config file or a
+    # checksum list is not this problem, and flagging those would get the check
+    # ignored.
+
+
+DOWNLOAD = re.compile(r"\b(?:curl|wget)\b[^\n|]*?(?:-o|-O|--output)\s+(\S+)")
+VERIFIES = re.compile(r"\b(?:sha256sum|shasum|sha512sum|cosign\s+verify|gpg\s+--verify)\b")
+
+
+def unverified_downloads(text: str) -> list[str]:
+    """Downloads that are made executable without any integrity check.
+
+    Scoped per `run:` block, not per file: a workflow that verifies one binary
+    and blindly executes another must still fail, and a file-wide search for
+    `sha256sum` would call that clean.
+    """
+    bad = []
+    for block in re.split(r"\n(?=\s*-\s+name:|\s*-\s+uses:)", text):
+        if not DOWNLOAD.search(block):
+            continue
+        if VERIFIES.search(block):
+            continue
+        for m in DOWNLOAD.finditer(block):
+            target = m.group(1)
+            # Only executables. `chmod +x` or a direct invocation of the path.
+            made_executable = re.search(rf"chmod\s+\+x\s+{re.escape(target)}", block) or re.search(
+                rf"^\s*{re.escape(target)}\s", block, re.M
+            )
+            if made_executable:
+                bad.append(target)
+    return bad
+
+
 def scan(root: pathlib.Path) -> dict[str, list[str]]:
     findings: dict[str, list[str]] = {}
     wf = root / ".github" / "workflows"
@@ -137,6 +177,10 @@ def scan(root: pathlib.Path) -> dict[str, list[str]]:
             f"actions/checkout at {w} does not set persist-credentials: false"
             for w in persisting_checkouts(text)
         ]
+        problems += [
+            f"downloads {d} and executes it with no checksum or signature check"
+            for d in unverified_downloads(text)
+        ]
         if problems:
             findings[str(path.relative_to(root))] = problems
     return findings, len(paths)
@@ -144,6 +188,33 @@ def scan(root: pathlib.Path) -> dict[str, list[str]]:
 
 def _self_test() -> int:
     cases = [
+        # Downloads. The negative cases matter as much as the positive one: a
+        # rule that also flagged a fetched config file or the checksum list
+        # itself would be turned off within a week.
+        (
+            "an executable downloaded with no check is caught",
+            "      - name: b\n        run: |\n          curl -sSL -o /tmp/b https://x/b\n          chmod +x /tmp/b\n          /tmp/b run\n",
+            unverified_downloads,
+            True,
+        ),
+        (
+            "the same download with sha256sum passes",
+            "      - name: b\n        run: |\n          curl -sSL -o /tmp/b https://x/b\n          sha256sum /tmp/b\n          chmod +x /tmp/b\n",
+            unverified_downloads,
+            False,
+        ),
+        (
+            "a config file that is never executed passes",
+            "      - name: c\n        run: |\n          curl -sSL -o /tmp/c.yaml https://x/c.yaml\n          cat /tmp/c.yaml\n",
+            unverified_downloads,
+            False,
+        ),
+        (
+            "fetching the checksum list itself passes",
+            "      - name: s\n        run: |\n          curl -sSL -o /tmp/sha256.txt https://x/sha256.txt\n",
+            unverified_downloads,
+            False,
+        ),
         ("a tag-pinned action is caught", "      - uses: actions/checkout@v4\n", unpinned_uses, True),
         ("a sha-pinned action passes", "      - uses: actions/checkout@" + "a" * 40 + "\n", unpinned_uses, False),
         ("a short sha is caught", "      - uses: o/r@" + "a" * 7 + "\n", unpinned_uses, True),
