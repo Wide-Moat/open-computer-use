@@ -154,12 +154,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
 
-      - name: gate enforcement on this branch (report-only until protection is on)
+      - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
         # interpolation inside the run block. A branch name is
         # attacker-controllable on a fork PR, so interpolating it into the shell
         # would let it close the quote and run its own command on the runner.
         # The SAST gate flags exactly this, and it flagged it here.
+        #
+        # Three repositories, not one. NFR-SEC-89 is a claim about the platform,
+        # and a sandbox or a File Pane that can be merged past its own gates
+        # breaks it exactly as this repository would. Measured while this step
+        # judged only itself: ocu-webui ran CodeQL green on every pull request
+        # while requiring 11 contexts, none of them CodeQL — a finding this step
+        # could not have made, because it never looked. The sibling reads work
+        # from CI on the same token that check-readiness-claim.py already uses to
+        # read ocu-sandbox.
+        #
+        # Each sibling is judged on its own release branch. The continue-on-error
+        # sub-check silently drops for a repository that is not this checkout —
+        # the script says so on stderr — so a sibling verdict covers protection
+        # and rulesets, not the local workflow files.
         env:
           TARGET_REPO: ${{ github.repository }}
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
@@ -172,6 +186,13 @@ jobs:
           python3 scripts/check-gates-are-required.py \
             --repo "$TARGET_REPO" \
             --branch "$TARGET_BRANCH" || true
+          for sibling in Wide-Moat/ocu-sandbox Wide-Moat/ocu-webui; do
+            echo "::group::NFR-SEC-89 — ${sibling}@main"
+            python3 scripts/check-gates-are-required.py \
+              --repo "$sibling" \
+              --branch main || true
+            echo "::endgroup::"
+          done
 
   openapi:
     runs-on: ubuntu-latest
