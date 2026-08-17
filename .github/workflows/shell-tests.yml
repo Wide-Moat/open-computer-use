@@ -53,7 +53,15 @@ jobs:
         # resolves whatever PyPI serves that day. test-subagent-runtime.sh
         # drives six pytest files and reports FAIL on "No module named pytest",
         # which reads as a code failure and is an environment one.
-        run: pip install pytest==9.1.1 pytest-asyncio==1.4.0
+        run: |
+          pip install pytest==9.1.1 pytest-asyncio==1.4.0
+          # test-subagent-runtime.sh drives six pytest files, and its fourth,
+          # test-default-model-resolution.py, imports cli_runtime -> docker_manager
+          # -> the docker SDK. Installing the server requirements is not the same
+          # as needing a container: these are wheels, nothing is built or run.
+          # Measured: without them collection ends in ImportError, and locally
+          # the test passed only because the venv already carried them.
+          pip install -r computer-use-server/requirements.txt
       - name: skills name no hardcoded model ids
         run: bash tests/test-skill-no-hardcoded-models.sh
       - name: sub-agent runtime surface
