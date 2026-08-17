@@ -19,6 +19,10 @@ Two rules, both of which zizmor would have covered:
   2. Every container `image:` carries `@sha256:<64-hex>`. A `name:tag` image is
      the same movable pointer wearing different syntax, and the workflows here
      run third-party containers as job hosts.
+  3. Every `actions/checkout` sets `persist-credentials: false` (zizmor calls
+     this `artipacked`). Without it the job token stays in `.git/config` for
+     every later step in the job -- including any third-party action that reads
+     the working tree. No workflow here pushes back, so nothing needs it.
 
 Local `./` and `docker://`-less reusable-workflow refs are out of scope: a
 relative path resolves inside this repository, so there is no upstream to move.
@@ -88,6 +92,36 @@ def unpinned_images(text: str) -> list[str]:
     return bad
 
 
+def persisting_checkouts(text: str) -> list[str]:
+    """`actions/checkout` steps that leave the job token in `.git/config`.
+
+    Reads the step BLOCK, not the file: a `persist-credentials: false` anywhere
+    in the file would otherwise vouch for every checkout in it, which is exactly
+    the shape build.yml has today -- nine checkouts, one flag.
+
+    A step ends at the next line indented no deeper than its own `- `, so the
+    scan is bounded by structure rather than by a fixed line count.
+    """
+    lines = text.splitlines()
+    bad = []
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*)-\s+uses:\s*actions/checkout@", line)
+        if not m:
+            continue
+        indent = len(m.group(1))
+        block = []
+        for follow in lines[i + 1:]:
+            if not follow.strip():
+                continue
+            lead = len(follow) - len(follow.lstrip())
+            if lead <= indent:
+                break
+            block.append(follow)
+        if not any("persist-credentials: false" in b for b in block):
+            bad.append(f"line {i + 1}")
+    return bad
+
+
 def scan(root: pathlib.Path) -> dict[str, list[str]]:
     findings: dict[str, list[str]] = {}
     wf = root / ".github" / "workflows"
@@ -99,6 +133,10 @@ def scan(root: pathlib.Path) -> dict[str, list[str]]:
         text = path.read_text(encoding="utf-8")
         problems = [f"uses: {u}" for u in unpinned_uses(text)]
         problems += [f"image: {i}" for i in unpinned_images(text)]
+        problems += [
+            f"actions/checkout at {w} does not set persist-credentials: false"
+            for w in persisting_checkouts(text)
+        ]
         if problems:
             findings[str(path.relative_to(root))] = problems
     return findings, len(paths)
@@ -119,6 +157,34 @@ def _self_test() -> int:
         # The matrix VALUE form must not be read as an image ref, or every
         # workflow iterating image names reds and the check gets switched off.
         ("a matrix list item is not an image ref", "          - open-computer-use\n", unpinned_images, False),
+        # The block-scoped read is the whole point of rule 3: build.yml has nine
+        # checkouts and one flag, so a file-scoped search would have vouched for
+        # all nine on the strength of the ninth.
+        (
+            "a guarded checkout passes",
+            "      - uses: actions/checkout@x\n        with:\n          persist-credentials: false\n",
+            persisting_checkouts,
+            False,
+        ),
+        (
+            "an unguarded checkout is caught",
+            "      - uses: actions/checkout@x\n        with:\n          fetch-depth: 0\n",
+            persisting_checkouts,
+            True,
+        ),
+        (
+            "a checkout with no `with:` at all is caught",
+            "      - uses: actions/checkout@x\n      - run: echo\n",
+            persisting_checkouts,
+            True,
+        ),
+        (
+            "a flag on a LATER step does not vouch for an earlier checkout",
+            "      - uses: actions/checkout@x\n      - uses: actions/checkout@y\n"
+            "        with:\n          persist-credentials: false\n",
+            persisting_checkouts,
+            True,
+        ),
     ]
     failures = 0
     for name, text, fn, want_bad in cases:
