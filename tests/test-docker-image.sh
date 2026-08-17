@@ -149,6 +149,13 @@ else
 fi
 
 # 9. Volume size
+#
+# NFR-SEC-15 ("user-data volume-only; image carries no PII") is verified as
+# "/home/assistant/ volume <1 MB enforced in CI", which is this assertion. Named
+# here so check-nfr-coverage.py counts the requirement as armed -- and the job
+# that runs this script blocks, so the name is not decoration. Fail-closed by
+# construction: a du that cannot run leaves SIZE_KB empty and the ${SIZE_KB:-999999}
+# default fails rather than passing on a missing measurement.
 echo ""
 echo "[9/14] Volume size"
 SIZE_KB=$(run_in_container "du -sk /home/assistant/ | cut -f1") || SIZE_KB=""
