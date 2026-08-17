@@ -40,7 +40,20 @@ MUST_COVER_CANON = {
     "contracts-lint.yml",
     "docs-lint.yml",
     "gate3-rehearsal.yml",
+    # Already correct today, listed so a revert is caught rather than noticed:
+    # helm.yml lints the chart that ships on this branch.
+    "helm.yml",
 }
+
+# Workflows deliberately outside the set, with the reason, so the next reader
+# does not have to re-derive it -- and so adding one silently is a visible
+# omission rather than an oversight.
+#   build.yml         builds and PUSHES images to ghcr.io; extending it to canon
+#                     is a release-posture decision, tracked as an issue
+#   release*.yml      tag-triggered by design
+#   supply-chain.yml  tag-triggered by design
+#   stale.yml         scheduled housekeeping, reports on nothing
+NOT_GATES = {"build.yml", "release.yml", "release-chart.yml", "supply-chain.yml", "stale.yml"}
 
 
 def triggers(doc):
@@ -78,8 +91,16 @@ def covers_canon(on):
 
 
 def findings(root=Path(".")):
-    """Return (workflow, reason) for every named gate blind to the canon branch."""
+    """Return (workflow, reason) for every named gate blind to the canon branch.
+
+    Also refuses a workflow that is in neither set. A named-set check answers
+    only for what it names, so a new workflow added tomorrow would sit outside
+    it silently -- which is the failure this file exists to stop, one level up.
+    """
     out = []
+    present = {p.name for p in (root / WORKFLOWS).glob("*.yml")} if (root / WORKFLOWS).is_dir() else set()
+    for name in sorted(present - MUST_COVER_CANON - NOT_GATES):
+        out.append((name, "is in neither MUST_COVER_CANON nor NOT_GATES — classify it"))
     for name in sorted(MUST_COVER_CANON):
         path = root / WORKFLOWS / name
         if not path.is_file():
@@ -140,6 +161,18 @@ def self_test():
             sys.stderr.write("self-test FAIL: a fully covering tree reported a finding\n")
         else:
             print("self-test ok: findings() accepts a tree where every gate covers canon")
+
+        # A workflow in neither set. Without this the classification branch is
+        # untested, and the fixture above -- which writes only named gates --
+        # can never reach it.
+        stray = root / WORKFLOWS / "unclassified-probe.yml"
+        stray.write_text("name: s\non:\n  pull_request:\n    branches: [main]\n", encoding="utf-8")
+        if not any("neither" in why for _, why in findings(root)):
+            bad += 1
+            sys.stderr.write("self-test FAIL: an unclassified workflow was not reported\n")
+        else:
+            print("self-test ok: findings() reports a workflow in neither set")
+        stray.unlink()
 
         blind = root / WORKFLOWS / sorted(MUST_COVER_CANON)[0]
         blind.write_text("name: x\non:\n  pull_request:\n    branches: [main]\n", encoding="utf-8")
