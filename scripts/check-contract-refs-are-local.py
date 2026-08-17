@@ -88,17 +88,41 @@ def check_file(path):
     unpack` -- red, but on a crash rather than on the finding being gone, which
     would pass the meta-gate for a checker that asserts nothing. The ref count
     is available separately via count_refs().
+
+    The walk is TRANSITIVE. Checking only the named documents leaves the hole
+    one level down: a remote $ref injected into a vendored OCSF schema -- which
+    the fan-in document $refs by relative path -- passes both this check and the
+    parser, because the parser fetches it successfully and neither one looks
+    inside a file it did not open. Measured before this was written: both exit 0
+    on exactly that tree.
     """
-    doc_path = Path(path)
-    doc = yaml.safe_load(doc_path.read_text(encoding="utf-8"))
     findings = []
-    for pointer, ref in iter_refs(doc):
-        if is_remote(ref):
-            findings.append((pointer, ref, "resolves over the network"))
+    seen = set()
+    queue = [(Path(path), "")]
+    while queue:
+        doc_path, prefix = queue.pop()
+        resolved = doc_path.resolve()
+        if resolved in seen:
+            # Contracts $ref each other; without this a cycle spins forever.
             continue
-        missing = unresolvable(ref, doc_path)
-        if missing:
-            findings.append((pointer, ref, f"does not exist on disk ({missing})"))
+        seen.add(resolved)
+        try:
+            doc = yaml.safe_load(doc_path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            findings.append((prefix or str(doc_path), str(doc_path), f"is unreadable ({type(exc).__name__})"))
+            continue
+        for pointer, ref in iter_refs(doc):
+            where = f"{prefix}{pointer}" if not prefix else f"{prefix} -> {doc_path.name}:{pointer}"
+            if is_remote(ref):
+                findings.append((where, ref, "resolves over the network"))
+                continue
+            missing = unresolvable(ref, doc_path)
+            if missing:
+                findings.append((where, ref, f"does not exist on disk ({missing})"))
+                continue
+            target = ref.split("#", 1)[0]
+            if target:
+                queue.append(((doc_path.parent / target).resolve(), f"{doc_path.name}:{pointer}"))
     return findings
 
 
@@ -147,9 +171,32 @@ def self_test():
                 )
             else:
                 print(f"self-test ok: {label} -> {'flagged' if got else 'accepted'}")
+
+        # Transitivity: the remote ref sits one level down, in a file the entry
+        # document only reaches by a relative ref. The un-transitive version of
+        # this checker returned clean here, as did the AsyncAPI parser.
+        (root / "mid.json").write_text(
+            '{"properties":{"deep":{"$ref":"https://example.invalid/x.json"}}}', encoding="utf-8"
+        )
+        entry = root / "entry.asyncapi.yaml"
+        entry.write_text(doc % "./mid.json", encoding="utf-8")
+        if not check_file(entry):
+            bad += 1
+            sys.stderr.write("self-test FAIL: a remote ref one level down was not reported\n")
+        else:
+            print("self-test ok: a remote ref one level down -> flagged")
+
+        # And the cycle guard, or the walk above never terminates.
+        (root / "p.json").write_text('{"a":{"$ref":"./q.json"}}', encoding="utf-8")
+        (root / "q.json").write_text('{"b":{"$ref":"./p.json"}}', encoding="utf-8")
+        if check_file(root / "p.json"):
+            bad += 1
+            sys.stderr.write("self-test FAIL: mutually referencing local files reported a finding\n")
+        else:
+            print("self-test ok: a ref cycle terminates and reports nothing")
     if bad:
         return 1
-    print(f"self-test ok: {len(cases)} cases")
+    print(f"self-test ok: {len(cases) + 2} cases")
     return 0
 
 
