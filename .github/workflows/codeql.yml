@@ -1,10 +1,17 @@
 name: CodeQL Security Analysis
 
+# next/v1 is listed alongside main because it is the canon branch and carried no
+# SAST on a pull request: this workflow fired on main and cron only, so a
+# next/v1 PR received no codeql context at all and the weekly cron analysed
+# whatever main held, never the branch under development. A sibling repository
+# showed the failure this prevents -- CodeQL ran green on every pull request
+# while 11 contexts were required and none of them was CodeQL, so the analysis
+# reported to nobody.
 on:
   push:
-    branches: [main]
+    branches: [main, next/v1]
   pull_request:
-    branches: [main]
+    branches: [main, next/v1]
   schedule:
     - cron: '0 3 * * 1'
 
