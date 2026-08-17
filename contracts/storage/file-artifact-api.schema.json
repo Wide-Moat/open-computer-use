@@ -100,6 +100,7 @@
     },
 
     "EmbedTokenVerify": {
+      "x-open-because": "JWT claims: rejecting an unlisted claim would reject conforming tokens. NFR-SEC-82 does not enumerate the carriers; the five listed are the ones OCU checks.",
       "description": "Embed-token verify contract (NFR-SEC-82). The peer backend MINTS the token; the Web UI service VERIFIES signature + expiry before setting any session state. No OCU upstream secret enters the browser. The exp ceiling is sourced to the NFR; the JWT/OIDC claim carriers are conventional (SEC-82 does not enumerate them); the binding claim is the open replay-binding question (#217).",
       "type": "object",
       "additionalProperties": true,

@@ -181,6 +181,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the schema-closure checker itself discriminates
+        run: python3 scripts/check-schemas-are-closed.py --self-test
+
+      - name: every authored schema shape is closed, or says why not
+        # NFR-SEC-51 (contract half). The runtime half -- reject-on-unknown-field
+        # at the gateway before dispatch -- is not provable from here and is not
+        # claimed. A node may stay open, but it must carry `x-open-because`: a
+        # dedicated key, because matching prose failed twice, on "Open Computer
+        # Use Contributors" in every copyright line and on the literal word
+        # additionalProperties inside a schema's own description.
+        run: python3 scripts/check-schemas-are-closed.py
+
       - name: the compliance-front-matter checker itself discriminates
         run: python3 scripts/check-compliance-front-matter.py --self-test
 
@@ -214,7 +226,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 7
+        run: python3 scripts/check-nfr-coverage.py --min-armed 8
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
