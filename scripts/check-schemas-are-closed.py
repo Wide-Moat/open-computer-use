@@ -3,6 +3,14 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 """Refuse a contract schema that accepts fields nobody declared.
 
+Two requirements rest on this, and only the halves stated here are claimed.
+
+NFR-SEC-87 (storage half): the MCP key set holds `key_hash` + `salt` and the
+record is CLOSED, so a plaintext or unsalted key cannot appear in a set this
+schema accepts -- probed, opening HashedKeyRecord reds by name. The issuance
+half (`sk-ocu-` prefix, >=256-bit CSPRNG entropy) is not expressible in this
+artifact: it holds already-hashed keys, so the un-hashed key never reaches it.
+
 NFR-SEC-51 asks for reject-on-unknown-field at the gateway. That is a runtime
 property and this cannot prove it. What it can prove is the half that lives in
 the contract: an object shape we author closes itself, so a field nobody
