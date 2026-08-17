@@ -97,6 +97,38 @@ def survey(root: pathlib.Path) -> tuple[dict[str, list[str]], list[str]]:
     return declared, absent
 
 
+def derivable_controls(root) -> dict[str, set[str]]:
+    """Controls each component spec should carry, taken from the ADRs.
+
+    NFR-COMP-17 asks for the field POPULATED, and it is empty in all seven
+    specs. Filling it by hand would mean inventing control citations, which is
+    the opposite of an audit trail. It does not have to be invented: 43 of 45
+    ADRs already carry a populated `compliance-impact`, and an ADR names the
+    components it governs with a markdown link. So the mapping is a
+    consequence of decisions already accepted -- 8 of 9 components resolve.
+
+    Matching is on the LINK, not on the file stem appearing in the prose: a
+    stem search returned 0 of 9 here, because ADRs reference components as
+    `[Egress trust-edge](components/06-egress-trust-edge.md)` rather than by
+    bare name.
+    """
+    import re
+
+    comps = {p.stem for p in (root / "docs/architecture/components").glob("[0-9]*.md")}
+    out: dict[str, set[str]] = {}
+    for adr in sorted((root / "docs/architecture/adr").glob("[0-9]*.md")):
+        text = adr.read_text(encoding="utf-8")
+        front = re.match(r"^.*?^---\n(.*?)\n---", text, re.S | re.M)
+        found = re.search(r"compliance-impact:\s*\[([^\]]*)\]", front.group(1) if front else "")
+        controls = [c.strip() for c in found.group(1).split(",")] if found and found.group(1).strip() else []
+        if not controls:
+            continue
+        for ref in re.findall(r"components/([0-9][^)#\s]*?)\.md", text):
+            if ref in comps:
+                out.setdefault(ref, set()).update(controls)
+    return out
+
+
 def verdict(
     declared: dict[str, list[str]], absent: list[str], floor: int
 ) -> list[str]:
@@ -117,6 +149,24 @@ def verdict(
     return problems
 
 
+def undeclared_but_derivable(declared: dict[str, list[str]], derivable: dict[str, set[str]]) -> dict[str, list[str]]:
+    """Controls an ADR assigns to a component that its spec does not declare.
+
+    Reported, never blocking. Populating seven specs is canon work with an
+    owner; a gate that red every PR until someone does it would be turned off
+    long before it was satisfied -- the same trap as requiring a context that
+    never arrives. What this does buy: the gap is a number on every run instead
+    of a claim nobody has measured.
+    """
+    gaps: dict[str, list[str]] = {}
+    for comp, controls in sorted(derivable.items()):
+        have = {c.strip() for c in declared.get(f"{comp}.md", [])}
+        missing = sorted(controls - have)
+        if missing:
+            gaps[comp] = missing
+    return gaps
+
+
 def _self_test() -> int:
     cases = [
         ("a missing key reds", {}, ["05-x.md"], 0, True),
@@ -125,6 +175,21 @@ def _self_test() -> int:
         ("holding the floor passes", {"05-x.md": ["SOC2-CC6.1"]}, [], 1, False),
         ("gaining passes", {"05-x.md": ["a", "b"]}, [], 1, False),
     ]
+    # The derivation, on constructed inputs. Without this the gap report is
+    # live and untested: the cases above only drive verdict().
+    derive_cases = [
+        ("an ADR control absent from the spec is reported",
+         {"05-x.md": []}, {"05-x": {"SOC2-CC6.1"}}, True),
+        ("a control the spec already declares is not reported",
+         {"05-x.md": ["SOC2-CC6.1"]}, {"05-x": {"SOC2-CC6.1"}}, False),
+        ("a component no ADR governs is not reported",
+         {"05-x.md": []}, {}, False),
+    ]
+    derive_failures = 0
+    for name, declared_c, derivable_c, want in derive_cases:
+        ok = bool(undeclared_but_derivable(declared_c, derivable_c)) == want
+        derive_failures += 0 if ok else 1
+        print(f"  {'ok' if ok else 'FAIL'}: {name}")
     failures = 0
     for name, declared, absent, floor, want_red in cases:
         got_red = bool(verdict(declared, absent, floor))
@@ -151,6 +216,8 @@ def _self_test() -> int:
     ok = got == "[X]"
     failures += 0 if ok else 1
     print(f"  {'ok' if ok else 'FAIL'}: front-matter is found past a leading comment ({got!r})")
+
+    failures += derive_failures
 
     print()
     if failures:
@@ -192,12 +259,26 @@ def main(argv: list[str] | None = None) -> int:
             print(f"::error::{problem}", file=sys.stderr)
         return 1
 
+    derivable = derivable_controls(root)
+    gaps = undeclared_but_derivable(declared, derivable)
+    if gaps:
+        missing_total = sum(len(v) for v in gaps.values())
+        print(
+            f"::notice::{missing_total} control citation(s) across {len(gaps)} "
+            f"component spec(s) are already assigned by an ADR's "
+            f"compliance-impact and not declared on the component. These are not "
+            f"a judgement call -- each is a consequence of a decision already "
+            f"accepted, and the ADR names the component by link."
+        )
+        for comp in sorted(gaps):
+            print(f"  {comp}: {', '.join(gaps[comp][:6])}{' ...' if len(gaps[comp]) > 6 else ''}")
+
     if empty:
         print(
             "::notice::the field is present and empty everywhere it is empty -- "
-            "NFR-COMP-17 asks for it POPULATED, and a controls matrix does not "
-            "exist yet. Reported, not failed: which controls a component "
-            "satisfies is an owner's judgement, not a lint's."
+            "NFR-COMP-17 asks for it POPULATED. Reported, not failed: applying "
+            "the mapping above is canon work with an owner, and a gate that red "
+            "every PR until it lands would be switched off before it was met."
         )
     return 0
 
