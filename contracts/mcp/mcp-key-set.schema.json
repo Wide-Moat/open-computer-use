@@ -69,6 +69,7 @@
       ]
     },
     "HashedKeyRecord": {
+      "x-nfr": "NFR-SEC-87 (storage half): the record is closed and carries key_hash + salt only, so a plaintext or unsalted key cannot appear in a set this schema accepts. The issuance half -- sk-ocu- prefix, >=256-bit CSPRNG entropy -- is not expressible here: this artifact holds already-hashed keys, so the un-hashed key never reaches it.",
       "description": "One MCP API key as a salted hash plus its binding metadata. NEVER the plaintext secret. Required: key_id, key_hash, salt, tenant, deployment, status, created_at. Optional: expires_at (absent => non-expiring, so the one-click path is not blocked). additionalProperties:false forbids any extra field smuggling a secret in.",
       "type": "object",
       "additionalProperties": false,
