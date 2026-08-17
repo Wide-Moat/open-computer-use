@@ -53,6 +53,10 @@ concurrency:
 jobs:
   secrets-gitleaks:
     name: secrets — gitleaks
+    # NFR-SEC-19 (zero secrets in source). Named here so check-nfr-coverage.py
+    # counts this requirement as armed: a row in the manifesto is a claim, and
+    # the claim is only measured while a job that can FAIL carries its id. This
+    # job blocks -- no continue-on-error -- so the name is not decoration.
     runs-on: ubuntu-latest
     steps:
       # Fork-PR-safe two-source pattern. The PR HEAD provides the source
@@ -149,6 +153,9 @@ jobs:
 
   secrets-trufflehog:
     name: secrets — trufflehog
+    # NFR-SEC-19, second reading. Two scanners with different corpora, both
+    # blocking: gitleaks alone leaves the requirement resting on one tool's
+    # rule set.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
