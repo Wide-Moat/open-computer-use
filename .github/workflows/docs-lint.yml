@@ -137,6 +137,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run lychee
+        # The action pin fixes the WRAPPER, not the tool: lychee-action
+        # resolves the binary itself, and the config schema moves with it.
+        # 2.8.0 pulls lychee 0.23.0, which wants `include_fragments = true`;
+        # 2.9.0 pulls 0.24.x, which wants the enum lychee.toml now carries and
+        # REFUSES the boolean. A config edit therefore belongs in the same PR
+        # as the action bump: neither value satisfies both, and a config that
+        # is right for the next version is a hard red on this one.
+        #
+        # Measured the wrong way once -- a local lychee accepted the enum and
+        # I took that for proof. The version that decides is the one the job
+        # downloads, which the run log names as lychee-v0.23.0.
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
         with:
           # We only care about *internal* / forward-reference link integrity.
