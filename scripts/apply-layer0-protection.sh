@@ -32,9 +32,16 @@ if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; shift; fi
 REPO="${1:-Wide-Moat/open-computer-use}"
 BRANCH="${2:-next/v1}"
 
-# The nine that must be required. The two that must not are named below,
+# The ten that must be required. The two that must not are named below,
 # because "leave them out" is easy to satisfy by accident and easy to undo
 # by accident too.
+#
+# asyncapi joined once it became hermetic (#384 step 3: "make the job required
+# once it is hermetic -- a gate nobody is blocked by is a gate nobody notices
+# breaking"). It stopped fetching schema.ocsf.io at validation time -- the OCSF
+# classes are vendored and $ref'd locally -- and it carries the audit fan-in
+# INV-1 check plus the OCSF class-identity gate that NFR-MAINT-AUDIT-SCHEMA and
+# half of NFR-SEC-88 rest on.
 #
 # nfr-gates joined the list after the other eight. It carries the
 # deployment-readiness claim, the NFR-coverage ratchet, the pin policy and the
@@ -44,6 +51,7 @@ BRANCH="${2:-next/v1}"
 # job would still run and still be green, and nothing would depend on it.
 REQUIRED=(
   "nfr-gates"
+  "asyncapi"
   "secrets — gitleaks"
   "secrets — trufflehog"
   "SAST — semgrep"
