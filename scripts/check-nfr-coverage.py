@@ -402,20 +402,27 @@ def _self_test() -> int:
     # what the workflow passes -- a floor the caller can undercut is decoration.
     import subprocess
 
-    wf = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/contracts-lint.yml"
-    if wf.is_file():
+    # Every workflow, not one named file. This read contracts-lint.yml by name,
+    # and the nfr-gates job moved to its own workflow (#510) -- the assertion
+    # then found no caller at all and reported `[] vs 11`, failing on the
+    # absence of what it was looking for rather than on a lowered floor. A check
+    # that names one blessed location disables itself the moment the subject
+    # moves.
+    workflows = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows"
+    passed: list[int] = []
+    for wf in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")):
         text = wf.read_text(encoding="utf-8")
-        passed = [
+        passed += [
             int(part.split()[0])
             for part in text.split("--min-armed ")[1:]
             if part.split() and part.split()[0].isdigit()
         ]
-        ok = bool(passed) and all(v >= COMMITTED_FLOOR for v in passed)
-        failures += 0 if ok else 1
-        print(
-            f"  {'ok' if ok else 'FAIL'}: the workflow never passes less than "
-            f"COMMITTED_FLOOR ({passed} vs {COMMITTED_FLOOR})"
-        )
+    ok = bool(passed) and all(v >= COMMITTED_FLOOR for v in passed)
+    failures += 0 if ok else 1
+    print(
+        f"  {'ok' if ok else 'FAIL'}: no workflow passes less than "
+        f"COMMITTED_FLOOR ({passed} vs {COMMITTED_FLOOR})"
+    )
 
     rc = main(["--min-armed", str(COMMITTED_FLOOR - 1)])
     ok = rc == 2
