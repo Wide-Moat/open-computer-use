@@ -212,9 +212,10 @@ Scope: determinism, replay, and reproducibility properties of the agent loop. Fu
 
 ### Deployment-readiness claim
 
-The three properties this architecture exists to establish — proven isolation,
-an auditable supply chain, and a canon where every decision is recorded and
-checkable — are each covered by the NFRs above and each carry their own gate.
+The four properties this architecture exists to establish — proven isolation,
+an auditable supply chain, a verified release path, and a canon where every
+decision is recorded and checkable — are each covered by the NFRs above and
+each carry their own gate.
 The claim that they hold TOGETHER is answered by measurement rather than by this
 paragraph:
 
@@ -226,7 +227,7 @@ python3 scripts/check-readiness-claim.py
 `check-readiness-claim.py` reads the DEFAULT branch of each component and looks
 for the symbol that carries each leg. A leg in an unmerged pull request is a
 property of a branch, not of the system, so it does not count. The script exits
-0 only when all three hold on what is shipped, 1 when any does not, and 2 when a
+0 only when all four hold on what is shipped, 1 when any does not, and 2 when a
 component cannot be read — unreadable is reported as unreadable, never as unmet.
 
 The number itself lives in the run log, not here. A count written into canon is

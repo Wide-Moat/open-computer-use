@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -162,6 +163,43 @@ def _run(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
             return proc.returncode, proc.stdout, proc.stderr
         time.sleep(2 * (attempt + 1))
     return proc.returncode, proc.stdout, proc.stderr
+
+
+CANON_DOC = "docs/architecture/manifesto/02-nfrs.md"
+WORD_FOR = {3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def canon_leg_count_matches(root, measured: int) -> str | None:
+    """None when canon's readiness section counts the same legs this measures.
+
+    Found by reading both: the section said "The three properties this
+    architecture exists to establish" and named proven isolation, an auditable
+    supply chain and a checkable canon, while this script has measured four legs
+    since #116 added the verified release path. The gate was checking more than
+    the canon claimed, which is the safer direction and still a drift -- the
+    number in prose is the one a reader trusts.
+
+    Counting rather than matching leg names: canon writes the last leg as "a
+    canon where every decision is recorded and checkable", so a string compare
+    would report a false gap on wording.
+    """
+    doc = (root / CANON_DOC)
+    if not doc.is_file():
+        return None
+    text = doc.read_text(encoding="utf-8")
+    want = WORD_FOR.get(measured)
+    if want is None:
+        return None
+    if f"The {want} properties this architecture exists to establish" in text:
+        return None
+    import re
+
+    said = re.search(r"The (\w+) properties this architecture exists to establish", text)
+    return (
+        f"canon says '{said.group(1)}' properties, this script measures {measured}"
+        if said
+        else "canon's readiness section no longer states a property count"
+    )
 
 
 def leg_holds(leg: dict) -> bool:
@@ -1029,6 +1067,13 @@ def main(argv: list[str] | None = None) -> int:
                     )
         held = sum(1 for r in results if r["holds"])
         print()
+        drift = canon_leg_count_matches(pathlib.Path("."), len(results))
+        if drift:
+            print(
+                f"::notice::{drift}. The gate is the answer, but the number a reader "
+                f"trusts is the one in canon -- keep the readiness section's count in "
+                f"step with the legs measured here."
+            )
         if held == len(results):
             print(
                 "The deployment-readiness claim holds on the shipped branches: "
