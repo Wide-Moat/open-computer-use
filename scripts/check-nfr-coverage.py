@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 17
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 36
+UNEXPLAINED_CEILING = 35
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -409,6 +409,14 @@ ABSENT_SUBJECT = (
     "retention",
     "sub-processor",
     "register of information",
+    # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
+    # embed-token-verified browser session (NFR-SEC-82). No browser credential
+    # exists here: probed for set_cookie / request.cookies / Set-Cookie in
+    # server code excluding comments, and found nothing. The word `cookie` does
+    # appear twice -- both in COMMENTS, in openwebui/, describing Open WebUI's
+    # behaviour rather than this server's -- which is why the probe reads code
+    # and the key is `csrf`, the one term genuinely absent.
+    "csrf",
 )
 SUBJECT_DIRS = ("computer-use-server", "helm", "settings-wrapper", "openwebui")
 
