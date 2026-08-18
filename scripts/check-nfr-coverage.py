@@ -88,7 +88,7 @@ import sys
 # that passes LESS is refused, because the only legitimate reason for the
 # number to fall is that an NFR genuinely stopped being checked -- and that is
 # what the coverage comparison already catches, loudly.
-COMMITTED_FLOOR = 11
+COMMITTED_FLOOR = 12
 
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is

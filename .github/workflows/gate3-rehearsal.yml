@@ -173,6 +173,15 @@ jobs:
             -o spdx-json=sbom.spdx.json
           jq '(.packages // []) | length' sbom.spdx.json
 
+      # NFR-COMP-22 (EU Cyber Resilience Act baseline: SBOM mandate). Named
+      # here so check-nfr-coverage.py counts the requirement as armed, on the
+      # same terms as NFR-SEC-19 in security.yml: the id belongs beside the
+      # assertion that answers it, and this job blocks -- continue-on-error is
+      # unset and `release — gate 3 rehearsal` is a required context -- so the
+      # name is not decoration. What it claims is the SBOM half of that row:
+      # an SBOM is generated per release and a guard refuses one describing
+      # nothing. The 24-hour vulnerability-disclosure half has no mechanism
+      # here and is not claimed.
       - name: RED LEG - an SBOM describing nothing must stop the pipeline
         run: |
           # The same three conditions build.yml applies, run against fixtures
