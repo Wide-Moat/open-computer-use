@@ -37,6 +37,8 @@ import pathlib
 import re
 import sys
 
+import yaml
+
 # `uses: owner/repo@ref` or `uses: owner/repo/sub/path@ref`. The ref is captured
 # whole rather than matched as hex, so an unpinned one is REPORTED rather than
 # skipped -- a regex demanding 40 hex digits matches nothing on a tag, which
@@ -90,6 +92,36 @@ def unpinned_images(text: str) -> list[str]:
         if not DIGEST.search(ref):
             bad.append(ref)
     return bad
+
+
+def undeclared_permissions(text: str) -> list[str]:
+    """Jobs whose token authority is neither declared nor inherited from the file.
+
+    A job with no `permissions:` at either level runs with whatever the
+    repository default grants -- a setting that is invisible to anyone reading
+    the workflow, and that this checker's token cannot read either (the
+    actions/permissions/workflow endpoint answers "You must have repository read
+    permissions" for it, #516).
+
+    That is the point: the authority a job holds should be legible in the file.
+    Eleven of thirteen workflows already declare it at the top; measured when
+    this was written, five jobs across build.yml and helm.yml declared it at
+    neither level while their siblings in the same files did.
+
+    Parsed with yaml rather than grep because `permissions:` appears in prose
+    comments here, and a substring match would call a documented gap enforced.
+    """
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(doc, dict) or doc.get("permissions") is not None:
+        return []
+    return sorted(
+        name
+        for name, job in (doc.get("jobs") or {}).items()
+        if isinstance(job, dict) and job.get("permissions") is None
+    )
 
 
 def persisting_checkouts(text: str) -> list[str]:
@@ -191,6 +223,27 @@ def _self_test() -> int:
         # Downloads. The negative cases matter as much as the positive one: a
         # rule that also flagged a fetched config file or the checksum list
         # itself would be turned off within a week.
+        # Token authority. The negative cases matter: a rule that flagged a job
+        # whose file declares permissions at the top would report eleven false
+        # findings on this repository.
+        (
+            "a job with no permissions at either level is caught",
+            "name: w\non:\n  pull_request:\njobs:\n  a:\n    steps: []\n",
+            undeclared_permissions,
+            True,
+        ),
+        (
+            "a top-level declaration covers the job",
+            "name: w\npermissions:\n  contents: read\non:\n  pull_request:\njobs:\n  a:\n    steps: []\n",
+            undeclared_permissions,
+            False,
+        ),
+        (
+            "a job-level declaration is enough",
+            "name: w\non:\n  pull_request:\njobs:\n  a:\n    permissions:\n      contents: read\n    steps: []\n",
+            undeclared_permissions,
+            False,
+        ),
         (
             "an executable downloaded with no check is caught",
             "      - name: b\n        run: |\n          curl -sSL -o /tmp/b https://x/b\n          chmod +x /tmp/b\n          /tmp/b run\n",
@@ -297,6 +350,25 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Report-only. The five jobs this finds today live in build.yml and
+    # helm.yml, whose release posture is somebody else's call (#491, #516), and
+    # a job-level grant overrides a top-level one so the fix is safe but not
+    # mine to land. Blocking now would red every PR for a condition no PR can
+    # fix -- the trap already recorded against requiring a context that never
+    # arrives.
+    workflows = root / ".github" / "workflows"
+    undeclared: list[str] = []
+    for path in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")):
+        for job in undeclared_permissions(path.read_text(encoding="utf-8")):
+            undeclared.append(f"{path.name}:{job}")
+    if undeclared:
+        print(
+            f"::notice::{len(undeclared)} job(s) declare no `permissions:` at either "
+            f"level, so their token authority comes from a repository setting that "
+            f"is not visible in the file: {', '.join(undeclared)}. Eleven of the "
+            f"thirteen workflows declare it at the top."
+        )
 
     print(f"NFR-SEC-18 holds: every uses: and image: across {scanned} workflow file(s) names an immutable ref.")
     return 0
