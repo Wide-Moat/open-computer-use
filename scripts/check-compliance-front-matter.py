@@ -97,6 +97,35 @@ def survey(root: pathlib.Path) -> tuple[dict[str, list[str]], list[str]]:
     return declared, absent
 
 
+def dangling_adr_refs(root) -> list[tuple[str, list[str]]]:
+    """Component specs whose `adr:` names an ADR that does not exist.
+
+    The field became load-bearing when #500 derived every `compliance:` entry
+    from it. Nothing read it: measured before this check, replacing
+    01-mcp-gateway's `adr: [0027]` with `adr: [0099]` left the gate at exit 0
+    and the 61 control citations unchanged -- the declarations survived their
+    own source going missing.
+
+    A typo here does not fail loudly. It silently narrows what the component is
+    governed by, and the compliance field it feeds keeps the stale answer.
+    """
+    import re
+
+    known = {p.stem.split("-")[0] for p in (root / "docs/architecture/adr").glob("[0-9]*.md")}
+    out = []
+    for spec in sorted((root / "docs/architecture/components").glob("[0-9]*.md")):
+        front = re.match(r"^.*?^---\n(.*?)\n---", spec.read_text(encoding="utf-8"), re.S | re.M)
+        if not front:
+            continue
+        field = re.search(r"^adr:\s*\[([^\]]*)\]", front.group(1), re.M)
+        if not field or not field.group(1).strip():
+            continue
+        missing = [i.strip() for i in field.group(1).split(",") if i.strip().zfill(4) not in known]
+        if missing:
+            out.append((spec.name, missing))
+    return out
+
+
 def derivable_controls(root) -> dict[str, set[str]]:
     """Controls each component spec should carry, taken from the ADRs.
 
@@ -175,6 +204,28 @@ def _self_test() -> int:
         ("holding the floor passes", {"05-x.md": ["SOC2-CC6.1"]}, [], 1, False),
         ("gaining passes", {"05-x.md": ["a", "b"]}, [], 1, False),
     ]
+    # dangling_adr_refs() on a constructed tree. Without this the branch is
+    # live and untested, and the meta-gate would certify it stubbed.
+    import tempfile
+
+    dangling_failures = 0
+    for adr_id, want, label in (
+        ("0001", False, "an adr: id with a matching file is accepted"),
+        ("0099", True, "an adr: id with no matching file is reported"),
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = pathlib.Path(tmp)
+            (base / "docs/architecture/adr").mkdir(parents=True)
+            (base / "docs/architecture/components").mkdir(parents=True)
+            (base / "docs/architecture/adr/0001-a.md").write_text("x", encoding="utf-8")
+            (base / "docs/architecture/components/01-c.md").write_text(
+                f"---\nstatus: draft\nadr: [{adr_id}]\n---\n", encoding="utf-8"
+            )
+            got = bool(dangling_adr_refs(base))
+            ok = got == want
+            dangling_failures += 0 if ok else 1
+            print(f"  {'ok' if ok else 'FAIL'}: {label}")
+
     # The derivation, on constructed inputs. Without this the gap report is
     # live and untested: the cases above only drive verdict().
     derive_cases = [
@@ -217,7 +268,7 @@ def _self_test() -> int:
     failures += 0 if ok else 1
     print(f"  {'ok' if ok else 'FAIL'}: front-matter is found past a leading comment ({got!r})")
 
-    failures += derive_failures
+    failures += derive_failures + dangling_failures
 
     print()
     if failures:
@@ -257,6 +308,17 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         for problem in problems:
             print(f"::error::{problem}", file=sys.stderr)
+        return 1
+
+    dangling = dangling_adr_refs(root)
+    if dangling:
+        for spec, missing in dangling:
+            print(
+                f"::error::{spec}: adr: names {', '.join(missing)}, and no such ADR "
+                "exists. The compliance: field is derived from this list, so a "
+                "dangling id silently keeps a stale answer instead of failing.",
+                file=sys.stderr,
+            )
         return 1
 
     derivable = derivable_controls(root)
