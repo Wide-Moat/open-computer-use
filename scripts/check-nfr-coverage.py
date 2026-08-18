@@ -163,7 +163,27 @@ def unreachable_on_canon(root: pathlib.Path, hits: dict[str, list[str]]) -> dict
         reachable = False
         for rel in files:
             if rel.startswith(".github/workflows/"):
-                reachable |= fires.get(pathlib.Path(rel).name, False)
+                # The workflow must FIRE and must name the id on a line that
+                # runs. Firing alone counted a citation buried in a comment:
+                # measured, NFR-MAINT-AUDIT-SCHEMA had one comment line in
+                # contracts-lint.yml and one source in
+                # scripts/apply-layer0-protection.sh, which no workflow invokes
+                # -- both dead, and the id read `armed`. NFR-SEC-18 is the same
+                # shape in the workflow and survives on check-pin-policy.py,
+                # which CI does run.
+                name = pathlib.Path(rel).name
+                body = bodies.get(name, "")
+                # A comment INSIDE a job is the established way to bind an id to
+                # a job that carries it -- security.yml says so outright ("Named
+                # here so check-nfr-coverage.py counts this requirement as
+                # armed"). What does not bind is a citation in the file header,
+                # before any job: that is prose about the workflow, not a claim
+                # any job makes. Measured: requiring an executable line reported
+                # NFR-SEC-07 and NFR-SEC-19 as stranded, and both are carried by
+                # blocking jobs whose in-job comments name them.
+                in_jobs = body.split("\njobs:", 1)
+                scope = in_jobs[1] if len(in_jobs) == 2 else ""
+                reachable |= fires.get(name, False) and nid in scope
             else:
                 # Everything else -- scripts/ and tests/ alike -- is reachable
                 # only if a workflow that FIRES on canon invokes it. This used
