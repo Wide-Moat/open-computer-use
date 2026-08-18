@@ -98,6 +98,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the security.txt checker itself discriminates
+        run: python3 scripts/check-security-txt.py --self-test
+
+      # NFR-COMP-19 (public vulnerability-disclosure record). Named here so
+      # check-nfr-coverage.py counts the requirement as armed: this job blocks,
+      # and the assertion is that /.well-known/security.txt carries the RFC 9116
+      # fields AND has not expired. SECURITY.md answers a human reader; a
+      # scanner needs the record, and an expired record publishes a channel
+      # nobody has promised to watch.
+      - name: the disclosure record is machine-readable and current
+        run: python3 scripts/check-security-txt.py
+
       - name: the canon-trigger checker itself discriminates
         run: python3 scripts/check-gates-trigger-on-canon.py --self-test
 
@@ -179,7 +191,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 13
+        run: python3 scripts/check-nfr-coverage.py --min-armed 14
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by

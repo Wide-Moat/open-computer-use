@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# RFC 9116. NFR-COMP-19 asks for a machine-readable disclosure record, and
+# SECURITY.md is prose: it carries the same contact in a form a scanner cannot
+# parse. Both exist because they answer different readers -- a person opening
+# the repository, and a tool looking for /.well-known/security.txt.
+#
+# Contact points at GitHub private vulnerability reporting rather than an
+# address, because that is the channel SECURITY.md already directs people to
+# and a second one would split reports between two places.
+
+Contact: https://github.com/Wide-Moat/open-computer-use/security/advisories/new
+Expires: 2027-01-01T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://github.com/Wide-Moat/open-computer-use/blob/main/.well-known/security.txt
+Policy: https://github.com/Wide-Moat/open-computer-use/blob/main/SECURITY.md
