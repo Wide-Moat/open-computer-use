@@ -101,12 +101,12 @@ import sys
 # that passes LESS is refused, because the only legitimate reason for the
 # number to fall is that an NFR genuinely stopped being checked -- and that is
 # what the coverage comparison already catches, loudly.
-COMMITTED_FLOOR = 13
+COMMITTED_FLOOR = 14
 
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 40
+UNEXPLAINED_CEILING = 39
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
