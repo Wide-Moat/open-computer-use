@@ -94,6 +94,57 @@ def covers_canon(on):
     return False, f"branches={branches}"
 
 
+APPLIER = Path("scripts/apply-layer0-protection.sh")
+
+
+def required_contexts(root=Path(".")):
+    """The context names the applier marks required, read from its REQUIRED array."""
+    import re
+
+    path = root / APPLIER
+    if not path.is_file():
+        return set()
+    block = re.search(r"^REQUIRED=\((.*?)^\)", path.read_text(encoding="utf-8"), re.S | re.M)
+    return set(re.findall(r'"([^"]*)"', block.group(1))) if block else set()
+
+
+def path_filtered_required(root=Path(".")):
+    """Required contexts published by a workflow that only fires on some paths.
+
+    A required context that does not arrive is not a slow check -- it is a
+    permanent block. Today next/v1 carries no protection (#408), so a PR whose
+    files miss the filter merges anyway and the defect is invisible. It becomes
+    a deadlock on the day protection is switched on, which is exactly when
+    nobody wants to be debugging trigger filters.
+
+    Measured when this was written: contracts-lint.yml owns `asyncapi` and
+    `nfr-gates`, and filters on contracts/**, scripts/** and its own file. A PR
+    touching computer-use-server/ and tests/ produced 14 checks, 8 of the 10
+    required, with those two ABSENT rather than red.
+    """
+    import yaml
+
+    required = required_contexts(root)
+    if not required:
+        return []
+    out = []
+    for path in sorted((root / WORKFLOWS).glob("*.yml")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        on = doc.get(True) or doc.get("on") or {}
+        pull = on.get("pull_request") if isinstance(on, dict) else None
+        paths = pull.get("paths") if isinstance(pull, dict) else None
+        if not paths:
+            continue
+        jobs = doc.get("jobs") or {}
+        owned = sorted({(job.get("name") or key) for key, job in jobs.items()} & required)
+        if owned:
+            out.append((path.name, owned, paths))
+    return out
+
+
 def findings(root=Path(".")):
     """Return (workflow, reason) for every named gate blind to the canon branch.
 
@@ -169,6 +220,48 @@ def self_test():
         # A workflow in neither set. Without this the classification branch is
         # untested, and the fixture above -- which writes only named gates --
         # can never reach it.
+        # path_filtered_required(): a required context behind a path filter is
+        # only a finding when BOTH hold. Probing one alone would pass a check
+        # that reacts to either.
+        (root / "scripts").mkdir(exist_ok=True)
+        applier = root / APPLIER
+        applier.write_text('REQUIRED=(\n  "gated"\n)\n', encoding="utf-8")
+        wf = root / WORKFLOWS / "gated.yml"
+        wf.write_text(
+            "name: g\non:\n  pull_request:\n    branches: [main, next/v1]\n"
+            "    paths:\n      - 'contracts/**'\njobs:\n  gated:\n    steps: []\n",
+            encoding="utf-8",
+        )
+        if not path_filtered_required(root):
+            bad += 1
+            sys.stderr.write("self-test FAIL: a required context behind a path filter was not reported\n")
+        else:
+            print("self-test ok: a required context behind a path filter is reported")
+
+        wf.write_text(
+            "name: g\non:\n  pull_request:\n    branches: [main, next/v1]\n"
+            "jobs:\n  gated:\n    steps: []\n",
+            encoding="utf-8",
+        )
+        if path_filtered_required(root):
+            bad += 1
+            sys.stderr.write("self-test FAIL: an unfiltered required context was reported\n")
+        else:
+            print("self-test ok: the same job without a path filter is accepted")
+
+        applier.write_text('REQUIRED=(\n  "other"\n)\n', encoding="utf-8")
+        wf.write_text(
+            "name: g\non:\n  pull_request:\n    branches: [main, next/v1]\n"
+            "    paths:\n      - 'contracts/**'\njobs:\n  gated:\n    steps: []\n",
+            encoding="utf-8",
+        )
+        if path_filtered_required(root):
+            bad += 1
+            sys.stderr.write("self-test FAIL: a filtered job that is NOT required was reported\n")
+        else:
+            print("self-test ok: a path-filtered job that is not required is accepted")
+        wf.unlink()
+
         stray = root / WORKFLOWS / "unclassified-probe.yml"
         stray.write_text("name: s\non:\n  pull_request:\n    branches: [main]\n", encoding="utf-8")
         if not any("neither" in why for _, why in findings(root)):
@@ -204,6 +297,15 @@ def main(argv):
         )
     if blind:
         return 1
+    for name, owned, paths in path_filtered_required(root):
+        print(
+            f"::notice::{name} publishes required context(s) {', '.join(owned)} but "
+            f"fires only on {', '.join(paths)}. A PR touching none of those paths "
+            f"produces no such context — harmless while {CANON} is unprotected "
+            f"(#408), a permanent block the day protection is enabled. Either drop "
+            f"the path filter or move those jobs to a workflow without one."
+        )
+
     print(f"every one of {len(MUST_COVER_CANON)} named gates reports on a {CANON} pull request")
     return 0
 
