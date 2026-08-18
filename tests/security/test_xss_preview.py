@@ -6,7 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "computer-use-server"))
 
+import pytest
+
 from app import _generate_preview_html
+from security import sanitize_chat_id
 
 
 VALID_CHAT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -44,3 +47,37 @@ class TestPreviewXSS:
         assert 'chatId: "test-id"' in html
         assert 'apiUrl: "/api/test"' in html
         assert 'filesBase: "/files/test"' in html
+
+
+class TestChatIdCharacterClass:
+    """The guarantee belongs to the input, not to thirty-two call sites.
+
+    The tests above prove the template escapes what reaches it. That was the
+    only barrier: sanitize_chat_id rejected '..', '/', '\\' and NUL, so a
+    quote-bearing id was accepted and the endpoint stayed safe purely because
+    every interpolation happened to be json.dumps'd. These bind the allow-list
+    instead -- if it is loosened back to a deny-list, they red.
+    """
+
+    def test_quote_bearing_id_is_refused(self):
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException):
+            sanitize_chat_id('x" onload="alert(1)')
+
+    def test_markup_is_refused_without_relying_on_the_slash(self):
+        # '<script>' carries no '/', so the traversal rule never saw it.
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException):
+            sanitize_chat_id("a<script>alert(1)")
+
+    def test_real_values_still_pass(self):
+        for value in (VALID_CHAT_ID, "default", "abc123", "test-123", "Winner"):
+            assert sanitize_chat_id(value) == value.lower()
+
+    def test_length_is_bounded(self):
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException):
+            sanitize_chat_id("a" * 65)

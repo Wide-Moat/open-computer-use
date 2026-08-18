@@ -2,25 +2,39 @@
 # Copyright (c) 2025 Open Computer Use Contributors
 """Centralized security utilities for path validation and input sanitization."""
 import os
+import re
 from pathlib import Path
 
 from fastapi import HTTPException
 
 
-def sanitize_chat_id(chat_id: str) -> str:
-    """Validate chat_id — reject path traversal characters.
+CHAT_ID = re.compile(r"^[a-z0-9_-]{1,64}$")
 
-    chat_id can be any string (UUID, "default", etc.),
-    but must NOT contain: '..', '/', '\\', null-bytes.
+
+def sanitize_chat_id(chat_id: str) -> str:
+    """Validate chat_id against a character class, not a list of bad characters.
+
+    The previous rule rejected '..', '/', '\\' and NUL -- path traversal only.
+    Everything else passed, and chat_id reaches an HTML template: `/preview/{id}`
+    interpolates it four times. Those four go through json.dumps, so the value
+    cannot escape its JS string today, and CodeQL's py/reflective-xss on
+    app.py:1147 is not exploitable as written (#495).
+
+    What made it safe was every interpolation staying json.dumps'd -- a property
+    of thirty-two call sites rather than of the input. A quote-bearing id was
+    accepted:
+
+        'x" onload="alert(1)'   accepted by the old rule
+        'a<script>alert(1)'     rejected, but only because of the closing tag's
+                                slash, not because anything looked for markup
+
+    An allow-list moves the guarantee to the data. Measured against every
+    chat_id literal in the repository -- UUIDs, "default", "abc123",
+    "test-123" -- the class accepts all of them and rejects the traversal and
+    markup cases the old rule was reaching for.
     """
     normalized = chat_id.strip().lower()
-    if (
-        not normalized
-        or ".." in normalized
-        or "/" in normalized
-        or "\\" in normalized
-        or "\x00" in normalized
-    ):
+    if not CHAT_ID.fullmatch(normalized):
         raise HTTPException(status_code=400, detail="Invalid chat_id")
     return normalized
 
