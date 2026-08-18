@@ -47,6 +47,7 @@ SUBJECTS: dict[str, str] = {
     "check-contract-refs-are-local.py": "check_file",
     "check-gates-trigger-on-canon.py": "findings",
     "check-security-txt.py": "problems",
+    "check-mcp-protocol-version.py": "unsupported",
     # Added once the registry itself was measured against scripts/: these three
     # carried a --self-test and CI ran it, which proved the self-tests exist.
     # Nothing proved they would notice. Probed before registering -- stubbing
