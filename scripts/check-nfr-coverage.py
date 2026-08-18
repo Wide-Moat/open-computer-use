@@ -421,6 +421,24 @@ ABSENT_SUBJECT = (
 SUBJECT_DIRS = ("computer-use-server", "helm", "settings-wrapper", "openwebui")
 
 
+# Assets that cannot implement anything, and whose bytes produce false matches.
+# Measured: "pam" appears in six files under these directories and every one is
+# a KaTeX font or a minified bundle -- the word is three random bytes inside a
+# .woff2. `grep -l` skips those as binary; reading with errors="ignore" does
+# not, so the probe claimed a subject was present that exists nowhere in source.
+BINARY_SUFFIXES = (
+    ".woff", ".woff2", ".ttf", ".otf", ".eot", ".png", ".jpg", ".jpeg", ".gif",
+    ".ico", ".pdf", ".wasm", ".zip", ".gz", ".whl", ".so", ".dylib",
+)
+
+
+def _is_asset(path: pathlib.Path) -> bool:
+    """Binary blobs and vendored minified bundles are not implementation."""
+    if path.suffix.lower() in BINARY_SUFFIXES:
+        return True
+    return path.name.endswith((".min.js", ".min.css"))
+
+
 def subject_is_absent(root: pathlib.Path, word: str) -> bool:
     """True while no implementation file mentions the subject."""
     for directory in SUBJECT_DIRS:
@@ -428,7 +446,7 @@ def subject_is_absent(root: pathlib.Path, word: str) -> bool:
         if not base.is_dir():
             continue
         for path in base.rglob("*"):
-            if not path.is_file() or "__pycache__" in path.parts:
+            if not path.is_file() or "__pycache__" in path.parts or _is_asset(path):
                 continue
             try:
                 if word in path.read_text(encoding="utf-8", errors="ignore").lower():
@@ -558,6 +576,35 @@ def _completeness_self_test() -> int:
     return failures
 
 
+def _subject_probe_self_test() -> int:
+    """subject_is_absent() must ignore binary assets.
+
+    Without this the probe reads a word out of a font file: "pam" matched six
+    files under the implementation directories and every one was a KaTeX
+    .woff2 or a minified bundle, so a requirement about privileged-access
+    management looked implemented by three random bytes.
+    """
+    import tempfile
+
+    failures = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "computer-use-server").mkdir(parents=True)
+        (root / "computer-use-server" / "font.woff2").write_bytes(b"\x00widgetword\x01")
+        if not subject_is_absent(root, "widgetword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a word inside a .woff2 counted as implementation\n")
+        else:
+            print("  ok: a word present only in a binary asset is still absent")
+        (root / "computer-use-server" / "real.py").write_text("WIDGETWORD = 1\n", encoding="utf-8")
+        if subject_is_absent(root, "widgetword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a word in real source read as absent\n")
+        else:
+            print("  ok: the same word in source counts as present")
+    return failures
+
+
 def _reachability_self_test() -> int:
     """Drive unreachable_on_canon() over constructed trees.
 
@@ -672,6 +719,7 @@ def _self_test() -> int:
     print(f"  {'ok' if ok else 'FAIL'}: a caller below the floor is refused (exit {rc})")
 
     failures += _reachability_self_test()
+    failures += _subject_probe_self_test()
     failures += _completeness_self_test()
 
     print()
