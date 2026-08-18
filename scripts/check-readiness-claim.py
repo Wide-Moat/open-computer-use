@@ -751,6 +751,78 @@ def _self_test() -> int:
     else:
         print("  ok: MERGE_ORDER covers exactly the delivering PRs")
 
+    # Every leg's evidence must DISCRIMINATE, not merely be present. The ten
+    # cases above drive constructed branches and the table's shape; none of them
+    # touches a real symbol, so a leg whose evidence had quietly stopped
+    # matching -- a rename upstream, a string that now appears in a comment --
+    # would go unnoticed here and be caught only by someone mutating the table
+    # by hand.
+    #
+    # Two directions, because each alone passes on a broken table. Substituting
+    # an ABSENT symbol must flip the leg -- that catches a leg wired to nothing.
+    # It does not catch the opposite: an evidence string so short it matches
+    # everywhere ("e") still flips under substitution, because the substitute is
+    # absent either way. Measured -- replacing `func AdmitImageRef` with `e` left
+    # this block green. So a leg must ALSO fail to hold when its symbol is
+    # replaced by one that is present in every file.
+    # A symbol must not match text that is not the property. Probed against a
+    # line no component contains: an evidence string that hits it identifies
+    # prose rather than code. "e" matches; "func AdmitImageRef" does not.
+    import re as _re
+
+    decoy = "the quick brown fox jumps over the lazy dog 0123456789"
+    for leg in LEGS:
+        for field in ("evidence", "wired"):
+            value = leg.get(field)
+            if not value:
+                continue
+            try:
+                hits = bool(_re.search(value, decoy))
+            except _re.error:
+                hits = value in decoy
+            if hits:
+                failures.append(
+                    f"{leg['leg']}: {field} {value!r} matches arbitrary prose -- "
+                    f"it identifies text, not the property"
+                )
+    unreadable_legs: list[str] = []
+    for leg in LEGS:
+        for field in ("evidence", "wired"):
+            value = leg.get(field)
+            if not value:
+                continue  # a test needs no call site; that is recorded on the leg
+            broken = dict(leg)
+            broken[field] = "zzz_no_such_symbol_" + field
+            try:
+                held = leg_holds(broken)
+            except Unreadable:
+                # NOT a pass. Measured on CI, where the sibling repository is
+                # unreachable from the runner: all seven substitutions raised
+                # Unreadable and the block printed seven "ok" lines while
+                # asserting nothing. Locally the same seven flip. A case that
+                # reports success on the environment that cannot run it is the
+                # fake-green this file exists to refuse, so say so instead.
+                unreadable_legs.append(f"{leg['leg']}/{field}")
+                continue
+            if held:
+                failures.append(
+                    f"{leg['leg']}: substituting an absent {field} still holds -- "
+                    f"the symbol is not what the leg is measuring"
+                )
+            else:
+                print(f"  ok: {leg['leg']}/{field} flips when the symbol is absent")
+
+    if unreadable_legs:
+        # Reported, not failed: on a runner without access to the sibling
+        # repositories this is the environment, not a defect. Reported rather
+        # than silent, because "17 cases passed" read the same in both places
+        # while seven of them asserted nothing.
+        print(
+            f"::notice::{len(unreadable_legs)} leg symbol(s) could not be probed here -- "
+            f"the component was unreadable, so their binding is UNVERIFIED on this "
+            f"run rather than confirmed: {', '.join(unreadable_legs)}"
+        )
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
