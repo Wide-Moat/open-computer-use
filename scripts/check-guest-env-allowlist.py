@@ -73,7 +73,17 @@ def secrets_on_argv(source: str) -> list[str]:
             continue
         match = SECRET_NAME.search(stripped)
         if match:
-            findings.append(f"line {number}: {match.group(0)} appears in a command string")
+            # The NAME, not the value -- but a checker that prints
+            # ANTHROPIC_AUTH_TOKEN into a log is indistinguishable from one
+            # leaking a secret, both to CodeQL (py/clear-text-logging-sensitive-
+            # data, raised on this very line) and to a reader scanning CI
+            # output. The file and line locate it exactly; the operator opens
+            # the file. Reporting the position keeps the finding actionable
+            # without putting a secret-shaped string in a log at all.
+            findings.append(
+                f"line {number}: a secret-bearing variable name appears in a "
+                f"command string (see {RUNTIME}:{number})"
+            )
     return findings
 
 
