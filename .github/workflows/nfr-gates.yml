@@ -98,6 +98,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the session-window checker itself discriminates
+        run: python3 scripts/check-session-windows.py --self-test
+
+      # NFR-SEC-40 (session idle window <= 15 min). The row says the operator
+      # may tune it DOWN, so the number that must satisfy the bound is the
+      # shipped DEFAULT, not a runtime env var -- bounding the env would argue
+      # with canon. Two defaults ship, in docker_manager.py and the chart's
+      # values.yaml, and a drift between them means the container and the chart
+      # apply different security windows. Named here so the requirement counts
+      # as armed; this job blocks.
+      - name: the shipped idle window is inside the NFR-SEC-40 bound
+        run: python3 scripts/check-session-windows.py
+
       - name: the MCP protocol checker itself discriminates
         run: python3 scripts/check-mcp-protocol-version.py --self-test
 
@@ -206,7 +219,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 15
+        run: python3 scripts/check-nfr-coverage.py --min-armed 16
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
