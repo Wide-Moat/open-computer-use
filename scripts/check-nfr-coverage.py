@@ -93,7 +93,7 @@ COMMITTED_FLOOR = 11
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 43
+UNEXPLAINED_CEILING = 31
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -283,7 +283,10 @@ def declared_rows(root: pathlib.Path) -> dict[str, str]:
             continue
         cells = [c.strip() for c in stripped.split("|")]
         if len(cells) > 5 and NFR_ID.fullmatch(cells[1]):
-            rows[cells[1]] = " ".join(cells[4:6])
+            # Subject cell included: the completeness check excuses an id whose
+            # SUBJECT does not exist in the tree, and that word lives in cells[2]
+            # rather than in the verification column.
+            rows[cells[1]] = " ".join(cells[2:3] + cells[4:6])
     return rows
 
 
@@ -329,6 +332,38 @@ def excused_ids(source: str) -> set[str]:
 # asserted: ABSENT_MECHANISM is only honoured while the mechanism is genuinely
 # missing, which mechanism_is_absent() re-measures on every run.
 ABSENT_MECHANISM = ("k6", "chaos test", "replay test", "per-template test", "per-release")
+
+# The second reason an id cannot be armed: the SUBJECT does not exist. A
+# requirement about per-tenant isolation cannot have a check while nothing in
+# the tree is tenant-aware, and that is a different fact from "the test
+# framework is missing". Measured across computer-use-server/ and helm/ when
+# this was written -- tenant, trust-edge, broker, spiffe, scim and attestation
+# return nothing; egress, idp and sandbox do exist, so requirements about
+# those are NOT excused here.
+#
+# Keyed on a word that appears in the requirement's own subject cell, and
+# honoured only while subject_is_absent() still finds nothing. The exemption
+# expires when the component lands, which is when the requirement becomes a
+# real gap rather than a description of unbuilt work.
+ABSENT_SUBJECT = ("tenant", "trust-edge", "broker", "spiffe", "scim", "attestation")
+SUBJECT_DIRS = ("computer-use-server", "helm", "settings-wrapper", "openwebui")
+
+
+def subject_is_absent(root: pathlib.Path, word: str) -> bool:
+    """True while no implementation file mentions the subject."""
+    for directory in SUBJECT_DIRS:
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            try:
+                if word in path.read_text(encoding="utf-8", errors="ignore").lower():
+                    return False
+            except OSError:
+                continue
+    return True
 MECHANISM_PROBE = {
     "k6": "k6",
     "chaos test": "chaos",
@@ -377,6 +412,7 @@ def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str],
     is not coverage debt, and counting it would misread the manifesto.
     """
     absent = {m for m in ABSENT_MECHANISM if mechanism_is_absent(root, m)}
+    unbuilt = {w for w in ABSENT_SUBJECT if subject_is_absent(root, w)}
     return sorted(
         nfr
         for nfr, verification in rows.items()
@@ -385,6 +421,8 @@ def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str],
         and any(term in verification.lower() for term in CI_VERIFICATION)
         # Excused by mechanism, and only while that mechanism is still missing.
         and not any(m in verification.lower() for m in absent)
+        # Excused by subject, on the same terms: the component is not built.
+        and not any(w in verification.lower() for w in unbuilt)
     )
 
 
