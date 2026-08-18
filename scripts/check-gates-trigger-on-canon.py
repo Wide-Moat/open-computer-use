@@ -130,12 +130,24 @@ def path_filtered_required(root=Path(".")):
 
     required = required_contexts(root)
     if not required:
-        return []
+        return [], []
     out = []
+    unparseable: list[str] = []
     for path in sorted((root / WORKFLOWS).glob("*.yml")):
         try:
             doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
+        except yaml.YAMLError as exc:
+            # NOT silent. A file this cannot parse is a file whose contexts it
+            # cannot see, and skipping it reports "no path-filtered required
+            # context" for a reason that has nothing to do with path filters.
+            #
+            # findings() masks this for the named gates -- it parses them itself
+            # and reports the failure. It does not parse the others. Measured:
+            # corrupting build.yml, which is in NOT_GATES, left this whole
+            # checker at exit 0 with zero messages, while corrupting
+            # contracts-lint.yml red through findings(). The gap is exactly the
+            # files nobody else reads.
+            unparseable.append(f"{path.name} ({type(exc).__name__})")
             continue
         on = doc.get(True) or doc.get("on") or {}
         pull = on.get("pull_request") if isinstance(on, dict) else None
@@ -146,7 +158,7 @@ def path_filtered_required(root=Path(".")):
         owned = sorted({(job.get("name") or key) for key, job in jobs.items()} & required)
         if owned:
             out.append((path.name, owned, paths))
-    return out
+    return out, unparseable
 
 
 def findings(root=Path(".")):
@@ -236,7 +248,7 @@ def self_test():
             "    paths:\n      - 'contracts/**'\njobs:\n  gated:\n    steps: []\n",
             encoding="utf-8",
         )
-        if not path_filtered_required(root):
+        if not path_filtered_required(root)[0]:
             bad += 1
             sys.stderr.write("self-test FAIL: a required context behind a path filter was not reported\n")
         else:
@@ -247,11 +259,22 @@ def self_test():
             "jobs:\n  gated:\n    steps: []\n",
             encoding="utf-8",
         )
-        if path_filtered_required(root):
+        if path_filtered_required(root)[0]:
             bad += 1
             sys.stderr.write("self-test FAIL: an unfiltered required context was reported\n")
         else:
             print("self-test ok: the same job without a path filter is accepted")
+
+        # An unparseable workflow must be named, not skipped. findings() covers
+        # the named gates; a file in neither set is read by nothing else, so
+        # swallowing the parse error here reported "no path-filtered required
+        # context" for a reason that has nothing to do with path filters.
+        wf.write_text("name: g\non:\n  pull_request:\n   bad: [unclosed\n", encoding="utf-8")
+        if not path_filtered_required(root)[1]:
+            bad += 1
+            sys.stderr.write("self-test FAIL: an unparseable workflow was skipped silently\n")
+        else:
+            print("self-test ok: an unparseable workflow is reported, not skipped")
 
         applier.write_text('REQUIRED=(\n  "other"\n)\n', encoding="utf-8")
         wf.write_text(
@@ -259,7 +282,7 @@ def self_test():
             "    paths:\n      - 'contracts/**'\njobs:\n  gated:\n    steps: []\n",
             encoding="utf-8",
         )
-        if path_filtered_required(root):
+        if path_filtered_required(root)[0]:
             bad += 1
             sys.stderr.write("self-test FAIL: a filtered job that is NOT required was reported\n")
         else:
@@ -301,7 +324,14 @@ def main(argv):
         )
     if blind:
         return 1
-    for name, owned, paths in path_filtered_required(root):
+    filtered, unparseable = path_filtered_required(root)
+    for name in unparseable:
+        print(
+            f"::notice::{name} does not parse, so its contexts cannot be read here. "
+            f"A file nothing else parses fails silently: this checker reported no "
+            f"path-filtered required context for a reason unrelated to path filters."
+        )
+    for name, owned, paths in filtered:
         print(
             f"::notice::{name} publishes required context(s) {', '.join(owned)} but "
             f"fires only on {', '.join(paths)}. A PR touching none of those paths "
