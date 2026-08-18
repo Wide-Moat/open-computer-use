@@ -47,6 +47,10 @@ MUST_COVER_CANON = {
     # nowhere before #503; narrowing this workflow back to main would strand
     # them again.
     "shell-tests.yml",
+    # Split out of contracts-lint.yml (#510): it publishes a required context
+    # and that file filters on contracts/**, so a PR touching neither contracts
+    # nor scripts produced the context ABSENT rather than red.
+    "nfr-gates.yml",
 }
 
 # Workflows deliberately outside the set, with the reason, so the next reader
