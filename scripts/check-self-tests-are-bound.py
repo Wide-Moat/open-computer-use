@@ -106,6 +106,31 @@ def _registry_covers(root: pathlib.Path) -> list[str]:
     )
 
 
+def _self_tests_ci_never_runs(root: pathlib.Path) -> list[str]:
+    """Checkers carrying a --self-test that no workflow invokes.
+
+    This gate proves each self-test would NOTICE a broken checker. It does not
+    run them. Measured when this was written: two --self-tests --
+    check-audit-fanin-inv1 and check-contract-refs-are-local -- were invoked by
+    their live run only, so CI proved they pass on a correct tree and never that
+    they fail on a broken one. A red-probe nobody executes is a red-probe on
+    paper.
+    """
+    workflows = root / ".github" / "workflows"
+    if not workflows.is_dir():
+        return []
+    text = " ".join(
+        p.read_text(encoding="utf-8", errors="ignore")
+        for p in list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))
+    )
+    return sorted(
+        p.name
+        for p in (root / "scripts").glob("check-*.py")
+        if "--self-test" in p.read_text(encoding="utf-8", errors="ignore")
+        and f"{p.name} --self-test" not in text
+    )
+
+
 def _self_test() -> int:
     failures = 0
 
@@ -129,6 +154,26 @@ def _self_test() -> int:
             sys.stderr.write("self-test FAIL: an unregistered checker was not reported\n")
         else:
             print("  ok: a checker missing from the registry is reported")
+
+        # _self_tests_ci_never_runs() on the same constructed tree. On this
+        # repository it returns empty once every step exists, so a stub of it
+        # would pass here unnoticed.
+        (base / ".github" / "workflows").mkdir(parents=True)
+        (base / "scripts" / "check-probe.py").write_text("--self-test\n", encoding="utf-8")
+        (base / ".github" / "workflows" / "w.yml").write_text("run: nothing\n", encoding="utf-8")
+        if "check-probe.py" not in _self_tests_ci_never_runs(base):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a --self-test no workflow runs was not reported\n")
+        else:
+            print("  ok: a --self-test CI never invokes is reported")
+        (base / ".github" / "workflows" / "w.yml").write_text(
+            "run: python3 scripts/check-probe.py --self-test\n", encoding="utf-8"
+        )
+        if "check-probe.py" in _self_tests_ci_never_runs(base):
+            failures += 1
+            sys.stderr.write("self-test FAIL: an invoked --self-test was still reported\n")
+        else:
+            print("  ok: a --self-test a workflow invokes is accepted")
 
     cases = [
         ("a list-returning function is stubbed to []", "def f(x) -> list[str]:\n    return [1]\n", "f", "return []"),
@@ -177,6 +222,17 @@ def main(argv: list[str] | None = None) -> int:
                 "cover. Register it with the function whose emptiness means "
                 "'found nothing', or the claim that every checker is bound is "
                 "true only of the ones listed.",
+                file=sys.stderr,
+            )
+        return 1
+
+    unrun = _self_tests_ci_never_runs(root)
+    if unrun:
+        for name in unrun:
+            print(
+                f"::error::{name} carries a --self-test that no workflow runs. Its "
+                "live invocation proves it passes on a correct tree, never that it "
+                "fails on a broken one -- add a step invoking it.",
                 file=sys.stderr,
             )
         return 1
