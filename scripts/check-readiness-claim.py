@@ -785,6 +785,7 @@ def _self_test() -> int:
                     f"{leg['leg']}: {field} {value!r} matches arbitrary prose -- "
                     f"it identifies text, not the property"
                 )
+    unreadable_legs: list[str] = []
     for leg in LEGS:
         for field in ("evidence", "wired"):
             value = leg.get(field)
@@ -795,7 +796,13 @@ def _self_test() -> int:
             try:
                 held = leg_holds(broken)
             except Unreadable:
-                print(f"  ok: {leg['leg']}/{field} -> unreadable is not a pass")
+                # NOT a pass. Measured on CI, where the sibling repository is
+                # unreachable from the runner: all seven substitutions raised
+                # Unreadable and the block printed seven "ok" lines while
+                # asserting nothing. Locally the same seven flip. A case that
+                # reports success on the environment that cannot run it is the
+                # fake-green this file exists to refuse, so say so instead.
+                unreadable_legs.append(f"{leg['leg']}/{field}")
                 continue
             if held:
                 failures.append(
@@ -804,6 +811,17 @@ def _self_test() -> int:
                 )
             else:
                 print(f"  ok: {leg['leg']}/{field} flips when the symbol is absent")
+
+    if unreadable_legs:
+        # Reported, not failed: on a runner without access to the sibling
+        # repositories this is the environment, not a defect. Reported rather
+        # than silent, because "17 cases passed" read the same in both places
+        # while seven of them asserted nothing.
+        print(
+            f"::notice::{len(unreadable_legs)} leg symbol(s) could not be probed here -- "
+            f"the component was unreadable, so their binding is UNVERIFIED on this "
+            f"run rather than confirmed: {', '.join(unreadable_legs)}"
+        )
 
     for f in failures:
         print(f"FAIL {f}")
