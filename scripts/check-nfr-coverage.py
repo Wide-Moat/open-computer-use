@@ -429,7 +429,15 @@ def _self_test() -> int:
     workflows = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows"
     passed: list[int] = []
     for wf in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")):
-        text = wf.read_text(encoding="utf-8")
+        # Executable lines only. A commented-out caller carries the same text,
+        # and counting it means this assertion answers for a step nobody runs
+        # -- measured by prefixing the real `--min-armed 11` step with `#`,
+        # after which the self-test still exited 0.
+        text = "\n".join(
+            line
+            for line in wf.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
         passed += [
             int(part.split()[0])
             for part in text.split("--min-armed ")[1:]

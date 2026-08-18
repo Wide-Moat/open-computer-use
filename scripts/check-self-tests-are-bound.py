@@ -123,11 +123,21 @@ def _self_tests_ci_never_runs(root: pathlib.Path) -> list[str]:
         p.read_text(encoding="utf-8", errors="ignore")
         for p in list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml"))
     )
+    # Executable lines only. Matching the whole file counted a COMMENTED-OUT
+    # invocation as a live one: measured by prefixing the real
+    # `run: python3 scripts/check-pin-policy.py --self-test` with `#`, after
+    # which this still exited 0. A gate whose subject is "does CI run this"
+    # must not accept the text of a step somebody disabled.
+    live = [
+        line
+        for line in text.splitlines()
+        if not line.lstrip().startswith("#")
+    ]
     return sorted(
         p.name
         for p in (root / "scripts").glob("check-*.py")
         if "--self-test" in p.read_text(encoding="utf-8", errors="ignore")
-        and f"{p.name} --self-test" not in text
+        and not any(f"{p.name} --self-test" in line for line in live)
     )
 
 
@@ -174,6 +184,17 @@ def _self_test() -> int:
             sys.stderr.write("self-test FAIL: an invoked --self-test was still reported\n")
         else:
             print("  ok: a --self-test a workflow invokes is accepted")
+
+        # A commented-out step is not an invocation. Matching the whole file
+        # counted one, so disabling a red-probe left this gate green.
+        (base / ".github" / "workflows" / "w.yml").write_text(
+            "  # run: python3 scripts/check-probe.py --self-test\n", encoding="utf-8"
+        )
+        if "check-probe.py" not in _self_tests_ci_never_runs(base):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a commented-out invocation counted as live\n")
+        else:
+            print("  ok: a commented-out --self-test does not count as invoked")
 
     cases = [
         ("a list-returning function is stubbed to []", "def f(x) -> list[str]:\n    return [1]\n", "f", "return []"),
