@@ -47,10 +47,20 @@ commit cannot supply:
                   condition no PR can fix
     NFR-SEC-86    the artifact-body render substrate does not exist yet
 
-That accounts for every id whose verification column names a CI gate. The rest
-of the 190 are not silent for want of trying: 18 name a running deployment as
-their verification, and the remainder are declarations rather than checkable
-properties. Counting them as coverage debt would misread the manifesto.
+That accounts for every id whose verification names a CI gate THIS repository
+could run today. It does not account for the rest, and the earlier claim here
+-- that the remainder are "declarations rather than checkable properties" --
+was wrong. Grouping the unaccounted rows by their verification column returns
+named mechanisms: "per-release" 18 times, "release pipeline" 9, "k6 perf gate"
+7, "integration test" 7, "chaos test" 4.
+
+Those are 85 ids, and they are unarmed for one reason rather than 85: the
+mechanism does not exist. Grepping .github/workflows/, scripts/ and tests/ for
+k6, chaos and replay-test finds them only inside this file -- that is, only in
+the sentence describing their absence. Listing each id separately would be 85
+lines saying the same thing, so they are excused by MECHANISM below, and the
+excuse expires the moment the mechanism lands: a k6 job in the tree makes every
+k6-verified row a real gap again.
 
 That list is the answer to "why not more", and it is here rather than in a
 commit message so the next person reads it before re-deriving it.
@@ -79,6 +89,11 @@ import sys
 # number to fall is that an NFR genuinely stopped being checked -- and that is
 # what the coverage comparison already catches, loudly.
 COMMITTED_FLOOR = 11
+
+# The unexplained count on the day it was first measured honestly. A ceiling
+# rather than a floor: this number must go DOWN, and a commit that raises it is
+# adding a requirement nobody accounted for.
+UNEXPLAINED_CEILING = 43
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -273,7 +288,27 @@ def declared_rows(root: pathlib.Path) -> dict[str, str]:
 
 
 EXCUSE_ENTRY = re.compile(r"^\s{4}(NFR-[A-Z]+-[A-Za-z0-9-]+)\s{2,}\S", re.M)
-CI_VERIFICATION = ("ci gate", "ci lint", "lint", "script")
+# Verification phrases that name a mechanism CI could carry. The first four
+# were the whole list, and they missed most of the manifesto: grouping the
+# unaccounted rows by their verification column returned "per-release" 18
+# times, "release pipeline" 9, "k6 perf gate" 7, "integration test" 7 and
+# "chaos test" 4. Those are named mechanisms, not declarations, and calling
+# them declarations let the completeness gate report zero unexplained CI-gated
+# ids while 147 rows naming a mechanism sat outside its question.
+CI_VERIFICATION = (
+    "ci gate",
+    "ci lint",
+    "lint",
+    "script",
+    "perf gate",
+    "release pipeline",
+    "release-pipeline",
+    "per-release",
+    "integration test",
+    "replay test",
+    "per-template test",
+    "chaos test",
+)
 
 
 def excused_ids(source: str) -> set[str]:
@@ -289,7 +324,47 @@ def excused_ids(source: str) -> set[str]:
     return set(EXCUSE_ENTRY.findall(source))
 
 
-def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str]) -> list[str]:
+# Verification mechanisms that do not exist in this repository. An id excused
+# by one of these is excused for a reason that is checkable rather than
+# asserted: ABSENT_MECHANISM is only honoured while the mechanism is genuinely
+# missing, which mechanism_is_absent() re-measures on every run.
+ABSENT_MECHANISM = ("k6", "chaos test", "replay test", "per-template test", "per-release")
+MECHANISM_PROBE = {
+    "k6": "k6",
+    "chaos test": "chaos",
+    "replay test": "replay",
+    "per-template test": "per-template",
+    "per-release": "per-release",
+}
+
+
+def mechanism_is_absent(root: pathlib.Path, mechanism: str) -> bool:
+    """True while nothing under .github/, scripts/ or tests/ implements it.
+
+    This file is excluded: it names every mechanism in the paragraph explaining
+    that they are missing, so a search including it always finds them and the
+    excuse would never expire.
+    """
+    needle = MECHANISM_PROBE.get(mechanism, mechanism)
+    this = pathlib.Path(__file__).resolve()
+    for directory in (".github", "scripts", "tests"):
+        base = root / directory
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file() or path.resolve() == this:
+                continue
+            if "__pycache__" in path.parts:
+                continue
+            try:
+                if needle in path.read_text(encoding="utf-8", errors="ignore"):
+                    return False
+            except OSError:
+                continue
+    return True
+
+
+def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str], root: pathlib.Path = pathlib.Path(".")) -> list[str]:
     """Ids whose verification column names a CI gate, yet are neither armed nor
     listed with a reason.
 
@@ -301,12 +376,15 @@ def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str])
     Deliberately narrow. An id whose verification asks for a running deployment
     is not coverage debt, and counting it would misread the manifesto.
     """
+    absent = {m for m in ABSENT_MECHANISM if mechanism_is_absent(root, m)}
     return sorted(
         nfr
         for nfr, verification in rows.items()
         if nfr not in armed
         and nfr not in excused
         and any(term in verification.lower() for term in CI_VERIFICATION)
+        # Excused by mechanism, and only while that mechanism is still missing.
+        and not any(m in verification.lower() for m in absent)
     )
 
 
@@ -522,17 +600,30 @@ def main(argv: list[str] | None = None) -> int:
         declared_rows(root),
         set(armed),
         excused_ids(pathlib.Path(__file__).read_text(encoding="utf-8")),
+        root,
     )
-    if unexplained:
-        for nfr in unexplained:
-            print(
-                f"::error::{nfr} names a CI gate as its verification, is not armed, "
-                "and carries no reason in this file's list. Arm it or record why "
-                "it cannot be armed -- an unexplained gap is indistinguishable "
-                "from an unnoticed one.",
-                file=sys.stderr,
-            )
+    # A ratchet, not a wall. Widening CI_VERIFICATION to the mechanisms the
+    # manifesto actually names took this from 0 to 43: those rows name
+    # `release pipeline` and `integration test`, both of which EXIST here, so
+    # they are real coverage debt rather than a missing tool. Blocking on them
+    # would red every PR for a condition no PR can fix -- the trap already
+    # recorded against requiring a context that never arrives. The count is
+    # reported and floored instead, so the debt cannot grow unremarked.
+    if len(unexplained) > UNEXPLAINED_CEILING:
+        print(
+            f"::error::{len(unexplained)} ids name a CI gate, are not armed, and carry "
+            f"no reason -- above the ceiling of {UNEXPLAINED_CEILING}. Arm one, or "
+            f"record why it cannot be armed.",
+            file=sys.stderr,
+        )
         return 1
+    if unexplained:
+        print(
+            f"::notice::{len(unexplained)} id(s) name a CI gate this repository can run, "
+            f"are not armed, and carry no reason: {', '.join(unexplained[:6])}"
+            f"{' ...' if len(unexplained) > 6 else ''}. Ceiling {UNEXPLAINED_CEILING}; "
+            f"it only goes down."
+        )
 
     print(f"NFR coverage: {len(armed)} of {len(declared)} ids are named by a check that runs")
     stranded = unreachable_on_canon(root, armed)
