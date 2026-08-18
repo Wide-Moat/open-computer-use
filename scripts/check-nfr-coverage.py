@@ -164,12 +164,30 @@ def unreachable_on_canon(root: pathlib.Path, hits: dict[str, list[str]]) -> dict
         for rel in files:
             if rel.startswith(".github/workflows/"):
                 reachable |= fires.get(pathlib.Path(rel).name, False)
-            elif rel.startswith("scripts/"):
-                # scripts are invoked by contracts-lint, which covers canon
-                reachable |= True
             else:
-                # a tests/ file runs only if a workflow that fires invokes it
-                reachable |= any(fires.get(w, False) for w, body in bodies.items() if rel in body)
+                # Everything else -- scripts/ and tests/ alike -- is reachable
+                # only if a workflow that FIRES on canon invokes it. This used
+                # to shortcut scripts/ to True on the grounds that
+                # contracts-lint runs them, which stopped being true when the
+                # nfr-gates job moved to its own workflow (#511) and was never
+                # true of every file: scripts/apply-layer0-protection.sh is
+                # invoked by NO workflow -- it is the manual applier -- yet it
+                # is cited as evidence by NFR-SEC-88 and NFR-SEC-89.
+                #
+                # Not a live fake-green: both also cite a script CI does run,
+                # so the verdict is unchanged today. The assumption is what was
+                # wrong, and an assumption that happens to hold is the kind
+                # this file exists to replace with a measurement.
+                # Matched against RUN LINES, not the whole file. A mention in a
+                # comment is not an invocation: check-pin-policy.py is named in
+                # comments in security.yml and supply-chain.yml, and a
+                # substring search over the body counted those as callers --
+                # the same text-predicate trap this repository keeps finding.
+                reachable |= any(
+                    fires.get(w, False)
+                    and any(rel in line and not line.lstrip().startswith("#") for line in body.splitlines())
+                    for w, body in bodies.items()
+                )
         if not reachable:
             stranded[nid] = files
     return stranded
