@@ -46,6 +46,14 @@ SUBJECTS: dict[str, str] = {
     "check-readiness-claim.py": "leg_holds",
     "check-contract-refs-are-local.py": "check_file",
     "check-gates-trigger-on-canon.py": "findings",
+    # Added once the registry itself was measured against scripts/: these three
+    # carried a --self-test and CI ran it, which proved the self-tests exist.
+    # Nothing proved they would notice. Probed before registering -- stubbing
+    # scan(), violations() and bindings() reds each one -- so this records a
+    # measured property rather than assuming it.
+    "check-action-pin-consistency.py": "scan",
+    "check-audit-fanin-inv1.py": "violations",
+    "check-ocsf-class-identity.py": "bindings",
 }
 
 # What "found nothing" looks like for each: a list of findings, or a bool that
@@ -87,8 +95,41 @@ def self_test_notices(root: pathlib.Path, name: str, function: str) -> tuple[boo
     return proc.returncode != 0, f"exit {proc.returncode}"
 
 
+def _registry_covers(root: pathlib.Path) -> list[str]:
+    """Checkers in scripts/ that SUBJECTS does not name. Split out so the
+    self-test can drive it on a constructed tree rather than only on this
+    repository, where it is empty by construction once the registry is right."""
+    return sorted(
+        p.name
+        for p in (root / "scripts").glob("check-*.py")
+        if p.name != pathlib.Path(__file__).name and p.name not in SUBJECTS
+    )
+
+
 def _self_test() -> int:
     failures = 0
+
+    # _registry_covers() on a constructed tree. Without this the completeness
+    # branch is untested: on this repository it returns empty once the registry
+    # is correct, so a stub of it would pass unnoticed.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = pathlib.Path(tmp)
+        (base / "scripts").mkdir()
+        (base / "scripts" / next(iter(SUBJECTS))).write_text("x", encoding="utf-8")
+        if _registry_covers(base):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a registered checker was reported as uncovered\n")
+        else:
+            print("  ok: a registered checker is not reported")
+        (base / "scripts" / "check-not-in-the-registry.py").write_text("x", encoding="utf-8")
+        if not _registry_covers(base):
+            failures += 1
+            sys.stderr.write("self-test FAIL: an unregistered checker was not reported\n")
+        else:
+            print("  ok: a checker missing from the registry is reported")
+
     cases = [
         ("a list-returning function is stubbed to []", "def f(x) -> list[str]:\n    return [1]\n", "f", "return []"),
         ("leg_holds is stubbed to True", "def leg_holds(leg) -> bool:\n    return False\n", "leg_holds", "return True"),
@@ -123,6 +164,23 @@ def main(argv: list[str] | None = None) -> int:
         return _self_test()
 
     root = pathlib.Path(args.root).resolve()
+
+    # The registry must cover scripts/, or this gate answers only for whatever
+    # somebody remembered to add. Measured when this was written: 13 checkers
+    # present, 9 registered -- three of the four unregistered ones turned out to
+    # be bound anyway, which is the point. Nobody knew.
+    unregistered = _registry_covers(root)
+    if unregistered:
+        for name in unregistered:
+            print(
+                f"::error::{name} is a checker in scripts/ that this gate does not "
+                "cover. Register it with the function whose emptiness means "
+                "'found nothing', or the claim that every checker is bound is "
+                "true only of the ones listed.",
+                file=sys.stderr,
+            )
+        return 1
+
     unbound: list[str] = []
     for name, function in sorted(SUBJECTS.items()):
         noticed, detail = self_test_notices(root, name, function)
