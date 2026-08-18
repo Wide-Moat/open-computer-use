@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 15
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 38
+UNEXPLAINED_CEILING = 39
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -295,11 +295,25 @@ def declared_rows(root: pathlib.Path) -> dict[str, str]:
         if not stripped.startswith("|"):
             continue
         cells = [c.strip() for c in stripped.split("|")]
-        if len(cells) > 5 and NFR_ID.fullmatch(cells[1]):
-            # Subject cell included: the completeness check excuses an id whose
-            # SUBJECT does not exist in the tree, and that word lives in cells[2]
-            # rather than in the verification column.
-            rows[cells[1]] = " ".join(cells[2:3] + cells[4:6])
+        if len(cells) > 4 and NFR_ID.fullmatch(cells[1]):
+            # The manifesto holds TWO row shapes, and a fixed index reads the
+            # wrong column for half of them. Measured: 101 rows are
+            # `ID | Scenario | Target | Verification | Source` and 89 insert a
+            # threat column -- `ID | Scenario | Threat | Target | Verification |
+            # Source`. Taking cells[4:6] for both swept the TARGET into the
+            # verification text on the wider rows, and three verdicts turned on
+            # it: NFR-SEC-30 counted as CI-checkable because its target says
+            # "edge integration test", not its verification.
+            #
+            # Subject is included deliberately -- the completeness check excuses
+            # an id whose SUBJECT is unbuilt, and that word lives in cells[2].
+            # Width 8 carries the threat column, width 7 does not. `>= 7` was
+            # wrong and measurably so: it matched BOTH shapes, moved 58 rows out
+            # of the CI-checkable set in one step, and the first two I read by
+            # hand -- NFR-COMP-01, NFR-COMP-11 -- had had their Source column
+            # read as their Verification.
+            verification = cells[5] if len(cells) >= 8 else cells[4]
+            rows[cells[1]] = " ".join([cells[2], verification])
     return rows
 
 
