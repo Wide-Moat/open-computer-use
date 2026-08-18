@@ -114,7 +114,12 @@ def undeclared_permissions(text: str) -> list[str]:
     try:
         doc = yaml.safe_load(text)
     except yaml.YAMLError:
-        return []
+        # Same shape as the vendor-SDK parser: a file that does not parse is a
+        # file whose jobs were not read, and [] claims they all declare their
+        # authority. Named through the findings channel instead. Milder than
+        # the vendor case -- an unparseable workflow reds its own run -- but
+        # this check must not certify what it could not look at.
+        return ["<unparseable: jobs not read>"]
     if not isinstance(doc, dict) or doc.get("permissions") is not None:
         return []
     return sorted(
@@ -226,6 +231,12 @@ def _self_test() -> int:
         # Token authority. The negative cases matter: a rule that flagged a job
         # whose file declares permissions at the top would report eleven false
         # findings on this repository.
+        (
+            "an unparseable workflow is reported, not called clean",
+            "name: x\non:\n bad: [unclosed\n",
+            undeclared_permissions,
+            True,
+        ),
         (
             "a job with no permissions at either level is caught",
             "name: w\non:\n  pull_request:\njobs:\n  a:\n    steps: []\n",

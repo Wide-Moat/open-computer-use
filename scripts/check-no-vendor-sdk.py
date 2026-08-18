@@ -135,7 +135,13 @@ def vendor_imports(source: str) -> list[tuple[int, str]]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return []
+        # A file that does not parse is a file whose imports were not read, and
+        # returning [] states the opposite. Measured: a source carrying
+        # `import anthropic` plus a syntax error exits 0, while the same import
+        # in a valid file exits 1 -- breaking the syntax hid the violation.
+        # Reported through the findings channel so it cannot pass unnoticed;
+        # line 0 because there is no line.
+        return [(0, "<unparseable: imports not read>")]
     found: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -192,6 +198,10 @@ def _endpoint_self_test() -> int:
 
 def _self_test() -> int:
     cases = [
+        # An unparseable file is reported, not read as clean. Without this a
+        # syntax error hides every import in the file: `import anthropic` plus
+        # a broken def exited 0 before this landed.
+        ("an unparseable source is reported", "import anthropic\ndef broken(:\n", 1),
         ("a plain import is caught", "import openai\n", 1),
         ("a from-import is caught", "from anthropic import Anthropic\n", 1),
         ("a submodule is caught", "import google.generativeai as genai\n", 1),
@@ -204,7 +214,9 @@ def _self_test() -> int:
         # A local module whose name merely begins with a vendor's.
         ("a same-prefix local module is not a vendor", "import openaiwrapper\n", 0),
         ("unrelated imports pass", "import json\nfrom pathlib import Path\n", 0),
-        ("unparseable source yields nothing rather than crashing", "def (\n", 0),
+        # Was "yields nothing rather than crashing", asserting the behaviour
+        # that hid a violation: not crashing is right, reporting nothing is not.
+        ("unparseable source reports rather than crashing", "def (\n", 1),
     ]
     failures = 0
     for name, source, want in cases:
