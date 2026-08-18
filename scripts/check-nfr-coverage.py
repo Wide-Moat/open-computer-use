@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 15
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 39
+UNEXPLAINED_CEILING = 38
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -365,7 +365,20 @@ def excused_ids(source: str) -> set[str]:
 # all present. Arming NFR-COMP-22 through that very pipeline (#527) is what
 # exposed it: a requirement cannot be both excused for want of a mechanism and
 # armed by that mechanism on the same day.
-ABSENT_MECHANISM = ("k6", "chaos test", "replay test", "per-template test")
+ABSENT_MECHANISM = (
+    "k6",
+    "chaos test",
+    "replay test",
+    "per-template test",
+    # Adversarial evaluation. NFR-SEC-34 asks for a red-team subset per PR and
+    # a full suite nightly; NFR-MAINT-12 for a threat-model re-run on
+    # DFD-bearing PRs. Measured across .github/, scripts/ and tests/: no
+    # promptfoo, garak, pyrit or threagile, and docs/architecture/threat-model/
+    # does not exist -- the only hits were path patterns in a docs-lint
+    # whitelist, which is a list of files that MAY exist, not a mechanism.
+    "per-pr + nightly",
+    "threat-model pass",
+)
 
 # The second reason an id cannot be armed: the SUBJECT does not exist. A
 # requirement about per-tenant isolation cannot have a check while nothing in
@@ -420,6 +433,8 @@ MECHANISM_PROBE = {
     "chaos test": "chaos",
     "replay test": "replay",
     "per-template test": "per-template",
+    "per-pr + nightly": "promptfoo",
+    "threat-model pass": "threagile",
 }
 
 
