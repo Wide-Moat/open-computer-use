@@ -98,6 +98,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/check-readiness-claim.py || true
+      - name: the guest-env checker itself discriminates
+        run: python3 scripts/check-guest-env-allowlist.py --self-test
+
+      # NFR-SEC-75 (guest env from an allowlist; no secret on argv). The row
+      # forbids INHERITING the host environment and explicitly permits handing a
+      # secret to a tool through the env -- so ANTHROPIC_AUTH_TOKEN in the guest
+      # env dict is compliant and flagging it would report a violation canon
+      # licenses. What is checked is os.environ flowing into the builder, and a
+      # secret name reaching a command string, because argv is world-readable
+      # through /proc/<pid>/cmdline. Named here so the requirement counts as
+      # armed; this job blocks.
+      - name: the guest environment is allowlist-built and argv carries no secret
+        run: python3 scripts/check-guest-env-allowlist.py
+
       - name: the session-window checker itself discriminates
         run: python3 scripts/check-session-windows.py --self-test
 
@@ -219,7 +233,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 16
+        run: python3 scripts/check-nfr-coverage.py --min-armed 17
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
