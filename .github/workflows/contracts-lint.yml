@@ -101,6 +101,15 @@ jobs:
           files=(contracts/**/*.schema.json contracts/**/*.asyncapi.yaml contracts/**/*.openapi.yaml)
           if [ ${#files[@]} -eq 0 ]; then echo "::error::no contract files"; exit 1; fi
           python3 scripts/check-contract-refs-are-local.py "${files[@]}"
+      # The two red-probes below run the checkers against constructed inputs
+      # that MUST fail. Both checkers were invoked only by their live run, which
+      # proves they pass on a correct tree and not that they would fail on a
+      # broken one. The meta-gate proves each self-test is bound to its subject;
+      # it does not run them, and nothing else did.
+      - name: the ref-locality checker itself discriminates
+        run: python3 scripts/check-contract-refs-are-local.py --self-test
+      - name: the fan-in INV-1 checker itself discriminates
+        run: python3 scripts/check-audit-fanin-inv1.py --self-test
       - name: audit fan-in INV-1 (receive-only)
         run: python3 scripts/check-audit-fanin-inv1.py
       # The parser above proves each payload $ref resolves to a well-formed JSON
