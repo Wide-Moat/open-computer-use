@@ -124,8 +124,20 @@ jobs:
         run: |
           curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin kubeconform
-          kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-default.yaml
-          kubeconform -strict -summary -kubernetes-version 1.30.0 /tmp/render-runc.yaml
+          # NFR-FLEX-13 (k8s-distro portability: the chart installs on any
+          # conformant k8s >= 1.28 without flavour-specific edits). Its target
+          # column asks for a CI matrix and this validated one version, which
+          # answers "the chart is valid on 1.30" rather than the requirement.
+          # Both ends of the supported range are checked plus a mid point, so a
+          # manifest using an API removed after 1.28 or one not yet present in
+          # it fails here rather than at a customer's install. Named beside the
+          # assertion on the NFR-SEC-19 convention; this job blocks.
+          for kube in 1.28.0 1.30.0 1.32.0; do
+            echo "::group::kubeconform against k8s ${kube}"
+            kubeconform -strict -summary -kubernetes-version "${kube}" /tmp/render-default.yaml
+            kubeconform -strict -summary -kubernetes-version "${kube}" /tmp/render-runc.yaml
+            echo "::endgroup::"
+          done
 
   release:
     name: Publish chart to gh-pages
