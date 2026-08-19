@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 35
+UNEXPLAINED_CEILING = 34
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -567,6 +567,20 @@ ABSENT_SUBJECT = (
     # rather than an action, so the exemption expires when the thing that
     # needs erasing exists.
     "mount-cache",
+    # NFR-SEC-39 wants an audit event `config.trust_profile.downgraded` within
+    # 30 s of a deployment being reconfigured to a weaker runtime tier. Two
+    # things it needs are absent: the audit emitter (see `host-authored`) and
+    # any notion of a declared trust profile in the implementation.
+    # config.trust_profile.downgraded, trust_profile and siem all return
+    # nothing here, and all three ARE described in contracts/ -- so this is
+    # specified-but-unbuilt, which the run now reports.
+    #
+    # Keyed on `trust_profile`: it appears in exactly one unexplained row. Note
+    # NFR-SEC-38 is ARMED on the same vocabulary, because its pairing matrix is
+    # a contract artifact that exists; this row needs a running emitter, which
+    # does not. Contract present, implementation absent -- the distinction the
+    # two probes now keep apart.
+    "trust_profile",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
