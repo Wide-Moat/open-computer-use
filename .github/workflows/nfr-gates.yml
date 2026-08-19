@@ -134,6 +134,21 @@ jobs:
       - name: the file-activity overlay checker itself discriminates
         run: python3 scripts/check-file-activity-overlay.py --self-test
 
+      - name: the SOAR-revoke checker itself discriminates
+        run: python3 scripts/check-soar-revoke-frozen.py --self-test
+
+      # NFR-COMP-27, the inbound half. The outbound webhook is a stated boundary
+      # rather than a gap in this contract set -- audit-fanin.asyncapi.yaml:29
+      # says the webhook is a separate surface -- so only the admin API IN is
+      # claimed here. The contract puts the revoke authority in an in-body
+      # assertion (`soar_signature`) rather than an HTTP security scheme, and a
+      # field can be made optional without a schema validator noticing:
+      # dropping it from the required list and running the pinned
+      # @redocly/cli@1.34.2 exits 0, "Your API description is valid". Named here
+      # so the requirement counts as armed; this job blocks.
+      - name: the SOAR revoke surface still requires the assertion that authorizes it
+        run: python3 scripts/check-soar-revoke-frozen.py
+
       # NFR-SEC-79, the contract half. The chain-linkage half is not claimed:
       # audit-fanin.asyncapi.yaml:230 says prev_hash/chain_hash are authored by
       # the pipeline at ingest and are not part of the publish payload. What IS
@@ -278,7 +293,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 20
+        run: python3 scripts/check-nfr-coverage.py --min-armed 21
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
