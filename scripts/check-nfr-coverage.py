@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 18
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 34
+UNEXPLAINED_CEILING = 33
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
