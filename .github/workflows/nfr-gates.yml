@@ -131,6 +131,22 @@ jobs:
       - name: the browser-storage checker itself discriminates
         run: python3 scripts/check-browser-storage-clean.py --self-test
 
+      - name: the file-activity overlay checker itself discriminates
+        run: python3 scripts/check-file-activity-overlay.py --self-test
+
+      # NFR-SEC-79, the contract half. The chain-linkage half is not claimed:
+      # audit-fanin.asyncapi.yaml:230 says prev_hash/chain_hash are authored by
+      # the pipeline at ingest and are not part of the publish payload. What IS
+      # on the wire is the mandatory set, and two documents state it -- the
+      # AsyncAPI overlay named for this requirement, and FileActivityEvent in
+      # file-artifact-api.schema.json. Either can be relaxed alone without
+      # breaking anything else, so this compares them. The ocsf-class-identity
+      # gate covers a different statement (title vs vendored class) and passes
+      # on a relaxed overlay -- probed. Named here so the requirement counts as
+      # armed; this job blocks.
+      - name: a file-activity event still carries the NFR-SEC-79 mandatory set
+        run: python3 scripts/check-file-activity-overlay.py
+
       # NFR-SEC-82, the storage clause only. The row's embed-token half -- the
       # peer backend mints a short-TTL token and the UI verifies it before
       # setting session state -- belongs to the UI component, which is not in
@@ -262,7 +278,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 19
+        run: python3 scripts/check-nfr-coverage.py --min-armed 20
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
