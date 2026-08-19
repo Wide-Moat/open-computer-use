@@ -48,6 +48,7 @@ SUBJECTS: dict[str, str] = {
     "check-gates-trigger-on-canon.py": "findings",
     "check-security-txt.py": "problems",
     "check-mcp-protocol-version.py": "unsupported",
+    "check-release-synthetic.py": "unguarded_publishers",
     "check-session-windows.py": "problems",
     "check-guest-env-allowlist.py": "problems",
     # Added once the registry itself was measured against scripts/: these three
