@@ -52,6 +52,7 @@ SUBJECTS: dict[str, str] = {
     "check-browser-storage-clean.py": "leaks",
     "check-file-activity-overlay.py": "problems",
     "check-soar-revoke-frozen.py": "problems",
+    "check-operator-bodies-hint-only.py": "problems",
     "check-session-windows.py": "problems",
     "check-guest-env-allowlist.py": "problems",
     # Added once the registry itself was measured against scripts/: these three

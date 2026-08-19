@@ -137,6 +137,22 @@ jobs:
       - name: the SOAR-revoke checker itself discriminates
         run: python3 scripts/check-soar-revoke-frozen.py --self-test
 
+      - name: the operator-body checker itself discriminates
+        run: python3 scripts/check-operator-bodies-hint-only.py --self-test
+
+      # NFR-SEC-26 (contract half). The operator surface establishes identity out
+      # of band -- operatorPeerCred, from the peer credential of the host-owned
+      # 0700 socket -- and the file states the consequence: bodies carry HINTS,
+      # and no body field names a caller, session-authority or container_name,
+      # because a body-supplied id is never the authority that binds a session.
+      # A schema validator cannot see that: adding caller_id to a body is a
+      # well-formed change and the pinned @redocly/cli@1.34.2 exits 0 on it.
+      # `tenant` stays permitted -- MCPKeyCreateRequest scopes a new key with it
+      # and says so; what is forbidden is a field naming WHO IS CALLING. Named
+      # here so the requirement counts as armed; this job blocks.
+      - name: no operator request body names the acting caller
+        run: python3 scripts/check-operator-bodies-hint-only.py
+
       # NFR-COMP-27, the inbound half. The outbound webhook is a stated boundary
       # rather than a gap in this contract set -- audit-fanin.asyncapi.yaml:29
       # says the webhook is a separate surface -- so only the admin API IN is
@@ -293,7 +309,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 21
+        run: python3 scripts/check-nfr-coverage.py --min-armed 22
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
