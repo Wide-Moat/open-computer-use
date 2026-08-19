@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 34
+UNEXPLAINED_CEILING = 33
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -581,6 +581,20 @@ ABSENT_SUBJECT = (
     # does not. Contract present, implementation absent -- the distinction the
     # two probes now keep apart.
     "trust_profile",
+    # NFR-SEC-50 wants transport-bound / proof-of-possession upstream
+    # credentials served by EDGE RE-ORIGINATION, with zero client-cert or DPoP
+    # private-key material in the guest. Probed: dpop, mtls, re-origination,
+    # cert-pin and client-cert all return nothing, and no TLS client-auth
+    # wiring exists -- ssl_context, client_cert and cert= return nothing in the
+    # server.
+    #
+    # The zero-key half of the target is technically SATISFIED: there is no PEM
+    # block or key file anywhere in the image or tree. Arming on that would be
+    # the trap -- a green "no private key in the guest" asserts nothing while
+    # no destination needs one. The property is empty, not enforced, so the
+    # honest record is an exemption keyed on the mechanism that would make it
+    # meaningful.
+    "re-origination",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
