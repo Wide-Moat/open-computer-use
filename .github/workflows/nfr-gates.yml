@@ -146,6 +146,20 @@ jobs:
       - name: the phone-home checker itself discriminates
         run: python3 scripts/check-no-phone-home.py --self-test
 
+      - name: the mutating-console checker itself discriminates
+        run: python3 scripts/check-no-mutating-console.py --self-test
+
+      # NFR-IC-02 (no mutating operator-console UI in v1; CLAUDE.md locks the
+      # same thing as a non-goal). The distinction is SCOPE, not the verb. This
+      # server serves mutating routes and a page that calls them -- restart the
+      # container, kill a process -- and every one is keyed on chat_id, with the
+      # page supplying exactly one from window.__CONFIG__. That is a data-plane
+      # session panel, which the row routes to NFR-SEC-82 instead. An operator
+      # console is the other shape: a mutating route with no session in its
+      # path. Named here so the requirement counts as armed; this job blocks.
+      - name: every mutating route is session-scoped and no console ships
+        run: python3 scripts/check-no-mutating-console.py
+
       # NFR-SEC-16 (zero vendor-controlled outbound in the default config,
       # verified by CI artifact inspection of installer + runtime). Two
       # distinctions decide what this refuses, both measured: a link is not a
@@ -338,7 +352,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 23
+        run: python3 scripts/check-nfr-coverage.py --min-armed 24
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
