@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 23
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 45
+UNEXPLAINED_CEILING = 44
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -496,6 +496,21 @@ ABSENT_SUBJECT = (
     # There the storage leg is one leg of a single forward-proxy egress, and its
     # subject -- proxy, egress -- is present in this tree. It stays unexcused.
     "ocu-filestore",
+    # NFR-SEC-52 asks for a rendered-manifest check that the agent-facing MCP
+    # gateway has no network route to the operator/Control-API ingress. The
+    # assertion needs two deployed surfaces to hold apart, and this tree
+    # deploys one. Probed across the server, the chart, the compose files and
+    # the image: operator-ingress, kill-switch, killswitch, denylist and
+    # "mcp gateway" all return nothing. The contracts DESCRIBE the operator
+    # surface -- operator-rest.openapi.yaml is detailed about it -- but no chart
+    # template or compose service renders it, and the single `operator` hit in
+    # helm/ is the word in a comment about human operators.
+    #
+    # Keyed on `kill-switch` rather than `operator-ingress`: both are absent
+    # today, but the kill-switch is the capability whose reachability the row is
+    # actually about, so the exemption expires when the dangerous surface
+    # appears rather than when someone renames an ingress.
+    "kill-switch",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
