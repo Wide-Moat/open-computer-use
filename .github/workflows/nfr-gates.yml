@@ -152,6 +152,20 @@ jobs:
       - name: the one-click compose checker itself discriminates
         run: python3 scripts/check-one-click-compose.py --self-test
 
+      - name: the admission-matrix checker itself discriminates
+        run: python3 scripts/check-admission-matrix-complete.py --self-test
+
+      # NFR-SEC-38 (contract half): the 9-cell profile x tier pairing matrix in
+      # contracts/admission/runtime-tokens.schema.json stays complete. Deleting
+      # one allOf branch leaves the schema valid -- measured with the pinned
+      # ajv-cli@5.0.0 the json-schema gate runs, which exits 0 on it -- while
+      # the pair that branch covered becomes unvalidated at admission. The axes
+      # are derived FROM the schema and the cartesian product required, so this
+      # does not restate the contract and drift from it. Named here so the
+      # requirement counts as armed; this job blocks.
+      - name: the admission pairing matrix is a complete product
+        run: python3 scripts/check-admission-matrix-complete.py
+
       # NFR-FLEX-07b, the Compose half ("one-click solo install preserves
       # Compose path"). The smoke test already exists in build.yml; what was
       # unguarded is the property that makes the install one-click at all --
@@ -367,7 +381,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 25
+        run: python3 scripts/check-nfr-coverage.py --min-armed 26
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
