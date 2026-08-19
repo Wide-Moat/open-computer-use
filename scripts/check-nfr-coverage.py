@@ -454,6 +454,20 @@ ABSENT_SUBJECT = (
 )
 SUBJECT_DIRS = ("computer-use-server", "helm", "settings-wrapper", "openwebui")
 
+# Deployable files that live at the repository root rather than inside a
+# component directory. Without these the probe has a blind spot exactly where
+# the sandbox image is defined: measured on NFR-FLEX-08, where every spelling of
+# the CA-bundle subject returned ABSENT while Dockerfile:43-45 sets
+# NODE_EXTRA_CA_CERTS, REQUESTS_CA_BUNDLE and SSL_CERT_FILE and line 159 keeps
+# them across sudo. An exemption taken on that reading would have claimed the
+# subject does not exist when the image ships it.
+SUBJECT_FILES = (
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.webui.yml",
+    "docker-compose.test.yml",
+)
+
 
 # Assets that cannot implement anything, and whose bytes produce false matches.
 # Measured: "pam" appears in six files under these directories and every one is
@@ -473,8 +487,8 @@ def _is_asset(path: pathlib.Path) -> bool:
     return path.name.endswith((".min.js", ".min.css"))
 
 
-def subject_is_absent(root: pathlib.Path, word: str) -> bool:
-    """True while no implementation file mentions the subject."""
+def _subject_paths(root: pathlib.Path):
+    """Every file that could implement a requirement's subject."""
     for directory in SUBJECT_DIRS:
         base = root / directory
         if not base.is_dir():
@@ -482,11 +496,21 @@ def subject_is_absent(root: pathlib.Path, word: str) -> bool:
         for path in base.rglob("*"):
             if not path.is_file() or "__pycache__" in path.parts or _is_asset(path):
                 continue
-            try:
-                if word in path.read_text(encoding="utf-8", errors="ignore").lower():
-                    return False
-            except OSError:
-                continue
+            yield path
+    for name in SUBJECT_FILES:
+        path = root / name
+        if path.is_file():
+            yield path
+
+
+def subject_is_absent(root: pathlib.Path, word: str) -> bool:
+    """True while no implementation file mentions the subject."""
+    for path in _subject_paths(root):
+        try:
+            if word in path.read_text(encoding="utf-8", errors="ignore").lower():
+                return False
+        except OSError:
+            continue
     return True
 MECHANISM_PROBE = {
     "k6": "k6",
@@ -636,6 +660,27 @@ def _subject_probe_self_test() -> int:
             sys.stderr.write("self-test FAIL: a word in real source read as absent\n")
         else:
             print("  ok: the same word in source counts as present")
+
+    # A subject defined at the repository root rather than inside a component
+    # directory. The scan covered SUBJECT_DIRS only, so the sandbox image was
+    # invisible to it: every spelling of NFR-FLEX-08's CA-bundle subject read
+    # ABSENT while Dockerfile:43-45 sets NODE_EXTRA_CA_CERTS, REQUESTS_CA_BUNDLE
+    # and SSL_CERT_FILE. An exemption on that reading would have claimed a
+    # subject the image ships does not exist.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "computer-use-server").mkdir(parents=True)
+        if not subject_is_absent(root, "rootword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a word in no file read as present\n")
+        else:
+            print("  ok: a word in no file is absent")
+        (root / "Dockerfile").write_text("ENV ROOTWORD=/etc/ssl\n", encoding="utf-8")
+        if subject_is_absent(root, "rootword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a subject defined in the Dockerfile read as absent\n")
+        else:
+            print("  ok: a subject defined at the repository root counts as present")
     return failures
 
 
