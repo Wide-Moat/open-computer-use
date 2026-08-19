@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 18
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 33
+UNEXPLAINED_CEILING = 32
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -422,6 +422,27 @@ ABSENT_SUBJECT = (
     # Hibernation carries the whole row -- without it there is nothing to resume
     # or to fork -- and it returns nothing across every subject directory.
     "hibernation",
+    # NFR-SEC-31 puts per-session filesystem-prefix isolation at the storage
+    # engine behind `ocu-filestore`: a foreign filesystem_id presented with the
+    # same injected credential is rejected 403, a missing or expired token 401.
+    # That refusal is the requirement, and it lives in a component that is not
+    # in this tree -- ocu-filestore, filestore and storage-jwt all return
+    # nothing here.
+    #
+    # `filesystem_id` DOES return present, which is why this is keyed on the
+    # component and not on the field. The hits are real code rather than
+    # comments -- init.sh seeds OCU_FILESYSTEM_ID and the link filter carries it
+    # into a download scope -- but every one of them is the SENDING side, the
+    # value that goes out on a request. Nothing in computer-use-server checks a
+    # presented scope against a session's claim; grep for the rejection in
+    # security.py and app.py returns nothing. Excusing on `filesystem_id` would
+    # therefore rest on code that populates the field the requirement is about
+    # somebody else refusing.
+    #
+    # Deliberately not extended to NFR-SEC-05, which also names ocu-filestore.
+    # There the storage leg is one leg of a single forward-proxy egress, and its
+    # subject -- proxy, egress -- is present in this tree. It stays unexcused.
+    "ocu-filestore",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
