@@ -249,6 +249,13 @@ def armed_ids(root: pathlib.Path, ids: set[str]) -> dict[str, list[str]]:
     """
     hits: dict[str, list[str]] = {}
     this_file = pathlib.Path(__file__).resolve()
+    # The arms ledger is a REGISTER of arms, not a source of them. It lists every
+    # armed id by name, so counting it would let a hand-written row arm a
+    # requirement nothing checks -- and the ledger gate would agree, since both
+    # sides would be reading the same file. Measured before excluding it: adding
+    # NFR-SEC-33 to the ledger raised coverage from 22 to 23 and the ledger gate
+    # still exited 0.
+    ledger_file = (root / "scripts" / "check-arms-are-declared.py").resolve()
     for directory in CODE_DIRS:
         base = root / directory
         if not base.is_dir():
@@ -261,7 +268,8 @@ def armed_ids(root: pathlib.Path, ids: set[str]) -> dict[str, list[str]]:
             # armed -- by itself. Measured: coverage read 3 of 187 with the two
             # fixtures counted, 1 of 187 without. A gate that satisfies its own
             # assertion is the failure mode this whole file exists to name.
-            if path.resolve() == this_file:
+            resolved = path.resolve()
+            if resolved == this_file or resolved == ledger_file:
                 continue
             # Build artifacts are not checks. A .pyc keeps the NFR ids of the
             # source it was compiled from, so a deleted checker stays "armed"
