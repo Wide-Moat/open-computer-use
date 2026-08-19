@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 36
+UNEXPLAINED_CEILING = 35
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -676,7 +676,13 @@ def subject_is_contract_described(root: pathlib.Path, word: str) -> bool:
 MECHANISM_PROBE = {
     "k6": "k6",
     "chaos test": "chaos",
-    "replay test": "replay",
+    # `replay` alone matched the word "replaying" in a COMMENT in
+    # tests/security/redprobe_secrets_gate.sh about how it clones git history.
+    # That silently revoked the exemption: the mechanism read as PRESENT while
+    # no replay test exists, so every row verified by one became a live gap for
+    # a reason that was a sentence about something else. The needle is the
+    # mechanism's name, which a real harness would carry in a filename or a job.
+    "replay test": "replay-test",
     "per-template test": "per-template",
     "per-pr + nightly": "promptfoo",
     "threat-model pass": "threagile",
@@ -701,6 +707,14 @@ def mechanism_is_absent(root: pathlib.Path, mechanism: str) -> bool:
                 continue
             if "__pycache__" in path.parts:
                 continue
+            # A harness announces itself by NAME as often as by content: a
+            # workflow called replay-test.yml or a k6 script named for the tool
+            # need not repeat the word inside. Reading content only, the probe
+            # would call such a mechanism absent and keep excusing rows it now
+            # covers -- the mirror of the false-present failure that narrowing
+            # this needle fixed.
+            if needle in str(path).lower():
+                return False
             try:
                 if needle in path.read_text(encoding="utf-8", errors="ignore"):
                     return False
@@ -896,6 +910,34 @@ def _subject_probe_self_test() -> int:
             sys.stderr.write("self-test FAIL: an implemented subject read as absent\n")
         else:
             print("  ok: the same subject in implementation is present")
+
+    # mechanism_is_absent() searches for a NEEDLE, and a needle short enough to
+    # appear in prose revokes an exemption silently. Measured: the needle for
+    # the replay-test mechanism was `replay`, which matched the word "replaying"
+    # in a comment in tests/security/redprobe_secrets_gate.sh about cloning git
+    # history. The mechanism read PRESENT while none exists, so every row it
+    # excused became a live gap for a reason that was a sentence about
+    # something else.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "tests").mkdir(parents=True)
+        (root / "tests" / "t.sh").write_text(
+            "# clone the history rather than replaying the tree\n", encoding="utf-8"
+        )
+        if not mechanism_is_absent(root, "replay test"):
+            failures += 1
+            sys.stderr.write(
+                "self-test FAIL: the word 'replaying' in a comment counted as a replay-test harness\n"
+            )
+        else:
+            print("  ok: a mechanism word inside prose is not the mechanism")
+        (root / ".github").mkdir(parents=True)
+        (root / ".github" / "replay-test.yml").write_text("on: push\n", encoding="utf-8")
+        if mechanism_is_absent(root, "replay test"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a real replay-test harness read as absent\n")
+        else:
+            print("  ok: a file named for the mechanism counts as the mechanism")
     return failures
 
 
