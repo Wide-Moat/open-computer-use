@@ -612,8 +612,24 @@ def _subject_paths(root: pathlib.Path):
             yield path
 
 
+CONTRACT_DIR = "contracts"
+
+
 def subject_is_absent(root: pathlib.Path, word: str) -> bool:
-    """True while no implementation file mentions the subject."""
+    """True while no implementation file mentions the subject.
+
+    contracts/ is deliberately NOT searched. A contract DESCRIBES a surface; an
+    exemption is about whether one is BUILT. Ten of the sixteen live exemptions
+    name something the contracts describe -- kill-switch, host-authored,
+    provisioning, ocu-filestore among them -- and every one of those returns
+    zero hits across the implementation directories. That gap is the point:
+    "specified but unbuilt" is exactly the state an exemption records.
+
+    Reading contracts/ here would collapse the two and revoke ten exemptions for
+    requirements nothing implements. Ignoring it silently would be the other
+    failure, so subject_is_contract_described() reports the overlap and the
+    checker prints it.
+    """
     for path in _subject_paths(root):
         try:
             if word in path.read_text(encoding="utf-8", errors="ignore").lower():
@@ -621,6 +637,27 @@ def subject_is_absent(root: pathlib.Path, word: str) -> bool:
         except OSError:
             continue
     return True
+
+
+def subject_is_contract_described(root: pathlib.Path, word: str) -> bool:
+    """True when contracts/ describes a subject the implementation lacks.
+
+    Not a verdict -- a note. It tells a reader which exemptions rest on
+    "designed, not built" rather than on "nobody has thought about this", which
+    are different kinds of debt and age differently.
+    """
+    base = root / CONTRACT_DIR
+    if not base.is_dir():
+        return False
+    for path in base.rglob("*"):
+        if not path.is_file() or _is_asset(path):
+            continue
+        try:
+            if word in path.read_text(encoding="utf-8", errors="ignore").lower():
+                return True
+        except OSError:
+            continue
+    return False
 MECHANISM_PROBE = {
     "k6": "k6",
     "chaos test": "chaos",
@@ -815,6 +852,35 @@ def _subject_probe_self_test() -> int:
             sys.stderr.write(f"self-test FAIL: {label} -- {cell!r} read as {got}\n")
         else:
             print(f"  ok: {label}")
+
+    # The two probes must read DIFFERENT trees. If subject_is_absent() ever
+    # starts reading contracts/, ten live exemptions revoke themselves for
+    # requirements nothing implements; if subject_is_contract_described() stops
+    # reading it, the notice goes quiet and the distinction is invisible again.
+    # Both directions are checked because both are silent failures.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "computer-use-server").mkdir(parents=True)
+        (root / "contracts").mkdir(parents=True)
+        (root / "contracts" / "x.yaml").write_text("title: killswitchword\n", encoding="utf-8")
+        if not subject_is_absent(root, "killswitchword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a contract-only subject read as implemented\n")
+        else:
+            print("  ok: a subject only contracts/ names is still absent")
+        if not subject_is_contract_described(root, "killswitchword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: a contract-described subject was not reported\n")
+        else:
+            print("  ok: a subject contracts/ names is reported as described")
+        (root / "computer-use-server" / "impl.py").write_text(
+            "KILLSWITCHWORD = 1\n", encoding="utf-8"
+        )
+        if subject_is_absent(root, "killswitchword"):
+            failures += 1
+            sys.stderr.write("self-test FAIL: an implemented subject read as absent\n")
+        else:
+            print("  ok: the same subject in implementation is present")
     return failures
 
 
@@ -1017,6 +1083,24 @@ def main(argv: list[str] | None = None) -> int:
             f"exists and answers for main. Reported, not failed -- the workflow that "
             f"would carry it to canon also builds and pushes images, which is a "
             f"release-posture decision rather than a coverage fix."
+        )
+
+    # Which exemptions rest on "designed, not built". Printed rather than left
+    # to whoever next reads the exemption list: a subject the contracts describe
+    # is different debt from one nobody has specified, and the difference is
+    # invisible unless the run says so. It is also the trap that nearly excused
+    # NFR-SEC-38 -- its profile enum and pairing matrix live under contracts/,
+    # which subject_is_absent() does not read, so every spelling looked absent.
+    described = sorted(
+        w
+        for w in ABSENT_SUBJECT
+        if subject_is_absent(root, w) and subject_is_contract_described(root, w)
+    )
+    if described:
+        print(
+            f"::notice::{len(described)} of {len(ABSENT_SUBJECT)} subject exemptions "
+            f"name something contracts/ DESCRIBES but no implementation builds "
+            f"({', '.join(described)}). Specified-but-unbuilt, not unconsidered."
         )
 
     problems = verdict(declared, armed, args.min_armed)
