@@ -47,6 +47,7 @@ LEDGER: dict[str, str] = {
     "NFR-MAINT-AUDIT-SCHEMA": "scripts/check-audit-fanin-inv1.py",
     "NFR-SEC-07": "scripts/check-schemas-are-closed.py",
     "NFR-SEC-15": "tests/test-docker-image.sh",
+    "NFR-SEC-16": "scripts/check-no-phone-home.py",
     "NFR-SEC-18": "scripts/check-pin-policy.py",
     "NFR-SEC-19": "scripts/check-pin-policy.py",
     "NFR-SEC-26": "scripts/check-operator-bodies-hint-only.py",

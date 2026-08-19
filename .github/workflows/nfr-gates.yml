@@ -143,6 +143,21 @@ jobs:
       - name: the arms-ledger checker itself discriminates
         run: python3 scripts/check-arms-are-declared.py --self-test
 
+      - name: the phone-home checker itself discriminates
+        run: python3 scripts/check-no-phone-home.py --self-test
+
+      # NFR-SEC-16 (zero vendor-controlled outbound in the default config,
+      # verified by CI artifact inspection of installer + runtime). Two
+      # distinctions decide what this refuses, both measured: a link is not a
+      # call -- docs.html carries eight github.com anchors a human clicks, which
+      # fetch nothing on load -- and prose is not code, since system_prompt.py
+      # names a CDN in text instructing the model. What is refused is a
+      # vendor host in a shipped artifact, and a served asset auto-loading an
+      # external origin. Named here so the requirement counts as armed; this job
+      # blocks.
+      - name: the default install reaches no vendor-controlled endpoint
+        run: python3 scripts/check-no-phone-home.py
+
       # The coverage scanner attributes an arm to any file that NAMES an id.
       # That is right for finding assertions and silent about the inverse: a
       # comment citing an id arms it with nothing behind the name. It happened --
@@ -323,7 +338,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 22
+        run: python3 scripts/check-nfr-coverage.py --min-armed 23
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
