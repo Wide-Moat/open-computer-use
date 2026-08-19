@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 24
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 43
+UNEXPLAINED_CEILING = 42
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -511,6 +511,19 @@ ABSENT_SUBJECT = (
     # actually about, so the exemption expires when the dangerous surface
     # appears rather than when someone renames an ingress.
     "kill-switch",
+    # NFR-SEC-47 asks that in-sandbox tool calls be recorded by the host-side
+    # mediation layer, so the guest is never the authoritative author of its own
+    # audit. There is no audit emitter here at all: `audit` appears ZERO times
+    # across computer-use-server/*.py, while contracts/audit/ carries a full
+    # fan-in AsyncAPI and eight OCSF classes. The contract describes a pipeline
+    # nothing feeds.
+    #
+    # Keyed on `host-authored` and NOT on `audit`. The bare word would excuse
+    # nine rows at once, and reading them shows seven mean something else --
+    # NFR-MAINT-01's "release-pipeline audit" is a review of the pipeline, and
+    # NFR-MAINT-09's is the name of a package under mutation test. Excusing
+    # those under an absent emitter would be false.
+    "host-authored",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
