@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 24
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 42
+UNEXPLAINED_CEILING = 40
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -524,6 +524,22 @@ ABSENT_SUBJECT = (
     # NFR-MAINT-09's is the name of a package under mutation test. Excusing
     # those under an absent emitter would be false.
     "host-authored",
+    # NFR-SEC-76 puts a peer check on the Control / provisioning listener: a
+    # connection from anything that is not the host CID or host peer-cred is
+    # dropped at accept, before a frame is parsed. No such listener exists here.
+    # Probed: so_peercred, peercred, peer-cred, vsock and provisioning all
+    # return nothing. `hypervisor` does return present, and the single hit is
+    # the word in a COMMENTED-OUT values.yaml example about microVM isolation.
+    #
+    # This key also covers NFR-SEC-69 (warm-pool claim), whose row names the
+    # post-claim provisioning push as how the replacement token is delivered.
+    # A separate `pre-warm` key was tried and removed: it changed no number,
+    # because provisioning already covers that row, and a key whose deletion
+    # changes nothing is untestable by construction. An earlier attempt used
+    # `pool-claim`, which is worse than redundant -- it is one of the EIGHT
+    # enumerated transitions in NFR-SEC-72's row, so it swept away a
+    # requirement already recorded as a live gap (#551).
+    "provisioning",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
