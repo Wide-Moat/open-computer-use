@@ -106,7 +106,22 @@ COMMITTED_FLOOR = 22
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 28
+#
+# Raised once, from 28 to 46, and the reason is the exception that proves the
+# rule. CI_VERIFICATION decided which rows the unexplained set even CONSIDERS,
+# and it carried only the spellings that came up first. Eighteen rows state a
+# CI-checkable verification in other words -- "presence check in CI",
+# "CI asserts TTL enforcement", "cross-substrate CI matrix", "token-lifetime
+# test", "property test" -- and fell outside EVERY bucket: not armed, not
+# unexplained, not excused. Eighteen requirements the ledger did not consider at
+# all, which is worse than eighteen it lists as unmet, because nothing said they
+# were missing.
+#
+# So the rise is not eighteen new gaps; it is eighteen gaps that were always
+# there and invisible. A ceiling that only ever falls would have locked the
+# blind spot in permanently -- the honest move is to raise it once, say why, and
+# resume the ratchet from the wider number.
+UNEXPLAINED_CEILING = 46
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -346,7 +361,37 @@ CI_VERIFICATION = (
     "replay test",
     "per-template test",
     "chaos test",
+    # Added after measuring the gap. The list above caught the spellings that
+    # happened to come up first, and eighteen rows state a CI-checkable
+    # verification in words it did not carry -- "presence check in CI",
+    # "CI asserts TTL enforcement", "cross-substrate CI matrix",
+    # "token-lifetime test", "property test". Those eighteen fell outside EVERY
+    # bucket: not armed, not unexplained, not excused. A requirement the ledger
+    # does not consider at all is worse than one it lists as unmet, because
+    # nothing says it is missing.
+    #
+    # Only `test` is added here. The CI spellings are covered by the word-
+    # boundary branch in _names_ci_verification(): `ci matrix`, `ci asserts`,
+    # `ci artifact` and `in ci` were all tried as terms first, and deleting any
+    # of them left every fixture green because the regex already caught it.
+    # Dead alternatives in a predicate are untestable by construction, so they
+    # are gone rather than kept for readability.
+    "test",
 )
+
+
+def _names_ci_verification(verification: str) -> bool:
+    """True when the cell names something CI could run.
+
+    Split out of the comprehension so the bare-word case is expressible: `ci`
+    has to match as a WORD. As a substring it appears inside specification,
+    efficiency, policy and capacity, which would sweep most of the table into
+    the unexplained set and make the number meaningless.
+    """
+    lowered = verification.lower()
+    if any(term in lowered for term in CI_VERIFICATION):
+        return True
+    return re.search(r"\bci\b", lowered) is not None
 
 
 def excused_ids(source: str) -> set[str]:
@@ -579,7 +624,7 @@ def unexplained_ci_ids(rows: dict[str, str], armed: set[str], excused: set[str],
         for nfr, verification in rows.items()
         if nfr not in armed
         and nfr not in excused
-        and any(term in verification.lower() for term in CI_VERIFICATION)
+        and _names_ci_verification(verification)
         # Excused by mechanism, and only while that mechanism is still missing.
         and not any(m in verification.lower() for m in absent)
         # Excused by subject, on the same terms: the component is not built.
@@ -689,6 +734,31 @@ def _subject_probe_self_test() -> int:
             sys.stderr.write("self-test FAIL: a subject defined in the Dockerfile read as absent\n")
         else:
             print("  ok: a subject defined at the repository root counts as present")
+
+    # _names_ci_verification() decides which rows the unexplained set considers
+    # at all, so a narrowing here is invisible: rows leave every bucket rather
+    # than turning red. Eighteen did, until measured.
+    for cell, want, label in (
+        # Hits the word-boundary branch and NOTHING in the term list. The first
+        # fixture here was "presence check in CI", which the `in ci` term also
+        # matches -- so deleting the regex left the self-test green and the
+        # branch untested. Probed by deleting it: green before this line, red
+        # after.
+        ("CI enforces the deny list", True, "a bare CI word counts"),
+        ("presence check in CI", True, "a trailing CI mention counts"),
+        ("CI asserts TTL enforcement reads a monotonic source", True, "CI asserts counts"),
+        ("cross-substrate CI matrix", True, "a CI matrix counts"),
+        ("token-lifetime test", True, "a named test counts"),
+        ("integration test", True, "the original spellings still count"),
+        ("specification of the efficiency policy", False, "ci inside a longer word does not count"),
+        ("template review per release", False, "a cell naming no runnable check does not count"),
+    ):
+        got = _names_ci_verification(cell)
+        if got != want:
+            failures += 1
+            sys.stderr.write(f"self-test FAIL: {label} -- {cell!r} read as {got}\n")
+        else:
+            print(f"  ok: {label}")
     return failures
 
 
