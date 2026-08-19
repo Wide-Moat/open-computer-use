@@ -140,6 +140,20 @@ jobs:
       - name: the operator-body checker itself discriminates
         run: python3 scripts/check-operator-bodies-hint-only.py --self-test
 
+      - name: the arms-ledger checker itself discriminates
+        run: python3 scripts/check-arms-are-declared.py --self-test
+
+      # The coverage scanner attributes an arm to any file that NAMES an id.
+      # That is right for finding assertions and silent about the inverse: a
+      # comment citing an id arms it with nothing behind the name. It happened --
+      # a checker header cited a second requirement as context and coverage rose
+      # by two, caught only because the expected rise was one. This holds a
+      # hand-written ledger of which checker answers for which id, and refuses
+      # an id counted but undeclared, a declared id no longer counted, and a
+      # ledger row naming a file that does not exist.
+      - name: every armed requirement is declared, not acquired by a mention
+        run: python3 scripts/check-arms-are-declared.py
+
       # NFR-SEC-26 (contract half). The operator surface establishes identity out
       # of band -- operatorPeerCred, from the peer credential of the host-owned
       # 0700 socket -- and the file states the consequence: bodies carry HINTS,
