@@ -106,7 +106,7 @@ COMMITTED_FLOOR = 18
 # The unexplained count on the day it was first measured honestly. A ceiling
 # rather than a floor: this number must go DOWN, and a commit that raises it is
 # adding a requirement nobody accounted for.
-UNEXPLAINED_CEILING = 35
+UNEXPLAINED_CEILING = 33
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -409,6 +409,19 @@ ABSENT_SUBJECT = (
     "retention",
     "sub-processor",
     "register of information",
+    # NFR-REL-08 asks that stateful sandbox hibernation, resume, snapshot and
+    # fork be demonstrated end-to-end by an integration test. The test framework
+    # is not what is missing -- integration tests exist and run -- so the
+    # mechanism probe would not excuse this, correctly. The SUBJECT is missing:
+    # no code hibernates, snapshots or forks a sandbox. Keyed on `hibernation`
+    # rather than the other three words on purpose. `snapshot` and `fork` both
+    # return present, and both hits are COMMENTS about something else: an argv
+    # snapshot in a CLI adapter, and routing codex through a gateway "without
+    # forking". Keying on either would rest the exemption on a word in a
+    # sentence, which is the shape that has produced a false green here before.
+    # Hibernation carries the whole row -- without it there is nothing to resume
+    # or to fork -- and it returns nothing across every subject directory.
+    "hibernation",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
