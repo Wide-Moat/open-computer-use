@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 25
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 39
+UNEXPLAINED_CEILING = 38
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -540,6 +540,18 @@ ABSENT_SUBJECT = (
     # enumerated transitions in NFR-SEC-72's row, so it swept away a
     # requirement already recorded as a live gap (#551).
     "provisioning",
+    # NFR-SEC-77 is explicitly gated on the microVM tier: death of the in-guest
+    # supervisor forces guest death via kernel.panic=1 and panic-on-oops, so no
+    # headless guest outlives its supervisor holding a live egress. That tier is
+    # post-v1 (#161) and nothing here sets a guest kernel cmdline: kernel.panic,
+    # panic-on-oops, panic_on_oops and "in-guest supervisor" all return nothing.
+    #
+    # `pid-1` DOES return present, and the hits are the cgroup-v2 PID-1
+    # evacuation shim in the dind init -- a docker-in-docker workaround, not a
+    # guest supervisor. Keyed on `kernel.panic`, which appears in exactly one
+    # row. The broader `microvm tier` would also sweep NFR-FLEX-02 and
+    # NFR-FLEX-06, where the tier is one item in a list rather than the subject.
+    "kernel.panic",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
