@@ -53,6 +53,7 @@ LEDGER: dict[str, str] = {
     "NFR-SEC-18": "scripts/check-pin-policy.py",
     "NFR-SEC-19": "scripts/check-pin-policy.py",
     "NFR-SEC-26": "scripts/check-operator-bodies-hint-only.py",
+    "NFR-SEC-38": "scripts/check-admission-matrix-complete.py",
     "NFR-SEC-40": "scripts/check-session-windows.py",
     "NFR-SEC-51": "scripts/check-schemas-are-closed.py",
     "NFR-SEC-75": "scripts/check-guest-env-allowlist.py",
