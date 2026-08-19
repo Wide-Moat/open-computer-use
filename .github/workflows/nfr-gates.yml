@@ -128,6 +128,21 @@ jobs:
       - name: the release-synthetic checker itself discriminates
         run: python3 scripts/check-release-synthetic.py --self-test
 
+      - name: the browser-storage checker itself discriminates
+        run: python3 scripts/check-browser-storage-clean.py --self-test
+
+      # NFR-SEC-82, the storage clause only. The row's embed-token half -- the
+      # peer backend mints a short-TTL token and the UI verifies it before
+      # setting session state -- belongs to the UI component, which is not in
+      # this tree; every mention of the embed token here is a comment about what
+      # the portal does. What this repository owns is the browser surface it
+      # serves, so the clause checked is "zero OCU upstream credential reaches
+      # browser storage". Measured: one storage write in the whole frontend, a
+      # UI boolean. Named here so the requirement counts as armed; this job
+      # blocks.
+      - name: no upstream credential reaches browser storage
+        run: python3 scripts/check-browser-storage-clean.py
+
       # NFR-MAINT-05 (synthetic transactions per deploy, "presence + success").
       # The mechanism was present and unbound: build.yml stands a server up and
       # drives /mcp against it, but it triggers on branches and pull requests,
@@ -247,7 +262,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 18
+        run: python3 scripts/check-nfr-coverage.py --min-armed 19
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
