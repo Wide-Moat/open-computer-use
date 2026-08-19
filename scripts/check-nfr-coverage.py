@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 37
+UNEXPLAINED_CEILING = 36
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -552,6 +552,21 @@ ABSENT_SUBJECT = (
     # row. The broader `microvm tier` would also sweep NFR-FLEX-02 and
     # NFR-FLEX-06, where the tier is one item in a list rather than the subject.
     "kernel.panic",
+    # NFR-SEC-54 is erase-before-reuse ordering on a RECYCLED local mount
+    # substrate: a session-2 handle binds to a scratch or mount-cache region
+    # only after session-1 plaintext there is unreadable. No such substrate
+    # exists -- sessions get their own volumes and nothing recycles a region.
+    # Probed: recycle, mount-cache and zeroiz all return nothing.
+    #
+    # `scratch` and `erase` DO return present and both are false. The probe
+    # counts scratch in system_prompt.py (prose telling the model about a
+    # directory) and Dockerfile:475 ("from scratch", the idiom, in a comment);
+    # erase is the `eraser` SVG in icons.js. My first grep also surfaced
+    # mermaid.min.js and highlight.min.js, which the probe correctly drops as
+    # vendored bundles. Keyed on `mount-cache`, which names the substrate
+    # rather than an action, so the exemption expires when the thing that
+    # needs erasing exists.
+    "mount-cache",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
