@@ -149,6 +149,21 @@ jobs:
       - name: the mutating-console checker itself discriminates
         run: python3 scripts/check-no-mutating-console.py --self-test
 
+      - name: the one-click compose checker itself discriminates
+        run: python3 scripts/check-one-click-compose.py --self-test
+
+      # NFR-FLEX-07b, the Compose half ("one-click solo install preserves
+      # Compose path"). The smoke test already exists in build.yml; what was
+      # unguarded is the property that makes the install one-click at all --
+      # every interpolated variable carries a default. Adding ${OCU_LICENSE_KEY}
+      # to a service is a one-line edit that leaves every gate green and the
+      # smoke test passing, because the test supplies its own environment; the
+      # person it breaks is the solo installer on a clean checkout. The
+      # documented-endpoint-list half is NOT claimed -- no enumerable list
+      # exists. Named here so the requirement counts as armed; this job blocks.
+      - name: docker compose up still needs no configuration
+        run: python3 scripts/check-one-click-compose.py
+
       # NFR-IC-02 (no mutating operator-console UI in v1; CLAUDE.md locks the
       # same thing as a non-goal). The distinction is SCOPE, not the verb. This
       # server serves mutating routes and a page that calls them -- restart the
@@ -352,7 +367,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 24
+        run: python3 scripts/check-nfr-coverage.py --min-armed 25
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
