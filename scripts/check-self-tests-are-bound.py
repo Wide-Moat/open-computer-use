@@ -55,6 +55,7 @@ SUBJECTS: dict[str, str] = {
     "check-operator-bodies-hint-only.py": "problems",
     "check-arms-are-declared.py": "problems",
     "check-no-phone-home.py": "problems",
+    "check-no-mutating-console.py": "problems",
     "check-session-windows.py": "problems",
     "check-guest-env-allowlist.py": "problems",
     # Added once the registry itself was measured against scripts/: these three
