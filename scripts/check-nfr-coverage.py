@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 27
+UNEXPLAINED_CEILING = 26
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -677,6 +677,17 @@ ABSENT_SUBJECT = (
     # taken from the target column ("capability negotiation") would match
     # nothing at all. `matrix test` would also hit NFR-FLEX-13, which is armed.
     "l4↔l1",
+    # NFR-IC-01 is human-oversight notification latency -- how fast a human
+    # supervisor learns something needs their attention. There is no channel to
+    # a human at all: human-oversight, notification latency and oversight
+    # return nothing in the implementation.
+    #
+    # `notification` DOES appear, and every hit is protocol machinery rather
+    # than a person: MCP notifications/resources/list_changed, MCP progress
+    # notifications, an inotify watcher, and an XSS payload in a security test.
+    # Keyed on `human-oversight` so the exemption expires when a channel to a
+    # HUMAN appears, not when another protocol message does.
+    "human-oversight",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
