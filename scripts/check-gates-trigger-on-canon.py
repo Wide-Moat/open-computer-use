@@ -51,6 +51,7 @@ MUST_COVER_CANON = {
     # and that file filters on contracts/**, so a PR touching neither contracts
     # nor scripts produced the context ABSENT rather than red.
     "nfr-gates.yml",
+    "orchestrator-tests.yml",
 }
 
 # Workflows deliberately outside the set, with the reason, so the next reader
