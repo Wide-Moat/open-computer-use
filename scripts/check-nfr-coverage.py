@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 31
+UNEXPLAINED_CEILING = 30
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -618,6 +618,22 @@ ABSENT_SUBJECT = (
     # elevation at all, so it would revoke the exemption without the mechanism
     # this row is about.
     "just-in-time",
+    # NFR-FLEX-02 is the sandbox runtime LADDER: runc and gVisor in v1, both
+    # buildable from the same artefact. One rung exists -- the chart documents
+    # a "runc fallback" -- and the gVisor rung does not: gvisor and runsc
+    # return nothing in the implementation, and the only runsc mention in the
+    # tree is a roadmap document, i.e. a plan.
+    #
+    # Keyed on `runtime ladder`, which appears in exactly one row. `gvisor`
+    # would ALSO match NFR-SEC-65, where it is one of two tiers listed in a row
+    # about teardown ordering -- a live gap recorded in #553, with containers
+    # that do exist. Sweeping it under a ladder exemption would hide a real
+    # defect behind an unrelated absence. Verified SEC-65 stays unexplained.
+    #
+    # Reading the runc hits is what made the ladder's state clear: nearly every
+    # one is the substring inside "truncate"/"truncation". The real ones are
+    # the chart's runc-fallback documentation.
+    "runtime ladder",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
