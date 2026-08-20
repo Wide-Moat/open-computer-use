@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 26
+UNEXPLAINED_CEILING = 24
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -688,6 +688,19 @@ ABSENT_SUBJECT = (
     # Keyed on `human-oversight` so the exemption expires when a channel to a
     # HUMAN appears, not when another protocol message does.
     "human-oversight",
+    # NFR-COMP-03 wants an EU AI Act Annex III conformity checklist in the
+    # release pipeline, blocking the release when controls are absent. Neither
+    # the checklist nor a docs/compliance/ directory exists -- annex iii,
+    # conformity and "ai act" return nothing in the implementation, and the
+    # only mention anywhere is primitives-backlog.md, which lists it as work
+    # to do. A backlog entry is a plan, not a control.
+    "annex iii",
+    # NFR-COMP-23 is TLPT participation for TIBER-scope customers -- artefacts
+    # and an access mode, cadence customer-led. tlpt and tiber both return
+    # nothing. This one is an obligation discharged by documents somebody
+    # publishes rather than by code, like the retention and sub-processor rows
+    # already excused above.
+    "tlpt",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
