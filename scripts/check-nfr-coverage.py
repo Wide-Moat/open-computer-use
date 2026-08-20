@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 32
+UNEXPLAINED_CEILING = 31
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -606,6 +606,18 @@ ABSENT_SUBJECT = (
     # can only appear as implementation. The key that cannot be satisfied by
     # writing about it is the better key.
     "tombston",
+    # NFR-COMP-29 is just-in-time admin elevation via OIDC-asserted claims,
+    # integrating with the customer's PAM tool on the full shelf. Probed:
+    # just-in-time, jit elevation, oidc and privileged access all return
+    # nothing in the implementation; oidc IS described in contracts/.
+    #
+    # Keyed on `just-in-time` for two reasons the alternatives fail. `pam` is
+    # three letters that already matched inside a KaTeX .woff2 -- the false
+    # positive that motivated the binary-asset filter. `oidc` would be
+    # satisfied by ANY login integration, including one that grants no
+    # elevation at all, so it would revoke the exemption without the mechanism
+    # this row is about.
+    "just-in-time",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
