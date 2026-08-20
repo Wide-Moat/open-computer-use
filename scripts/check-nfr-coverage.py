@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 18
+UNEXPLAINED_CEILING = 15
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -733,6 +733,27 @@ ABSENT_SUBJECT = (
     # exists and its one-click property is checkable. Same family, opposite
     # verdicts, decided by whether the artefact ships.
     "air-gap",
+    # NFR-SEC-10: a per-session session JWT carrying session identity from the
+    # Control plane to the guest. jwt and "session jwt" return nothing in the
+    # implementation and ARE described in contracts/.
+    #
+    # Keyed on `session-identity`, which appears in exactly one row. The
+    # obvious `session jwt` is the widest key rejected so far: it matches an
+    # ARMED row (NFR-SEC-16) plus three rows already filed as live gaps
+    # (NFR-SEC-05, NFR-SEC-48, NFR-SEC-65). One key would have disarmed a
+    # working check and buried three findings.
+    "session-identity",
+    # NFR-MAINT-01: security-patch SLA -- 7/30/90 days by CVSS band, audited at
+    # the release pipeline. security-patch, "patch sla" and cvss all return
+    # nothing. An SLA is a commitment tracked in an issue tracker, not a
+    # property of this tree.
+    "security-patch",
+    # NFR-FLEX-06: the same egress invariant across Compose, k8s and microVM.
+    # "egress invariant" returns nothing, and two of the three substrates are
+    # not exercised anyway -- k8s is rendered rather than run (#566) and the
+    # microVM tier is post-v1. There is no invariant stated anywhere to hold
+    # constant across them.
+    "egress invariant",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
