@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
+# Copyright (c) 2025 Open Computer Use Contributors
+#
+# The orchestrator test suite, on the canon branch.
+#
+# The suite already existed as the `pytest-orchestrator` job in build.yml, and
+# build.yml triggers on `main` only. So twenty test files -- docker_manager,
+# mcp_tools, mcp_resources, the CLI adapters, passthrough isolation, the
+# startup warnings -- ran on the PoC branch and never on next/v1. Measured
+# while checking whether the unset-key startup warning was guarded (#552): it
+# has a test, and nothing on this branch ever executed it.
+#
+# The requirement id is deliberately NOT named here. The coverage scanner
+# attributes an arm to any file that names one, so a comment citing it would
+# report the row as checked when nothing checks it -- the arms ledger refused
+# this file until the id came out, which is exactly what that gate is for.
+#
+# Split out rather than adding next/v1 to build.yml's triggers. That workflow
+# is named "Build and Push Docker Images" and does exactly that -- widening it
+# would publish images from canon, which is a release-posture decision rather
+# than a test-coverage fix (#491 records the same reasoning).
+#
+# This workflow builds nothing and pushes nothing. It installs the server
+# requirements and runs pytest.
+
+name: orchestrator-tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - next/v1
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-orchestrator:
+    name: Pytest — orchestrator
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          # The job token stays in .git/config for every later step without this.
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.13'
+
+      - name: Install server deps
+        run: |
+          pip install -r computer-use-server/requirements.txt
+          # Pinned for the same reason requirements.txt is: unpinned, each run
+          # resolves whatever PyPI serves that day, so a red can arrive from an
+          # upstream release nobody here chose. pytest-asyncio 1.4.0 declares
+          # pytest<10,>=8.4, so it accepts this pin.
+          pip install pytest==9.1.1 pytest-asyncio==1.4.0
+
+      - name: Run orchestrator pytest
+        run: pytest tests/orchestrator/ -v
