@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 30
+UNEXPLAINED_CEILING = 29
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -634,6 +634,19 @@ ABSENT_SUBJECT = (
     # one is the substring inside "truncate"/"truncation". The real ones are
     # the chart's runc-fallback documentation.
     "runtime ladder",
+    # NFR-FLEX-15 is the EGRESS ladder: deny-all, transparent pass-through,
+    # egress-wide bump. None of the three rungs ships. deny-all, pass-through,
+    # egress-wide and "egress ladder" all return nothing in the implementation.
+    #
+    # `egress` itself IS present, which is why the key is a rung and not the
+    # word: the hits are helm/.../networkpolicy.yaml and its values, and that
+    # template renders NOTHING -- networkPolicy.enabled is false, so even the
+    # bottom rung is absent from a default install (#541).
+    #
+    # Keyed on `deny-all`. `egress-wide` would also match NFR-SEC-05, kept as a
+    # live gap deliberately when NFR-SEC-31 was excused: its subject (a single
+    # forward proxy) is present here. Verified SEC-05 stays unexplained.
+    "deny-all",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
