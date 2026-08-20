@@ -7,8 +7,13 @@
 # build.yml triggers on `main` only. So twenty test files -- docker_manager,
 # mcp_tools, mcp_resources, the CLI adapters, passthrough isolation, the
 # startup warnings -- ran on the PoC branch and never on next/v1. Measured
-# while checking whether NFR-SEC-49's unset-key warning was guarded: it has a
-# test, and nothing on this branch ever executed it.
+# while checking whether the unset-key startup warning was guarded (#552): it
+# has a test, and nothing on this branch ever executed it.
+#
+# The requirement id is deliberately NOT named here. The coverage scanner
+# attributes an arm to any file that names one, so a comment citing it would
+# report the row as checked when nothing checks it -- the arms ledger refused
+# this file until the id came out, which is exactly what that gate is for.
 #
 # Split out rather than adding next/v1 to build.yml's triggers. That workflow
 # is named "Build and Push Docker Images" and does exactly that -- widening it
