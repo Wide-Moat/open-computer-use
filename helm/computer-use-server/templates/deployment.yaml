@@ -37,6 +37,12 @@ spec:
     spec:
       serviceAccountName: {{ include "computer-use-server.serviceAccountName" . }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      # NFR-REL-11 states 30 s, and Kubernetes happens to default to 30 s too.
+      # Declaring it is not redundant: a default is not a decision, it can be
+      # changed by a cluster policy or an admission webhook without this chart
+      # noticing, and a rendered manifest that does not carry the number gives
+      # an auditor nothing to read. The value is what the requirement fixes.
+      terminationGracePeriodSeconds: {{ .Values.orchestrator.terminationGracePeriodSeconds }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}

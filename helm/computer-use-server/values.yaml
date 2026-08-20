@@ -42,6 +42,12 @@ orchestrator:
   #                persistence.varLibDocker.persistentVolume.enabled=false.
   runtimeClassName: kata-qemu
 
+  # NFR-REL-11: cooperative shutdown. Declared rather than left to the
+  # Kubernetes default of the same value -- see the comment in deployment.yaml.
+  # Raising it gives in-flight MCP sessions longer to drain; lowering it below
+  # the server's own drain time truncates them.
+  terminationGracePeriodSeconds: 30
+
   # Single replica is the only supported topology — the pod owns the inner dockerd
   # and three RWO PVCs. Scaling out requires the K8sBackend rework (out of scope).
   replicas: 1

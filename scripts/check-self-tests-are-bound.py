@@ -59,6 +59,7 @@ SUBJECTS: dict[str, str] = {
     "check-one-click-compose.py": "problems",
     "check-admission-matrix-complete.py": "problems",
     "check-upload-content-sniffing.py": "problems",
+    "check-grace-period-declared.py": "problems",
     "check-session-windows.py": "problems",
     "check-guest-env-allowlist.py": "problems",
     # Added once the registry itself was measured against scripts/: these three
