@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 21
+UNEXPLAINED_CEILING = 18
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -717,6 +717,22 @@ ABSENT_SUBJECT = (
     # Annual cadence is a procurement commitment, and the pack does not exist:
     # pen-test and tprm both return nothing.
     "pen-test",
+    # Three more artefacts that do not exist, each keyed to its own thing.
+    #
+    # NFR-FLEX-04: KMS/HSM portability via PKCS#11 + KMIP, >= 2 vendors green
+    # per release. pkcs#11, kmip, cloudhsm and "key vault" all return nothing;
+    # there is no key-management abstraction to be portable across.
+    "pkcs#11",
+    # NFR-SEC-28: a default image AND a FIPS-validated variant, with a
+    # FIPS-conformance test on the variant. `fips` returns nothing -- one image
+    # ships, and a variant nobody builds cannot be conformance-tested.
+    "fips",
+    # NFR-FLEX-07a: air-gap installer artefact, zero outbound during install.
+    # `air-gap` returns nothing. Note NFR-FLEX-07b -- the STANDARD installer,
+    # same row family -- is ARMED (#567), because the Compose path it names
+    # exists and its one-click property is checkable. Same family, opposite
+    # verdicts, decided by whether the artefact ships.
+    "air-gap",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
