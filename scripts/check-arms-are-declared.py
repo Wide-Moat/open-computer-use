@@ -58,6 +58,7 @@ LEDGER: dict[str, str] = {
     "NFR-SEC-51": "scripts/check-schemas-are-closed.py",
     "NFR-SEC-75": "scripts/check-guest-env-allowlist.py",
     "NFR-SEC-79": "scripts/check-file-activity-overlay.py",
+    "NFR-SEC-81": "scripts/check-upload-content-sniffing.py",
     "NFR-SEC-82": "scripts/check-browser-storage-clean.py",
     "NFR-SEC-87": "scripts/check-schemas-are-closed.py",
     "NFR-SEC-88": "scripts/check-ocsf-class-identity.py",

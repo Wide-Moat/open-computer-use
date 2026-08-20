@@ -155,6 +155,20 @@ jobs:
       - name: the admission-matrix checker itself discriminates
         run: python3 scripts/check-admission-matrix-complete.py --self-test
 
+      - name: the upload-sniffing checker itself discriminates
+        run: python3 scripts/check-upload-content-sniffing.py --self-test
+
+      # NFR-SEC-81 (local half): the upload path classifies by CONTENT. It
+      # classified by filename until now, so payload.exe.png resolved to
+      # image/png (#561). The check has a structural half and a BEHAVIOURAL
+      # one, and the second exists because a mutation proved the first
+      # insufficient: blanking the sniff result left open(), the signature
+      # table and the comparison in place, so the AST check stayed green while
+      # the classifier went back to trusting the extension. Named here so the
+      # requirement counts as armed; this job blocks.
+      - name: the upload classifier lets content decide, not the filename
+        run: python3 scripts/check-upload-content-sniffing.py
+
       # NFR-SEC-38 (contract half): the 9-cell profile x tier pairing matrix in
       # contracts/admission/runtime-tokens.schema.json stays complete. Deleting
       # one allOf branch leaves the schema valid -- measured with the pinned
@@ -381,7 +395,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 26
+        run: python3 scripts/check-nfr-coverage.py --min-armed 27
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
