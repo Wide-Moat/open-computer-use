@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 28
+UNEXPLAINED_CEILING = 27
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -658,6 +658,25 @@ ABSENT_SUBJECT = (
     # live gap deliberately when NFR-SEC-31 was excused: its subject (a single
     # forward proxy) is present here. Verified SEC-05 stays unexplained.
     "deny-all",
+    # NFR-MAINT-06 is backward compatibility between L4 (the orchestrator) and
+    # L1 (the guest agent), with an N-2 floor and cross-version capability
+    # negotiation. There is no L1 agent to negotiate with: the orchestrator
+    # drives the guest through `docker exec` -- nine call sites in
+    # docker_manager.py, all shell commands -- so there is no protocol and no
+    # version to floor.
+    #
+    # `backward-compat` DOES return present, and all three hits are
+    # within-component compatibility: a prompt-template shim, a legacy HTTP
+    # endpoint, and an Open WebUI version shim. None is a layer contract.
+    #
+    # The MCP capability negotiation in app.py is the CLIENT-facing edge, armed
+    # separately as NFR-FLEX-14. Different boundary, different requirement.
+    #
+    # Keyed on `l4↔l1`, which is in the text the checker reads -- note the
+    # verification cell here is "Backward-compat L4↔L1 matrix test", so a key
+    # taken from the target column ("capability negotiation") would match
+    # nothing at all. `matrix test` would also hit NFR-FLEX-13, which is armed.
+    "l4↔l1",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
