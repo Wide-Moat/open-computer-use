@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 33
+UNEXPLAINED_CEILING = 32
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -595,6 +595,17 @@ ABSENT_SUBJECT = (
     # honest record is an exemption keyed on the mechanism that would make it
     # meaningful.
     "re-origination",
+    # NFR-COMP-12 asks for an audit-log TOMBSTONING mechanism so a GDPR Art. 17
+    # erasure can be honoured without breaking the hash chain. It needs the
+    # audit log first (see `host-authored`), and the tombstoning itself returns
+    # nothing: tombston, right-to-be-forgotten and gdpr are all absent.
+    #
+    # Keyed on `tombston` rather than `gdpr`. All three cover exactly this row
+    # today, but the regulation name is the kind of word that turns up in prose
+    # -- a compliance doc, a comment, a README -- while a tombstoning mechanism
+    # can only appear as implementation. The key that cannot be satisfied by
+    # writing about it is the better key.
+    "tombston",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
