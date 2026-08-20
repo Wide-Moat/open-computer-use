@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 24
+UNEXPLAINED_CEILING = 21
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -701,6 +701,22 @@ ABSENT_SUBJECT = (
     # publishes rather than by code, like the retention and sub-processor rows
     # already excused above.
     "tlpt",
+    # Three more obligations discharged by a document rather than by code, each
+    # keyed separately so they expire on their own artefact.
+    #
+    # NFR-COMP-06: NYDFS contractual-clause completeness, 8 clauses populated
+    # per release. nydfs, contractual-clause, acceptable-use and training-data
+    # all return nothing -- these are contract terms a lawyer writes, and no
+    # clause register exists to count against.
+    "nydfs",
+    # NFR-COMP-24: NIS2 Art. 23 incident-reporting cascade, 24 h early-warning
+    # plus 72 h notification. The telemetry hook it names would be code, but
+    # the cascade itself is a reporting procedure; nis2 returns nothing.
+    "nis2",
+    # NFR-MAINT-13: external pen-test cadence, summary in the TPRM pack.
+    # Annual cadence is a procurement commitment, and the pack does not exist:
+    # pen-test and tprm both return nothing.
+    "pen-test",
     # NFR-SEC-84 asks for a CSRF token on state-mutating requests, after an
     # embed-token-verified browser session (NFR-SEC-82). No browser credential
     # exists here: probed for set_cookie / request.cookies / Set-Cookie in
