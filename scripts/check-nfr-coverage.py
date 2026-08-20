@@ -121,7 +121,7 @@ COMMITTED_FLOOR = 26
 # there and invisible. A ceiling that only ever falls would have locked the
 # blind spot in permanently -- the honest move is to raise it once, say why, and
 # resume the ratchet from the wider number.
-UNEXPLAINED_CEILING = 29
+UNEXPLAINED_CEILING = 28
 
 NFR_ID = re.compile(r"NFR-[A-Z]+-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 MANIFESTO = "docs/architecture/manifesto/02-nfrs.md"
@@ -431,6 +431,17 @@ ABSENT_MECHANISM = (
     # whitelist, which is a list of files that MAY exist, not a mechanism.
     "per-pr + nightly",
     "threat-model pass",
+    # NFR-MAINT-09 wants a mutation-testing score >= 60% on the auth, sandbox,
+    # audit and egress packages, reported per release. No mutation harness
+    # exists: mutmut, stryker and cosmic-ray return nothing across .github/,
+    # scripts/ and tests/, and none appears in requirements.txt or package.json.
+    #
+    # The only hit for "mutation test" anywhere is a COMMENT in this file --
+    # the sentence explaining that NFR-MAINT-09's `audit` is a package name.
+    # armed_ids() and mechanism_is_absent() both exclude this file, so the
+    # exemption does not rest on its own prose; verified by reading the hit
+    # rather than trusting the exclusion.
+    "mutation-testing",
 )
 
 # The second reason an id cannot be armed: the SUBJECT does not exist. A
@@ -766,6 +777,7 @@ MECHANISM_PROBE = {
     "per-template test": "per-template",
     "per-pr + nightly": "promptfoo",
     "threat-model pass": "threagile",
+    "mutation-testing": "mutmut",
 }
 
 
