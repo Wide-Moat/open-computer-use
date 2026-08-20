@@ -158,6 +158,19 @@ jobs:
       - name: the upload-sniffing checker itself discriminates
         run: python3 scripts/check-upload-content-sniffing.py --self-test
 
+      - name: the grace-period checker itself discriminates
+        run: python3 scripts/check-grace-period-declared.py --self-test
+
+      # NFR-REL-11, the declared-value half only. Kubernetes defaults this
+      # field to 30 -- the same number the row fixes -- which is why declaring
+      # it matters: a default can be changed by a cluster policy or an
+      # admission webhook without the chart noticing, and a rendered manifest
+      # that omits the number gives an auditor nothing to read. The SIGTERM
+      # ladder and tmpdir clean-up are server behaviour and stay unclaimed
+      # (#530). Named here so the requirement counts as armed; this job blocks.
+      - name: the chart declares its shutdown grace period
+        run: python3 scripts/check-grace-period-declared.py
+
       # NFR-SEC-81 (local half): the upload path classifies by CONTENT. It
       # classified by filename until now, so payload.exe.png resolved to
       # image/png (#561). The check has a structural half and a BEHAVIOURAL
@@ -395,7 +408,7 @@ jobs:
         # unarmed remainder: that is the state of the layer, no single PR can
         # move it, and a gate nobody can turn green is a gate that gets ignored.
         # The number on every run is the point.
-        run: python3 scripts/check-nfr-coverage.py --min-armed 27
+        run: python3 scripts/check-nfr-coverage.py --min-armed 28
 
       - name: gate enforcement across the platform (report-only until protection is on)
         # The github context reaches the script through env, never by
