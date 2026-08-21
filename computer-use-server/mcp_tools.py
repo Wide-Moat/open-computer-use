@@ -224,7 +224,13 @@ def parse_last_action(lines: list) -> Optional[str]:
                             last_action = f"{tool_label}: {detail}"
                         else:
                             last_action = f"{tool_label}..."
-        except (json.JSONDecodeError, KeyError, TypeError):
+        # AttributeError is here because the log is agent-written and its
+        # shape is not guaranteed: a `content` that arrives as a string, a
+        # list of strings, or a message that is not a dict all reach .get()
+        # on a str. Measured -- four of five malformed shapes raised it, and
+        # the caller's only enclosing try catches asyncio.TimeoutError, so it
+        # propagated out of the sub-agent progress loop and ended the stream.
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
             continue
 
     return last_action
