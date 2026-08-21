@@ -33,6 +33,29 @@ SKILLS_DIR = Path(os.getenv("SKILLS_DIR", str(_app_dir / "skills")))
 CONFIG_PATH = Path(os.getenv("CONFIG_PATH", str(_app_dir / "skills.json")))
 
 
+def warn_if_api_key_missing() -> bool:
+    """Emit a startup warning when API_KEY is empty.
+
+    An empty API_KEY makes _check_auth a no-op, so both internal routes --
+    the user-config lookup and the skill download -- answer any caller that
+    can reach the port. Acceptable for local development, and invisible
+    without this: the orchestrator warns in the same situation
+    (warn_if_mcp_api_key_missing) and this service did not.
+
+    Returns True if a warning was emitted, so a test can assert it.
+    """
+    if not API_KEY:
+        print(
+            "[settings-wrapper] WARNING: API_KEY is empty — /api/internal/* "
+            "answers ANY caller with no authentication. Acceptable for local "
+            "development, unsafe for anything reachable beyond localhost.\n"
+            "  Fix: set API_KEY and pass it as X-Internal-Api-Key from the "
+            "orchestrator (MCP_TOKENS_API_KEY)."
+        )
+        return True
+    return False
+
+
 def _check_auth(api_key: str = Header(None, alias="X-Internal-Api-Key")):
     if API_KEY and api_key != API_KEY:
         raise HTTPException(401, "Invalid API key")
@@ -43,6 +66,9 @@ def _load_config() -> dict:
     if not CONFIG_PATH.exists():
         return {"users": {}, "default_skills": []}
     return json.loads(CONFIG_PATH.read_text())
+
+
+warn_if_api_key_missing()
 
 
 @app.get("/health")
