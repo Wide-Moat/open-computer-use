@@ -83,3 +83,15 @@ jobs:
       # exists, the same sweep that surfaced #615.
       - name: Run security pytest
         run: pytest tests/security/ -v
+
+      # tests/patches holds six pytest files -- ~48 assertions about the Open
+      # WebUI middleware patches: tool-result truncation, tool-arg truncation,
+      # the tool-loop error shim, attached-file positioning, and two RAG
+      # skips. Nothing collected them either.
+      #
+      # These patch a third-party file by string replacement, so their tests
+      # are the only thing that notices when an upstream release moves the
+      # anchor they match on -- which is exactly the failure the patches
+      # themselves document having hit before.
+      - name: Run patch pytest
+        run: pytest tests/patches/ -v
