@@ -71,3 +71,15 @@ jobs:
       # failure names which suite broke.
       - name: Run openwebui function pytest
         run: pytest openwebui/functions/ -v
+
+      # tests/security holds six pytest files -- 53 assertions about
+      # safe_path, path traversal in three call sites, XSS in the preview, and
+      # the scanner pin -- and nothing ran them. The two workflows that
+      # reference tests/security invoke SHELL scripts in that directory
+      # (sbom_guard.sh, check_cosign_identity_anchor.sh); the .py files were
+      # never collected.
+      #
+      # Found by asking what RUNS each test file rather than whether one
+      # exists, the same sweep that surfaced #615.
+      - name: Run security pytest
+        run: pytest tests/security/ -v
