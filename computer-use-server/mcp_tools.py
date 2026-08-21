@@ -81,6 +81,7 @@ from typing import Optional, List, Annotated
 from mcp.server.fastmcp import FastMCP, Context
 from pydantic import Field
 import skill_manager
+from security import header_safe
 from context_vars import (
     current_chat_id, current_user_email, current_user_name,
     current_gitlab_token, current_gitlab_host,
@@ -1015,7 +1016,7 @@ async def sub_agent(
         if user_email:
             headers_env = (
                 f"ANTHROPIC_CUSTOM_HEADERS="
-                f"{shlex.quote(f'x-openwebui-user-email: {user_email}')} "
+                f"{shlex.quote(f'x-openwebui-user-email: {header_safe(user_email)}')} "
             )
 
         if resume_session_id and cli == Cli.CLAUDE:

@@ -29,6 +29,7 @@ import docker
 from docker.utils.socket import frames_iter, demux_adaptor, consume_socket_output
 
 import skill_manager
+from security import header_safe
 from context_vars import (
     current_chat_id, current_user_email, current_user_name,
     current_gitlab_token, current_gitlab_host,
@@ -596,7 +597,15 @@ def _create_container(chat_id: str, container_name: str) -> docker.models.contai
         # Anthropic-specific custom header — only emit for the claude runtime
         # so codex / opencode containers do not get spurious anthropic env.
         if SUBAGENT_CLI == "claude":
-            extra_env["ANTHROPIC_CUSTOM_HEADERS"] = f"x-openwebui-user-email: {user_email}"
+            # header_safe strips CR/LF/NUL: user_email arrives from a request
+            # header unvalidated, and this value is a header LIST parsed by
+            # Claude Code inside the guest (#603). Shell injection is already
+            # closed -- the entrypoint exports this quoted -- but a separator
+            # in the value would add headers to upstream calls that carry the
+            # deployment's own credential.
+            extra_env["ANTHROPIC_CUSTOM_HEADERS"] = (
+                f"x-openwebui-user-email: {header_safe(user_email)}"
+            )
 
     # Workspace volume for this chat
     workspace_volume = f"chat-{chat_id}-workspace"
