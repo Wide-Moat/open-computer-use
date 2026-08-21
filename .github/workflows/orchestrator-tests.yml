@@ -83,3 +83,22 @@ jobs:
       # exists, the same sweep that surfaced #615.
       - name: Run security pytest
         run: pytest tests/security/ -v
+
+      # The root-level tests/*.py -- ~85 assertions across six files, none
+      # collected by anything. Named individually rather than as `tests/`,
+      # because that glob would also pull tests/patches, whose fixture has
+      # rotted while unrun (#618) and which must not be wired until it is
+      # regenerated.
+      #
+      # All six run clean locally except for missing pytest/pydantic, both of
+      # which the steps above install. That distinguishes them from the
+      # patches tranche, where the failure was substantive.
+      - name: Run root-level pytest
+        run: |
+          pytest -v \
+            tests/test_filter.py \
+            tests/test_tools.py \
+            tests/test_requirements.py \
+            tests/test_codex_toml_converter.py \
+            tests/test_opencode_alias_map_drop.py \
+            tests/test_default_resolver_no_legacy_global.py
