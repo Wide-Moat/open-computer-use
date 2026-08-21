@@ -83,6 +83,24 @@ class ParseLastAction(unittest.TestCase):
         result = mcp_tools.parse_last_action([_assistant(_text("x" * 500))])
         self.assertLessEqual(len(result), 80)
 
+    def test_a_tool_detail_is_bounded_too(self):
+        """The text branch truncated and the tool branch did not.
+
+        Measured before the fix: the same 5000-character payload produced 80
+        characters as text and 5009 as a tool description. The string reaches
+        send_progress as an MCP notification, so an unbounded field is a
+        protocol message sized by whatever the agent wrote.
+        """
+        result = mcp_tools.parse_last_action(
+            [_assistant(_tool("Bash", description="y" * 5000))]
+        )
+        self.assertLessEqual(len(result), 120, "tool detail is not bounded")
+
+    def test_a_short_tool_detail_is_not_truncated(self):
+        """The bound must not eat ordinary values."""
+        result = mcp_tools.parse_last_action([_assistant(_tool("Bash", description="ls -la"))])
+        self.assertIn("ls -la", result)
+
     def test_a_wrong_typed_content_field_does_not_raise(self):
         """content as a string rather than a list -- TypeError is caught."""
         line = json.dumps({"type": "assistant", "message": {"content": "not-a-list"}})

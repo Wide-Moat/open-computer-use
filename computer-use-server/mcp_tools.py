@@ -194,6 +194,11 @@ _TOOL_LABELS = {
 }
 
 
+# One line of status. The agent writes the log this is parsed from, so no
+# field in it has a natural bound.
+_STATUS_MAX_LEN = 80
+
+
 def parse_last_action(lines: list) -> Optional[str]:
     """
     Parse JSONL lines from Claude session log and return last meaningful action.
@@ -211,7 +216,7 @@ def parse_last_action(lines: list) -> Optional[str]:
                 content = data.get("message", {}).get("content", [])
                 for item in content:
                     if item.get("type") == "text":
-                        text = item.get("text", "")[:80]
+                        text = item.get("text", "")[:_STATUS_MAX_LEN]
                         text = text.replace('\n', ' ').strip()
                         if text:
                             last_action = text
@@ -219,6 +224,14 @@ def parse_last_action(lines: list) -> Optional[str]:
                         name = item.get("name", "unknown")
                         inp = item.get("input", {})
                         detail = get_tool_detail(name, inp)
+                        if detail:
+                            # The text branch above truncates and this one did
+                            # not, so a tool input carried its full length into
+                            # the status line -- measured at 5009 characters
+                            # through a `description` field, against 80 for the
+                            # same payload as text. The string reaches
+                            # send_progress as an MCP notification.
+                            detail = detail[:_STATUS_MAX_LEN]
                         tool_label = _TOOL_LABELS.get(name, name)
                         if detail:
                             last_action = f"{tool_label}: {detail}"
