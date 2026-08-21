@@ -60,3 +60,14 @@ jobs:
 
       - name: Run orchestrator pytest
         run: pytest tests/orchestrator/ -v
+
+      # openwebui/functions carries its own pytest file and nothing ran it:
+      # no workflow referenced it, and shell-tests -- which watches
+      # openwebui/** -- drives six named pytest files that do not include it.
+      # Ten assertions about the download-marker rewrite, including the
+      # fail-closed traversal refusal, executed nowhere.
+      #
+      # Run as a second step rather than folded into the path above, so a
+      # failure names which suite broke.
+      - name: Run openwebui function pytest
+        run: pytest openwebui/functions/ -v
