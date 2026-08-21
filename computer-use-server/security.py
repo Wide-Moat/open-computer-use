@@ -10,6 +10,25 @@ from fastapi import HTTPException
 
 CHAT_ID = re.compile(r"^[a-z0-9_-]{1,64}$")
 
+# Characters that terminate or split a header value. A header value cannot
+# legitimately contain any of them, so stripping is safe regardless of how the
+# downstream consumer parses -- which matters here because the consumer is
+# Claude Code inside the guest, and its splitting rule is not defined in this
+# repository (#603).
+_HEADER_UNSAFE = re.compile(r"[\r\n\x00]")
+
+
+def header_safe(value: str) -> str:
+    """Strip characters that could add or truncate a header.
+
+    Applied where a request-supplied value is interpolated into a header the
+    guest sends upstream. It is deliberately a STRIP rather than a rejection:
+    the caller is building a diagnostic tagging header, and failing a whole
+    session because a display name contained a newline would be a worse
+    outcome than tagging it with the newline removed.
+    """
+    return _HEADER_UNSAFE.sub("", value)
+
 
 def sanitize_chat_id(chat_id: str) -> str:
     """Validate chat_id against a character class, not a list of bad characters.
