@@ -94,6 +94,17 @@ CHANGELOG (v3.0.2):
             Label for the preview-button markdown link.
         ARCHIVE_BUTTON_TEXT (str, default "📦 Download all files as archive"):
             Label for the archive-download markdown link.
+        DOWNLOAD_BASE_URL (str, default ""):
+            Browser-facing base for [[ocu-download:NAME]] links. Empty means the
+            marker degrades to the bare filename as plain text rather than
+            minting a link that cannot resolve. Set by init.sh alongside
+            DOWNLOAD_SCOPE; the two are only useful together.
+        DOWNLOAD_SCOPE (str, default ""):
+            The {scope} path segment of a download link, and load-bearing rather
+            than decoration: the route is /download/{scope}/{filename} and a
+            one-segment link is a 404 (ADR-0035). Must equal the filesystem_id
+            claim the pane's session carries, so it comes from the portal rather
+            than from anything the model wrote. Empty degrades like the base.
 """
 
 import re
