@@ -94,11 +94,9 @@ jobs:
       # which the steps above install. That distinguishes them from the
       # patches tranche, where the failure was substantive.
       - name: Run root-level pytest
-        # tests/test_filter.py is held back: 7 of its 45 assert a preview
-        # button outlet() deliberately stopped emitting (#620). Its 8th
-        # failure was a real docstring drift, fixed separately.
         run: |
           pytest -v \
+            tests/test_filter.py \
             tests/test_tools.py \
             tests/test_requirements.py \
             tests/test_codex_toml_converter.py \

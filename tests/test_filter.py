@@ -98,17 +98,6 @@ class TrailingSlashNormalisation(unittest.TestCase):
         body = f.inlet(_active_body(), __metadata__={"chat_id": "abc"})
         self.assertNotIn("//files/", _system_content(body))
 
-    def test_outlet_archive_button_has_no_double_slash(self):
-        f = _make_filter("http://localhost:8081/")
-        # Simulate server that returned public URL with trailing slash.
-        _prime_cache(f, "abc", public_url="http://localhost:8081/")
-        link = "http://localhost:8081/files/abc/report.pdf"
-        body = {"messages": [{"role": "assistant", "content": f"see {link}"}]}
-        out = f.outlet(body, __metadata__={"chat_id": "abc"})
-        content = out["messages"][0]["content"]
-        self.assertNotIn("//files/", content)
-        self.assertIn("http://localhost:8081/files/abc/archive", content)
-
 
 class EmptyChatIdHandling(unittest.TestCase):
     """When chat_id is missing, the injected prompt must not reference broken /files/ URLs."""
@@ -369,14 +358,6 @@ class PreviewButton(unittest.TestCase):
         _prime_cache(f, "abc", public_url=public_url)
         return f
 
-    def test_outlet_appends_preview_button_by_default(self):
-        f = self._filter()
-        body = f.outlet(_assistant_body_with_file(), __metadata__={"chat_id": "abc"})
-        content = body["messages"][0]["content"]
-        self.assertIn(
-            "[🖥️ Open preview](http://localhost:8081/preview/abc)", content
-        )
-
     def test_outlet_never_emits_fenced_html_or_iframe(self):
         """v4.1.0 invariant: outlet() must not add a fenced html block or raw
         iframe. The frontend patch turns the /preview/ URL into an inline
@@ -388,17 +369,6 @@ class PreviewButton(unittest.TestCase):
         content = body["messages"][0]["content"]
         self.assertNotIn("<iframe", content)
         self.assertNotIn("```html", content)
-
-    def test_outlet_preview_button_is_idempotent(self):
-        f = self._filter()
-        body = _assistant_body_with_file()
-        out1 = f.outlet(body, __metadata__={"chat_id": "abc"})
-        out2 = f.outlet(out1, __metadata__={"chat_id": "abc"})
-        self.assertEqual(out1["messages"][0]["content"], out2["messages"][0]["content"])
-        self.assertEqual(
-            out2["messages"][0]["content"].count("[🖥️ Open preview]"),
-            1,
-        )
 
     def test_outlet_preview_mode_off_skips_button(self):
         f = self._filter()
@@ -428,15 +398,6 @@ class PreviewButton(unittest.TestCase):
         for msg in out["messages"]:
             self.assertNotIn("[🖥️ Open preview]", msg["content"])
             self.assertNotIn("archive", msg["content"].lower())
-
-    def test_outlet_preview_url_has_no_double_slash_when_trailing_slash(self):
-        f = self._filter(public_url="http://localhost:8081/")
-        body = f.outlet(_assistant_body_with_file(), __metadata__={"chat_id": "abc"})
-        content = body["messages"][0]["content"]
-        self.assertNotIn("//preview/", content)
-        self.assertIn(
-            "[🖥️ Open preview](http://localhost:8081/preview/abc)", content
-        )
 
     def test_legacy_preview_mode_values_rejected_on_construction(self):
         """v3.x / v4.0.0 values ("artifact", "both") must be rejected when Open WebUI
@@ -507,17 +468,6 @@ class BrowserToolTrigger(unittest.TestCase):
         _prime_cache(f, "abc")
         return f
 
-    def test_outlet_appends_preview_button_on_browser_tool_without_file_url(self):
-        """outlet() must inject preview button when a browser tool ran but produced no file."""
-        f = self._primed_filter()
-        content = "I navigated to the page. " + self._tool_call_details(name="playwright")
-        body = {"messages": [{"role": "assistant", "content": content}]}
-        out = f.outlet(body, __metadata__={"chat_id": "abc"})
-        self.assertIn(
-            "[🖥️ Open preview](http://localhost:8081/preview/abc)",
-            out["messages"][0]["content"],
-        )
-
     def test_outlet_browser_tool_trigger_emits_no_fenced_html_or_iframe(self):
         """v4.1.0 invariant on the browser-tool path: no fenced html / iframe is ever
         emitted, only the markdown button. The frontend patch turns the URL into an
@@ -548,18 +498,6 @@ class BrowserToolTrigger(unittest.TestCase):
         self.assertNotIn("<iframe", out["messages"][0]["content"])
         self.assertNotIn("[🖥️ Open preview]", out["messages"][0]["content"])
 
-    def test_outlet_browser_tool_trigger_is_idempotent(self):
-        """Repeated outlet() calls on browser-tool-triggered content must not duplicate the button."""
-        f = self._primed_filter()
-        content = self._tool_call_details(name="playwright")
-        body = {"messages": [{"role": "assistant", "content": content}]}
-        out1 = f.outlet(body, __metadata__={"chat_id": "abc"})
-        out2 = f.outlet(out1, __metadata__={"chat_id": "abc"})
-        self.assertEqual(out1["messages"][0]["content"], out2["messages"][0]["content"])
-        self.assertEqual(
-            out2["messages"][0]["content"].count("[🖥️ Open preview]"), 1
-        )
-
 
 class OutletWithoutCache(unittest.TestCase):
     """outlet() must not invent a public URL. When the cache is empty (outlet
@@ -577,29 +515,6 @@ class OutletWithoutCache(unittest.TestCase):
             out["messages"][0]["content"],
             original,
             "Empty cache must leave the message untouched — no iframe, button, or archive",
-        )
-
-    def test_outlet_falls_back_to_email_keyed_cache_when_user_missing(self):
-        """When inlet() cached under (chat_id, "alice@x") and outlet() is later
-        invoked without __user__ (e.g. on a re-render path), the filter must
-        still find the cached public_url by scanning same-chat entries. Previously
-        outlet() only probed (chat_id, user_email) and (chat_id, ""), missing
-        the email-keyed entry and skipping all decoration."""
-        f = _make_filter()
-        _prime_cache(f, "abc", user_email="alice@example.com")
-        # Assistant already contains a file link and a browser-tool details block
-        # — either trigger must fire once outlet() finds the cached URL.
-        link = "http://localhost:8081/files/abc/report.pdf"
-        body = {"messages": [{"role": "assistant", "content": f"see {link}"}]}
-        # Note: no __user__ passed
-        out = f.outlet(body, __metadata__={"chat_id": "abc"})
-        decorated = out["messages"][0]["content"]
-        self.assertIn(
-            "[🖥️ Open preview](http://localhost:8081/preview/abc)", decorated
-        )
-        self.assertIn(
-            "[📦 Download all files as archive](http://localhost:8081/files/abc/archive)",
-            decorated,
         )
 
     def test_outlet_skips_when_cache_has_different_chat_id(self):
