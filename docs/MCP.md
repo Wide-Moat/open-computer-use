@@ -1,3 +1,12 @@
+---
+status: draft
+last-reviewed: 2026-09-30
+owner: "@Wide-Moat/maintainers"
+applies-to: next/v1
+---
+
+How to expose the self-hosted Computer Use MCP endpoint to MCP-compatible clients, for operators connecting Claude Code — directly or through a LiteLLM gateway — to the sandbox tools.
+
 # MCP Server Integration
 
 The Computer Use Server exposes a standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) endpoint that works with any MCP-compatible client.
@@ -207,7 +216,7 @@ Server URLs are templated as `{ANTHROPIC_BASE_URL}/mcp/{server_name}` — this f
 
 ### Example: LiteLLM with multiple MCP servers
 
-If LiteLLM is configured with MCP servers `github`, `jira`, `slack`:
+If LiteLLM is configured with MCP servers `github`, `jira`, `slack`, `you`:
 
 ```yaml
 # LiteLLM config
@@ -218,9 +227,13 @@ mcp_servers:
     url: "http://jira-mcp:3001/mcp"
   slack:
     url: "http://slack-mcp:3002/mcp"
+  you:
+    url: "https://api.you.com/mcp?profile=free"
 ```
 
 Passing `X-MCP-Servers: github,jira` will make these servers available to Claude Code inside the sandbox.
+
+The alias target does not have to be self-hosted — any MCP endpoint the gateway can reach works. The `you` alias above points at You.com's keyless search endpoint (`https://api.you.com/mcp?profile=free`), which exposes a basic `you-search` tool with no API key; passing `X-MCP-Servers: github,you` gives Claude Code web search inside the sandbox.
 
 ### Generated ~/.mcp.json
 
