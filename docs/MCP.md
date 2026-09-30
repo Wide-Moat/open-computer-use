@@ -1,3 +1,12 @@
+---
+status: draft
+last-reviewed: 2026-09-30
+owner: "@Wide-Moat/maintainers"
+applies-to: next/v1
+---
+
+How to expose the self-hosted Computer Use MCP endpoint to MCP-compatible clients, for operators connecting Claude Code — directly or through a LiteLLM gateway — to the sandbox tools.
+
 # MCP Server Integration
 
 The Computer Use Server exposes a standard [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) endpoint that works with any MCP-compatible client.
