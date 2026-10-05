@@ -3,43 +3,16 @@
 
 # Security Policy
 
-## Reporting a vulnerability
+This repository is archived. It receives no security fixes, and vulnerability reports against it are not accepted.
 
-Use the GitHub **private vulnerability reporting** form:
-[Wide-Moat/open-computer-use → Security → Advisories → New advisory](https://github.com/Wide-Moat/open-computer-use/security/advisories/new)
+## Known issues
 
-Do not open a public issue or pull request for a security problem. Public disclosure happens after the fix lands and (where applicable) a CVE is published.
+Issues reported before archival were not all fixed and will not be. [Known limitations](README.md#known-limitations) lists the main ones, among them passwordless `sudo` in the sandbox, credentials passed as environment variables and HTTP headers, and sandbox containers with network access by default. Do not run this code in production or expose it to untrusted users.
 
-## What's in scope
+## Successor
 
-- Code in this repository on the `main` and `next/v1` branches.
-- Container images we publish to GHCR.
-- Helm chart we publish.
+[Wide Moat](https://widemoat.ai) replaces this project. Its sandbox uses gVisor on Kubernetes with egress through a MITM proxy. Security reports about Wide Moat go to developer@widemoat.ai.
 
-## What's not in scope
+## Disclosure
 
-- Third-party dependencies — report upstream (we will track and patch).
-- Vulnerabilities in customer deployments unless the root cause is in our code.
-
-## Response timeline
-
-We aim for:
-
-- Acknowledgement of receipt: ≤ 3 business days.
-- Initial severity assessment: ≤ 5 business days.
-- Patch + advisory for a confirmed vulnerability:
-  - Critical with active exploitation: ≤ 30 days from confirmation.
-  - Other Critical / High: ≤ 90 days from confirmation, matching the
-    GitHub Security Advisory default coordinated-disclosure window.
-
-A faster patch is always possible — these are upper bounds, not targets.
-
-## Supported versions
-
-Each release of the Software is licensed under FSL-1.1-Apache-2.0 and automatically converts to Apache-2.0 two years after publication.
-
-We patch security issues on `main` and `next/v1`. We may back-port fixes for confirmed Critical/High to the two most recent minor releases at maintainer discretion. Older minors are best-effort and not contractually supported.
-
-## Coordinated disclosure
-
-We follow [coordinated vulnerability disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure). Once a fix is available and customers have had ≥ 30 days to upgrade, the advisory is made public with credit to the reporter (if requested).
+Public issues and pull requests are closed. The advisory form is disabled.
