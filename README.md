@@ -6,24 +6,14 @@
 [![License](https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/stargazers)
 [![Issues](https://img.shields.io/github/issues/Wide-Moat/open-computer-use)](https://github.com/Wide-Moat/open-computer-use/issues)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Wide-Moat/open-computer-use?utm_source=oss&utm_medium=github&utm_campaign=Wide-Moat%2Fopen-computer-use&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 MCP server that gives any LLM its own computer — managed Docker workspaces with live browser, terminal, code execution, document skills, and autonomous sub-agents. Self-hosted, open-source, pluggable into any model.
 
-> **Online demo:** **[lab.widemoat.ai](https://lab.widemoat.ai)** — Open WebUI with Computer Use already set up, sign in with GitHub or Google. ([More ways to try it](#ways-to-try-it) below.) The old `chat.yambr.com` address redirects here and will keep doing so.
+> **ARCHIVED.** This repository is no longer developed or maintained. It receives no fixes, no security updates and no dependency updates, and issues and pull requests are closed. Do not run it in production.
 >
-> **Where this project is going.** Open Computer Use set out to answer one question — can an LLM be given a real computer safely enough to be useful? It answered it, and it is used in production. That result led us somewhere else: [Wide Moat](https://widemoat.ai), an enterprise AI platform that runs inside a company's own perimeter. It is a **different product**, not a rewrite of this one, and it is currently developed in private.
+> Open Computer Use was a proof of concept for giving an LLM a real computer. Its successor is [Wide Moat](https://widemoat.ai): Open WebUI with Open Terminal, a browser, and a Kubernetes sandbox isolated with gVisor, with ingress sidecars and egress through a MITM proxy. The isolation and credential-handling problems listed under [Known limitations](#known-limitations) are addressed in that architecture, not in this codebase. Try it at [ai.lab.widemoat.ai](https://ai.lab.widemoat.ai).
 >
-> Practically, for you:
->
-> - **This repository keeps working.** It is maintained — fixes, dependency and security updates, and support for the Open WebUI versions it targets. It is not abandoned and not deprecated.
-> - **Its pace of new features slows down.** Our attention has moved to the platform, and that is honest to say up front rather than to leave you guessing from commit dates.
-> - **The licence promise stands.** FSL-1.1-Apache-2.0: use it, fork it, self-host it, redistribute it — and every release converts to Apache-2.0 two years after publication, whatever we do next. Nothing here can be taken back from you.
->
-> Worth watching if you like this project: a sandbox integrated natively into Open WebUI, rather than bolted on through a filter and a tool, is one of the things being built on the platform. Try the hosted lab at [lab.widemoat.ai](https://lab.widemoat.ai) or read more at [widemoat.ai](https://widemoat.ai).
->
-> If any of this looks useful, a ⭐ on the repo really helps — thanks!
+> The code stays available under FSL-1.1-Apache-2.0: use it, fork it, self-host it. Each release converts to Apache-2.0 two years after publication.
 
 ![Demo: Qwen 3.6 Plus scrapes GitHub Trending, builds an Excel chart, and ships an editorial web dashboard — all in one chat](docs/demo-qwen-trending.gif)
 
@@ -95,16 +85,16 @@ See [docs/FEATURES.md](docs/FEATURES.md) for architecture details and [docs/SCRE
 
 ![Architecture](docs/architecture.svg)
 
-> Looking ahead: a Kubernetes-friendly architecture with object-storage-backed user data and squashfs-packaged skills is being designed in [docs/future-architecture/](docs/future-architecture/). Docker Compose remains the primary supported path.
+> [docs/future-architecture/](docs/future-architecture/) holds design notes for a Kubernetes architecture that was not built in this repository. Docker Compose is the only path this code supports.
 
 ## Ways to try it
 
 | Path | URL | What you need | Best for |
 |------|-----|---------------|----------|
-| **Free online demo** — Open WebUI + Computer Use, models included | **[lab.widemoat.ai](https://lab.widemoat.ai)** | GitHub or Google sign-in | Trying it end-to-end in 30 seconds |
+| **Free online demo** — Open WebUI + Computer Use, models included | **[ai.lab.widemoat.ai](https://ai.lab.widemoat.ai)** | GitHub or Google sign-in | Trying it end-to-end in 30 seconds |
 | **Self-host** | [Quick Start](#quick-start) below | Docker, ~15 min first build | Full control, air-gapped, heavy use |
 
-OAuth only — no email/password, no SMS. On `lab.widemoat.ai` models are bundled as a free convenience. The hosted MCP endpoint is offline during the transformation; see [docs/CLOUD.md](docs/CLOUD.md).
+OAuth only — no email/password, no SMS. On `ai.lab.widemoat.ai` models are bundled as a free convenience. The hosted MCP endpoint is offline; see [docs/CLOUD.md](docs/CLOUD.md).
 
 ## Quick Start
 
@@ -215,7 +205,7 @@ All settings via `.env`:
 
 By default, all 13 built-in skills are available to everyone. For per-user skill access and custom skills, deploy the **Settings Wrapper** — see [settings-wrapper/README.md](settings-wrapper/README.md).
 
-**Personal Access Tokens (PATs):** The settings wrapper can also store encrypted per-user PATs for external services (GitLab, Confluence, Jira, etc.). The server fetches them by user email and injects into the sandbox — so each user's AI has access to their repos/docs without sharing credentials. The server-side code for token injection is implemented (`docker_manager.py`), but the Open WebUI tool doesn't pass the required headers yet. This is on the roadmap — if you need PAT management, [open an issue](https://github.com/Wide-Moat/open-computer-use/issues).
+**Personal Access Tokens (PATs):** The settings wrapper can also store encrypted per-user PATs for external services (GitLab, Confluence, Jira, etc.). The server fetches them by user email and injects into the sandbox — so each user's AI has access to their repos/docs without sharing credentials. The server-side code for token injection is implemented (`docker_manager.py`), but the Open WebUI tool does not pass the required headers, and that will not be added.
 
 ## MCP Client Integrations
 
@@ -406,13 +396,13 @@ docker exec <postgres-container> psql -U openwebui -d openwebui -c \
 
 ## Security Notes
 
-> **Production tested** with 1000+ users on Open WebUI in a self-hosted environment. For public-facing deployments, see the hardening roadmap below.
+> **Production tested** with 1000+ users on Open WebUI in a self-hosted environment. It is no longer maintained; the unfixed items are listed below.
 
 ### Current model
 
 - **Docker socket**: The server needs Docker socket access to manage sandbox containers. This grants significant host access — run in a trusted environment only.
 - **MCP_API_KEY**: Set a strong random key in production. Without it, anyone with network access to port 8081 can execute arbitrary commands in containers.
-- **Sandbox isolation**: Each chat session runs in a separate container with resource limits (2GB RAM, 1 CPU). On Docker Compose, containers use the standard runtime (runc) and share the host kernel. The [Kubernetes Helm chart](docs/kubernetes.md) defaults to rootless Podman — user namespaces plus AppArmor, and no privileged container — and can opt into [Kata Containers](docs/kata-runtime.md) for a hypervisor-grade boundary. On Compose, switch to gVisor (see roadmap). Containers have network access by default.
+- **Sandbox isolation**: Each chat session runs in a separate container with resource limits (2GB RAM, 1 CPU). On Docker Compose, containers use the standard runtime (runc) and share the host kernel. The [Kubernetes Helm chart](docs/kubernetes.md) defaults to rootless Podman — user namespaces plus AppArmor, and no privileged container — and can opt into [Kata Containers](docs/kata-runtime.md) for a hypervisor-grade boundary. On Compose, gVisor was never wired in. Containers have network access by default.
 - **POSTGRES_PASSWORD**: Change the default password in `.env` for production.
 
 ### Known limitations
@@ -422,9 +412,9 @@ docker exec <postgres-container> psql -U openwebui -d openwebui -c \
 - **Credentials in HTTP headers**: API keys (GitLab, Anthropic, MCP tokens) are passed as HTTP headers from client to server. Safe within Docker network, but use HTTPS if exposing externally.
 - **Default admin credentials**: `admin@open-computer-use.dev` / `admin` — change immediately in multi-user setups.
 
-### Security roadmap
+### Unfixed security items
 
-We plan to address these in future releases:
+These will not be addressed in this repository:
 
 - [ ] **Per-session signed tokens** for file/preview/terminal endpoints (replace chat ID as auth)
 - [ ] **Server-side user verification** via Open WebUI JWT validation
@@ -433,8 +423,6 @@ We plan to address these in future releases:
 - [ ] **Network policies** for sandbox containers (restrict egress by default)
 - [ ] **Secret management** — move credentials from headers to encrypted server-side storage
 - [ ] **gVisor (runsc) runtime** — optional container sandboxing for stronger isolation (like Claude.ai)
-
-Ideas? Open a [GitHub Issue](https://github.com/Wide-Moat/open-computer-use/issues). Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) or email developer@widemoat.ai.
 
 ## Development
 
@@ -453,12 +441,11 @@ docker compose up --build
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome!
+The repository is archived and accepts no contributions. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community
 
-- **Free online demo**: [lab.widemoat.ai](https://lab.widemoat.ai) — hosted by the maintainers
-- **Issues & Ideas**: [GitHub Issues](https://github.com/Wide-Moat/open-computer-use/issues)
+- **Successor**: [widemoat.ai](https://widemoat.ai), demo at [ai.lab.widemoat.ai](https://ai.lab.widemoat.ai)
 - **Contact**: developer@widemoat.ai
 
 ## License

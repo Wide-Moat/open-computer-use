@@ -1,5 +1,9 @@
 # Changelog
 
+## Archived
+
+- The repository is archived. It receives no further changes, and issues and pull requests are closed. The successor is Wide Moat (https://widemoat.ai, demo at https://ai.lab.widemoat.ai/).
+
 ## Unreleased — `next/v1` branch
 
 ### Changed
